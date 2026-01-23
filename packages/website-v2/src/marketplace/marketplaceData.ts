@@ -355,6 +355,7 @@ export function resolveHtmlAssetLinks(
   pageLinkMap?: PageLinkMap,
 ) {
   if (!baseUrl || !baseUrl.startsWith("http")) return html;
+  const baseOrigin = getUrlOrigin(baseUrl);
   return html.replace(
     /(src|href)=(["'])([^"']+)\2/gi,
     (_match, attr, quote, value) => {
@@ -364,6 +365,10 @@ export function resolveHtmlAssetLinks(
       if (attr.toLowerCase() === "href" && pageLinkMap) {
         const target = pageLinkMap.get(normalizePageLinkKey(resolved));
         if (target) {
+          const targetOrigin = getUrlOrigin(resolved);
+          if (baseOrigin && targetOrigin && baseOrigin !== targetOrigin) {
+            return `${attr}=${quote}${resolved}${quote}`;
+          }
           const suffix = extractSearchAndHash(resolved);
           return `${attr}=${quote}${target}${suffix}${quote}`;
         }
@@ -390,6 +395,14 @@ function extractSearchAndHash(value: string) {
     return `${url.search}${url.hash}`;
   } catch {
     return "";
+  }
+}
+
+function getUrlOrigin(value: string) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
   }
 }
 
