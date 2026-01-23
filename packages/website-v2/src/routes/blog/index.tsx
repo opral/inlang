@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Link } from "../../components/RouterLink";
 import { createServerFn } from "@tanstack/react-start";
 import { parse } from "@opral/markdown-wc";
 import { getBlogDescription, getBlogTitle } from "../../blog/blogMetadata";

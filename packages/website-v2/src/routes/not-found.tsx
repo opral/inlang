@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
+import { Link } from "../components/RouterLink";
 
 export const Route = createFileRoute("/not-found")({
   head: () => ({

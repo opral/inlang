@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link } from "../components/RouterLink";
 import { useEffect, useRef, useState } from "react";
 import type { MarketplaceManifest } from "@inlang/marketplace-manifest";
 import { isMarketplaceMirrorPage } from "./marketplaceData";

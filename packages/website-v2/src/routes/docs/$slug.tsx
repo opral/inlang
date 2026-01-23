@@ -1,4 +1,5 @@
-import { createFileRoute, Link, redirect } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { Link } from "../../components/RouterLink";
 import { createServerFn } from "@tanstack/react-start";
 import { parse } from "@opral/markdown-wc";
 import { useEffect, useState } from "react";

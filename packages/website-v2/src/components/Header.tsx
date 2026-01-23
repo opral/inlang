@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Link, useLocation } from "@tanstack/react-router";
+import { useLocation } from "@tanstack/react-router";
+import { Link } from "./RouterLink";
 import { getGithubStars } from "../github-stars-cache";
 
 const ecosystemLinks = [

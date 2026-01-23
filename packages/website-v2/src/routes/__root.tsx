@@ -102,7 +102,7 @@ function GoogleAnalytics() {
   return null;
 }
 
-function RootDocument({ children }: { children: React.ReactNode }) {
+function RootDocument({ children }: { children?: unknown }) {
   return (
     <html lang="en">
       <head>
@@ -111,7 +111,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
       <body className="flex min-h-screen flex-col">
         <GoogleAnalytics />
         <Header />
-        <main className="flex-1">{children}</main>
+        <main className="flex-1">{children as React.ReactNode}</main>
         <Footer />
         <Scripts />
       </body>
