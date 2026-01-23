@@ -442,7 +442,7 @@ import * as m from "@/paraglide/messages";
 const testRef = m["common.addNew"]();
 </script>
 `;
-    const result = parse(sourceCode);
+    const result = parse(sourceCode) as Array<{ messageId: string }>;
     expect(result.map((item) => item.messageId)).toEqual([
       "common.addNew",
       "common.addNew",
