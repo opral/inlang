@@ -104,7 +104,7 @@ const createParser = (sourceCode: string) => {
         Parsimmon.regex(/\((?:[^()]|\([^()]*\))*\)/).or(Parsimmon.succeed("")), // function arguments or empty string
         (startIndex, match, notation, args) => {
           const mOffset = startIndex.offset + match.length - 1;
-          const prevChar = sourceCode[mOffset - 1];
+          const prevChar = mOffset > 0 ? sourceCode[mOffset - 1] : "";
           const hasValidPrefix =
             mOffset === 0 || !/[a-zA-Z0-9/]/.test(prevChar);
 
