@@ -9,10 +9,12 @@
 
 import Parsimmon from "parsimmon";
 
+const mImportPattern = /import\s+(?:\*\s+as\s+m|\{\s*m\s*\})/;
+
 const createParser = () => {
   return Parsimmon.createLanguage({
     entry: (r) => {
-      return Parsimmon.alt(r.findReference!, Parsimmon.any)
+      return Parsimmon.alt(r.findMessage!, Parsimmon.any)
         .many()
         .map((matches) => matches.flatMap((match) => match))
         .map((matches) =>
@@ -126,6 +128,9 @@ const createParser = () => {
 // Parse the expression
 export function parse(sourceCode: string) {
   try {
+    if (!sourceCode || !mImportPattern.test(sourceCode)) {
+      return [];
+    }
     const parser = createParser();
     return parser.entry!.tryParse(sourceCode);
   } catch (e) {

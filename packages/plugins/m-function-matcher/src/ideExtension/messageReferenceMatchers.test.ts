@@ -488,7 +488,15 @@ const testRef = m["common.addNew"]();
 		import * as m from "../../i18n-generated/messages";
 		`;
     const result = parse(sourceCode);
-    expect(result).toEqual([]);
+    expect(result).toEqual([
+      {
+        messageId: "helloWorld",
+        position: {
+          start: { line: 2, character: 5 },
+          end: { line: 2, character: 17 },
+        },
+      },
+    ]);
   });
 
   it("should match if m is defined but no reference to paraglide", () => {
