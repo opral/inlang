@@ -9,7 +9,132 @@
 
 import Parsimmon from "parsimmon";
 
-const mImportPattern = /import\s+(?:\*\s+as\s+m|\{\s*m\s*\})/;
+const mImportPattern = /import\s+(?:\*\s+as\s+m|\{\s*[^}]*\bm\b[^}]*\})/;
+
+const stripCommentsAndStrings = (sourceCode: string) => {
+  let result = "";
+  let i = 0;
+  const length = sourceCode.length;
+  let state: "code" | "singleLineComment" | "multiLineComment" | "singleQuote" | "doubleQuote" | "template" =
+    "code";
+
+  while (i < length) {
+    const char = sourceCode[i];
+    const next = sourceCode[i + 1];
+
+    if (state === "code") {
+      if (char === "/" && next === "/") {
+        state = "singleLineComment";
+        result += "  ";
+        i += 2;
+        continue;
+      }
+      if (char === "/" && next === "*") {
+        state = "multiLineComment";
+        result += "  ";
+        i += 2;
+        continue;
+      }
+      if (char === "'") {
+        state = "singleQuote";
+        result += " ";
+        i += 1;
+        continue;
+      }
+      if (char === '"') {
+        state = "doubleQuote";
+        result += " ";
+        i += 1;
+        continue;
+      }
+      if (char === "`") {
+        state = "template";
+        result += " ";
+        i += 1;
+        continue;
+      }
+      result += char;
+      i += 1;
+      continue;
+    }
+
+    if (state === "singleLineComment") {
+      if (char === "\n") {
+        state = "code";
+        result += "\n";
+      } else {
+        result += " ";
+      }
+      i += 1;
+      continue;
+    }
+
+    if (state === "multiLineComment") {
+      if (char === "*" && next === "/") {
+        state = "code";
+        result += "  ";
+        i += 2;
+        continue;
+      }
+      result += char === "\n" ? "\n" : " ";
+      i += 1;
+      continue;
+    }
+
+    if (state === "singleQuote") {
+      if (char === "\\" && i + 1 < length) {
+        result += "  ";
+        i += 2;
+        continue;
+      }
+      if (char === "'") {
+        state = "code";
+        result += " ";
+        i += 1;
+        continue;
+      }
+      result += char === "\n" ? "\n" : " ";
+      i += 1;
+      continue;
+    }
+
+    if (state === "doubleQuote") {
+      if (char === "\\" && i + 1 < length) {
+        result += "  ";
+        i += 2;
+        continue;
+      }
+      if (char === '"') {
+        state = "code";
+        result += " ";
+        i += 1;
+        continue;
+      }
+      result += char === "\n" ? "\n" : " ";
+      i += 1;
+      continue;
+    }
+
+    if (state === "template") {
+      if (char === "\\" && i + 1 < length) {
+        result += "  ";
+        i += 2;
+        continue;
+      }
+      if (char === "`") {
+        state = "code";
+        result += " ";
+        i += 1;
+        continue;
+      }
+      result += char === "\n" ? "\n" : " ";
+      i += 1;
+      continue;
+    }
+  }
+
+  return result;
+};
 
 const createParser = (sourceCode: string) => {
   return Parsimmon.createLanguage({
@@ -138,7 +263,8 @@ const createParser = (sourceCode: string) => {
 // Parse the expression
 export function parse(sourceCode: string) {
   try {
-    if (!sourceCode || !mImportPattern.test(sourceCode)) {
+    const scanSource = sourceCode ? stripCommentsAndStrings(sourceCode) : "";
+    if (!scanSource || !mImportPattern.test(scanSource)) {
       return [];
     }
     const parser = createParser(sourceCode);

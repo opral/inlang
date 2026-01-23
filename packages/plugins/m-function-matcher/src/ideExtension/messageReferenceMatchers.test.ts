@@ -507,6 +507,17 @@ const testRef = m["common.addNew"]();
     expect(result).toEqual([]);
   });
 
+  it("should ignore m imports in comments or strings", () => {
+    const sourceCode = `
+		const m = Math;
+		m.max(1, 2);
+		// import { m } from "@/paraglide/messages"
+		const note = "import { m } from '@/paraglide/messages'";
+		`;
+    const result = parse(sourceCode);
+    expect(result).toEqual([]);
+  });
+
   it("should match if m is defined but has a spell error", () => {
     const sourceCode = `
 		import * as m from "../../i18n-generated/messages";
