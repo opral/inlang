@@ -11,10 +11,10 @@ import Parsimmon from "parsimmon";
 
 const mImportPattern = /import\s+(?:\*\s+as\s+m|\{\s*m\s*\})/;
 
-const createParser = () => {
+const createParser = (sourceCode: string) => {
   return Parsimmon.createLanguage({
     entry: (r) => {
-      return r.findMessage!
+      return Parsimmon.alt(r.findMessage!, Parsimmon.any)
         .many()
         .map((matches) => matches.flatMap((match) => match))
         .map((matches) =>
@@ -96,12 +96,21 @@ const createParser = () => {
 
     findMessage: (r) => {
       return Parsimmon.seqMap(
-        Parsimmon.regex(/.*?(?<![a-zA-Z0-9/])m/s), // find m that's not preceded by letters/numbers
+        Parsimmon.index, // capture start offset
+        Parsimmon.regex(/.*?m/s), // find earliest m from current position
         Parsimmon.alt(r.dotNotation!, r.bracketNotation!).or(
           Parsimmon.succeed(null)
         ),
         Parsimmon.regex(/\((?:[^()]|\([^()]*\))*\)/).or(Parsimmon.succeed("")), // function arguments or empty string
-        (_, notation, args) => {
+        (startIndex, match, notation, args) => {
+          const mOffset = startIndex.offset + match.length - 1;
+          const prevChar = sourceCode[mOffset - 1];
+          const hasValidPrefix =
+            mOffset === 0 || !/[a-zA-Z0-9/]/.test(prevChar);
+
+          if (!hasValidPrefix) {
+            return null;
+          }
           // false positive (m not followed by dot or bracket notation)
           if (notation === null) {
             return null;
@@ -131,7 +140,7 @@ export function parse(sourceCode: string) {
     if (!sourceCode || !mImportPattern.test(sourceCode)) {
       return [];
     }
-    const parser = createParser();
+    const parser = createParser(sourceCode);
     return parser.entry!.tryParse(sourceCode);
   } catch (e) {
     return [];
