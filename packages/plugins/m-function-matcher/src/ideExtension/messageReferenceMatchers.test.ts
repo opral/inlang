@@ -432,6 +432,23 @@ describe("Paraglide Message Parser", () => {
    ]);
   });
 
+  it("repro: should match m calls in Vue template before import", () => {
+    const sourceCode = `
+<template>
+  <span>{{ m["common.addNew"]() }}</span>
+</template>
+<script setup lang="ts">
+import * as m from "@/paraglide/messages";
+const testRef = m["common.addNew"]();
+</script>
+`;
+    const result = parse(sourceCode);
+    expect(result.map((item) => item.messageId)).toEqual([
+      "common.addNew",
+      "common.addNew",
+    ]);
+  });
+
   it("should match if both dot and bracket notation are used in the same file", () => {
     const sourceCode = `
 		import * as m from "../../i18n-generated/messages";
