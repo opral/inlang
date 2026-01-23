@@ -1,5 +1,12 @@
 # @inlang/plugin-m-function-matcher
 
+## 2.2.0
+
+### Minor Changes
+
+- aa28859: Match m() references in Vue templates and before imports. Fixes
+  https://github.com/opral/sherlock/issues/197.
+
 ## 2.1.4
 
 ### Patch Changes
