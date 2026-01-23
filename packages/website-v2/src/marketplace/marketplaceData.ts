@@ -361,7 +361,11 @@ export function resolveHtmlAssetLinks(
       const resolved = resolveRelativeUrl(String(value), baseUrl, {
         appendMarkdownExtension: attr.toLowerCase() === "href",
       });
-      if (attr.toLowerCase() === "href" && pageLinkMap) {
+      if (
+        attr.toLowerCase() === "href" &&
+        pageLinkMap &&
+        isSameOrigin(resolved, baseUrl)
+      ) {
         const target = pageLinkMap.get(normalizePageLinkKey(resolved));
         if (target) {
           const suffix = extractSearchAndHash(resolved);
@@ -381,6 +385,14 @@ function normalizePageLinkKey(value: string) {
     return url.toString();
   } catch {
     return value;
+  }
+}
+
+function isSameOrigin(value: string, baseUrl: string) {
+  try {
+    return new URL(value).origin === new URL(baseUrl).origin;
+  } catch {
+    return false;
   }
 }
 

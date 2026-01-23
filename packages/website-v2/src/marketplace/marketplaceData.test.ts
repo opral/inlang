@@ -200,4 +200,23 @@ describe("resolveHtmlAssetLinks", () => {
       'href="https://raw.githubusercontent.com/opral/paraglide-js/refs/heads/main/docs/assets/og.png"',
     );
   });
+
+  it("does not rewrite external links with different origins", () => {
+    const baseUrl =
+      "https://raw.githubusercontent.com/opral/paraglide-js/refs/heads/main/docs/strategy.md";
+    const html =
+      '<p><a href="https://github.com/TanStack/router/tree/main/examples/react/start-i18n-paraglide">TanStack Start</a></p>';
+    const pageLinkMap = new Map([
+      [
+        "https://github.com/TanStack/router/tree/main/examples/react/start-i18n-paraglide",
+        "/m/gerre34r/library-inlang-paraglideJs/tanstack-start",
+      ],
+    ]);
+
+    const resolved = resolveHtmlAssetLinks(html, baseUrl, pageLinkMap);
+
+    expect(resolved).toContain(
+      'href="https://github.com/TanStack/router/tree/main/examples/react/start-i18n-paraglide"',
+    );
+  });
 });
