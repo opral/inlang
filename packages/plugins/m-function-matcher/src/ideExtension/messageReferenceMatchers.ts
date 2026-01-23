@@ -14,7 +14,7 @@ const mImportPattern = /import\s+(?:\*\s+as\s+m|\{\s*m\s*\})/;
 const createParser = () => {
   return Parsimmon.createLanguage({
     entry: (r) => {
-      return Parsimmon.alt(r.findMessage!, Parsimmon.any)
+      return r.findMessage!
         .many()
         .map((matches) => matches.flatMap((match) => match))
         .map((matches) =>
