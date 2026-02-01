@@ -10,6 +10,7 @@ export const getRouter = () => {
     context: {},
 
     scrollRestoration: true,
+    trailingSlash: "never",
     defaultPreloadStaleTime: 0,
   });
 

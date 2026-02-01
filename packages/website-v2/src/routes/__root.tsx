@@ -3,7 +3,6 @@ import {
   Scripts,
   createRootRoute,
   useRouter,
-  redirect,
 } from "@tanstack/react-router";
 import React from "react";
 import appCss from "../styles.css?url";
@@ -13,15 +12,6 @@ import Footer from "../components/Footer";
 const GA_MEASUREMENT_ID = "G-5H3SDF7TVZ";
 
 export const Route = createRootRoute({
-  beforeLoad: ({ location }) => {
-    const { pathname, search, hash } = location;
-    if (pathname.length > 1 && pathname.endsWith("/")) {
-      throw redirect({
-        to: `${pathname.slice(0, -1)}${search}${hash}`,
-        statusCode: 301,
-      });
-    }
-  },
   head: () => ({
     meta: [
       { charSet: "utf-8" },
