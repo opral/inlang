@@ -35,7 +35,7 @@ const config = defineConfig(({ mode, command }) => {
       tanstackStart({
         prerender: {
           enabled: true,
-          autoSubfolderIndex: true,
+          autoSubfolderIndex: false,
           autoStaticPathsDiscovery: true,
           crawlLinks: true,
           concurrency: 8,

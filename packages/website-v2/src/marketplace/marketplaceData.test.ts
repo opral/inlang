@@ -115,7 +115,7 @@ describe("loadMarketplacePage redirects", () => {
         slug: "wrong-slug",
       }),
     ).rejects.toMatchObject({
-      to: "/m/u2/app-inlang-cli/",
+      to: "/m/u2/app-inlang-cli",
     });
   });
 });

@@ -139,22 +139,24 @@ export async function loadMarketplacePage({
     : item.id.replaceAll(".", "-");
   const itemPath = `/m/${item.uniqueID}/${canonicalSlug}`;
   const pagePath = splat ? `/${splat}` : "/";
+  const resolveItemPageUrl = (path: string) =>
+    path === "/" ? itemPath : `${itemPath}${path}`;
 
   if (item.pageRedirects) {
     for (const [from, to] of Object.entries(item.pageRedirects)) {
       const newPagePath = getRedirectPath(pagePath, from, to);
       if (newPagePath) {
-        throw redirect({ to: `${itemPath}${newPagePath}` });
+        throw redirect({ to: resolveItemPageUrl(newPagePath) });
       }
     }
   }
 
   if (item.slug) {
     if (item.slug !== slug) {
-      throw redirect({ to: `${itemPath}${pagePath}` });
+      throw redirect({ to: resolveItemPageUrl(pagePath) });
     }
   } else if (item.id.replaceAll(".", "-") !== slug) {
-    throw redirect({ to: `${itemPath}${pagePath}` });
+    throw redirect({ to: resolveItemPageUrl(pagePath) });
   }
 
   const flatPages = item.pages ? flattenPages(item.pages) : undefined;
@@ -413,7 +415,8 @@ export function resolveRelativeUrl(
 ) {
   if (!isRelativeUrl(value)) return value;
   const normalizedValue =
-    options.appendMarkdownExtension && shouldAppendMarkdownExtension(value, baseUrl)
+    options.appendMarkdownExtension &&
+    shouldAppendMarkdownExtension(value, baseUrl)
       ? appendMarkdownExtension(value, baseUrl)
       : value;
   try {
