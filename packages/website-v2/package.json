@@ -12,6 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "2027-track": "^0.1.7",
     "@inlang/marketplace-manifest": "workspace:*",
     "@inlang/marketplace-registry": "workspace:*",
     "@inlang/plugin-message-format": "workspace:*",
