@@ -1091,8 +1091,8 @@ importers:
   packages/website-v2:
     dependencies:
       2027-track:
-        specifier: ^0.1.7
-        version: 0.1.7
+        specifier: ^0.1.8
+        version: 0.1.8
       '@inlang/marketplace-manifest':
         specifier: workspace:*
         version: link:../marketplace-manifest
@@ -1184,13 +1184,8 @@ importers:
 
 packages:
 
-  2027-track@0.1.7:
-    resolution: {integrity: sha512-SysISJIlER7oPA9ht9sYVlWDzKDX4nUJDqCCtOI5ayHzLIaQclgW+yNrLhMFZ9ia6X8K0cr1w2lXwl+wBv8tAg==}
-    peerDependencies:
-      next: '>=13.0.0'
-    peerDependenciesMeta:
-      next:
-        optional: true
+  2027-track@0.1.8:
+    resolution: {integrity: sha512-6qP59GQZuHqmc70oMF0AFyYUHwaDH1cLASshLh084xc2HGzFxvC5Z+xQ+bNgMcgySetpIrgkQptvaOB74el3PQ==}
 
   '@acemir/cssom@0.9.28':
     resolution: {integrity: sha512-LuS6IVEivI75vKN8S04qRD+YySP0RmU/cV8UNukhQZvprxF+76Z43TNo/a08eCodaGhT1Us8etqS1ZRY9/Or0A==}
@@ -11889,7 +11884,7 @@ packages:
 
 snapshots:
 
-  2027-track@0.1.7: {}
+  2027-track@0.1.8: {}
 
   '@acemir/cssom@0.9.28': {}
 

@@ -3,5 +3,5 @@
   "name": "my-tanstack-start-app",
   "compatibility_date": "2025-10-11",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "./src/start.ts"
+  "main": "./src/worker.ts"
 }

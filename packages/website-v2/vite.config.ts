@@ -15,6 +15,11 @@ const config = defineConfig(({ mode, command }) => {
     process.env.INLANG_WEBSITE_GITHUB_TOKEN ?? env.INLANG_WEBSITE_GITHUB_TOKEN;
 
   return {
+    build: {
+      rollupOptions: {
+        external: ["node:stream", "node:stream/web", "node:async_hooks"],
+      },
+    },
     plugins: [
       !isTest && cloudflare({ viteEnvironment: { name: "ssr" } }),
       // this is the plugin that enables path aliases
