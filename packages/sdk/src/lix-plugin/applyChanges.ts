@@ -117,7 +117,7 @@ async function handleForeignKeyViolation(args: {
 			// heuristic that getting the last bundle value is fine
 			// and using created_at is fine too. if the change is undesired
 			// , a user can revert it with lix change control
-			.orderBy("created_at desc")
+			.orderBy("created_at", "desc")
 			.where("type", "=", type)
 			.where((eb) => eb.ref("value", "->>").key("id"), "=", id)
 			.where("operation", "in", ["create", "update"])

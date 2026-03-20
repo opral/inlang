@@ -811,8 +811,8 @@ importers:
   packages/sdk:
     dependencies:
       '@lix-js/sdk':
-        specifier: 0.4.8
-        version: 0.4.8(babel-plugin-macros@3.1.0)
+        specifier: 0.4.9
+        version: 0.4.9(babel-plugin-macros@3.1.0)
       '@sinclair/typebox':
         specifier: ^0.31.17
         version: 0.31.28
@@ -3286,8 +3286,8 @@ packages:
     resolution: {integrity: sha512-B9X3FjD8WmdG7tbA44JuniSO0KdKBWnjfxl8zpgrDCkavrp/GP7U0xxBkc0WgeeoHjQ/pkqq9VqtWB2kS9jIUg==}
     deprecated: use the lix sdk instead https://www.npmjs.com/package/@lix-js/sdk
 
-  '@lix-js/sdk@0.4.8':
-    resolution: {integrity: sha512-H0nbC7ruhom1WQHmaXje6hyp8LYKqHw4VsJIm+i3QQMmz70Qr4MEIiy2Epma2AFSVD2rdIfIY4mQ+8WdCtjR3Q==}
+  '@lix-js/sdk@0.4.9':
+    resolution: {integrity: sha512-30mDkXpx704359oRrJI42bjfCspCiaMItngVBbPkiTGypS7xX4jYbHWQkXI8XuJ7VDB69D0MsVU6xfrBAIrM4A==}
     engines: {node: '>=18'}
 
   '@lix-js/server-protocol-schema@0.1.1':
@@ -13985,7 +13985,7 @@ snapshots:
     dependencies:
       typescript: 5.2.2
 
-  '@lix-js/sdk@0.4.8(babel-plugin-macros@3.1.0)':
+  '@lix-js/sdk@0.4.9(babel-plugin-macros@3.1.0)':
     dependencies:
       '@lix-js/server-protocol-schema': 0.1.1
       dedent: 1.5.1(babel-plugin-macros@3.1.0)
@@ -14144,6 +14144,21 @@ snapshots:
   '@nrwl/js@18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.4.5)':
     dependencies:
       '@nx/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.4.5)
+    transitivePeerDependencies:
+      - '@babel/traverse'
+      - '@swc-node/register'
+      - '@swc/core'
+      - '@swc/wasm'
+      - '@types/node'
+      - debug
+      - nx
+      - supports-color
+      - typescript
+      - verdaccio
+
+  '@nrwl/js@18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.7.3)':
+    dependencies:
+      '@nx/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.7.3)
     transitivePeerDependencies:
       - '@babel/traverse'
       - '@swc-node/register'
@@ -14356,7 +14371,7 @@ snapshots:
       '@babel/preset-env': 7.26.0(@babel/core@7.28.5)
       '@babel/preset-typescript': 7.28.5(@babel/core@7.28.5)
       '@babel/runtime': 7.28.4
-      '@nrwl/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.4.5)
+      '@nrwl/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.7.3)
       '@nx/devkit': 18.3.5(nx@21.4.1)
       '@nx/workspace': 18.3.5
       '@phenomnomnominal/tsquery': 5.0.1(typescript@5.7.3)

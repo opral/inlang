@@ -38,7 +38,7 @@
 		"node": ">=20.0.0"
 	},
 	"dependencies": {
-		"@lix-js/sdk": "0.4.8",
+		"@lix-js/sdk": "0.4.9",
 		"@sinclair/typebox": "^0.31.17",
 		"kysely": "^0.28.12",
 		"sqlite-wasm-kysely": "0.3.0",
