@@ -1,0 +1,30 @@
+{
+	"$schema": "https://inlang.com/schema/marketplace-manifest",
+	"id": "plugin.inlang.propertiesFile",
+	"displayName": {
+		"en": "Properties file format"
+	},
+	"description": {
+		"en": "Store translations in Java .properties files with inline comments for translator context. Uses the properties-file parser for robust handling of the .properties format."
+	},
+	"pages": {
+		"/": "./README.md",
+		"/changelog": "./CHANGELOG.md"
+	},
+	"keywords": [
+		"properties",
+		"java",
+		"i18n",
+		"l10n",
+		"translation",
+		"storage",
+		"import",
+		"export",
+		"messages",
+		"plugin",
+		"comments"
+	],
+	"publisherName": "community",
+	"license": "Apache-2.0",
+	"module": "https://cdn.jsdelivr.net/npm/@inlang/plugin-properties-file@latest/dist/index.js"
+}

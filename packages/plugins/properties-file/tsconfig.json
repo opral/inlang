@@ -1,0 +1,7 @@
+{
+	"extends": "@inlang/tsconfig/default",
+	"include": ["src/**/*"],
+	"compilerOptions": {
+		"resolveJsonModule": true
+	}
+}
