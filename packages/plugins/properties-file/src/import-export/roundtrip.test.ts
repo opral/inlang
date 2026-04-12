@@ -375,6 +375,62 @@ test("export file name uses locale and .properties extension", async () => {
 	expect(exported[0]?.name).toStrictEqual("en.properties");
 });
 
+test("it escapes control characters in exported values", async () => {
+	const imported = await runImportFiles(
+		"multiline = line1\\nline2\\nline3\ntabbed = col1\\tcol2\nbackslash = path\\\\to\\\\file"
+	);
+
+	const exported = await runExportFiles(imported);
+	const content = new TextDecoder().decode(exported[0]?.content);
+
+	// The exported content should have escaped control characters
+	expect(content).toContain("multiline = line1\\nline2\\nline3");
+	expect(content).toContain("tabbed = col1\\tcol2");
+	expect(content).toContain("backslash = path\\\\to\\\\file");
+});
+
+test("it throws on multi-variant messages", async () => {
+	// Construct a message with multiple variants (simulating a plural)
+	const bundles: Bundle[] = [{ id: "item_count", declarations: [] }];
+	const messages: Message[] = [
+		{
+			id: "item_count_en",
+			bundleId: "item_count",
+			locale: "en",
+			selectors: [],
+		},
+	];
+	const variants: Variant[] = [
+		{
+			id: "v1",
+			messageId: "item_count_en",
+			matches: [{ type: "literal-match", key: "count", value: "one" }],
+			pattern: [{ type: "text", value: "1 item" }],
+		},
+		{
+			id: "v2",
+			messageId: "item_count_en",
+			matches: [{ type: "literal-match", key: "count", value: "other" }],
+			pattern: [{ type: "text", value: "{count} items" }],
+		},
+	];
+
+	await expect(
+		exportFiles({
+			bundles,
+			messages,
+			variants,
+			settings: {
+				baseLocale: "en",
+				locales: ["en"],
+				"plugin.inlang.propertiesFile": {
+					pathPattern: "./messages/{locale}.properties",
+				},
+			} as any,
+		})
+	).rejects.toThrow(/does not support multiple variants/);
+});
+
 // convenience wrapper for less testing code
 function runImportFiles(propertiesContent: string) {
 	return importFiles({

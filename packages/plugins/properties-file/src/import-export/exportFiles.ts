@@ -27,11 +27,21 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 			(v) => v.messageId === message.id
 		);
 
-		// Properties files only support single variants (no selectors)
-		const variant = variantsOfMessage[0];
-		if (!variant) {
+		if (variantsOfMessage.length === 0) {
 			continue;
 		}
+
+		// Properties files do not support plural selectors or multi-variant messages.
+		// Throw an explicit error rather than silently dropping variants.
+		if (variantsOfMessage.length > 1) {
+			throw new Error(
+				`Message "${bundle.id}" (locale "${message.locale}") has ${variantsOfMessage.length} variants. ` +
+					`The .properties file format does not support multiple variants (plural/select). ` +
+					`Consider using a format that supports selectors, or simplify the message to a single variant.`
+			);
+		}
+
+		const variant = variantsOfMessage[0]!;
 
 		const serialized = serializePattern(variant.pattern);
 
@@ -74,13 +84,28 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	return result;
 };
 
+/**
+ * Escape a text value for safe inclusion in a .properties file.
+ *
+ * The .properties format treats backslashes, newlines, carriage returns,
+ * and tabs as control characters. These must be escaped to preserve the
+ * original value through a roundtrip.
+ */
+function escapePropertyValue(value: string): string {
+	return value
+		.replace(/\\/g, "\\\\")
+		.replace(/\n/g, "\\n")
+		.replace(/\r/g, "\\r")
+		.replace(/\t/g, "\\t");
+}
+
 function serializePattern(pattern: Variant["pattern"]): string {
 	let result = "";
 
 	for (const part of pattern) {
 		switch (part.type) {
 			case "text":
-				result += part.value;
+				result += escapePropertyValue(part.value);
 				break;
 			case "expression":
 				if (part.arg.type === "variable-reference") {
