@@ -389,6 +389,26 @@ test("it escapes control characters in exported values", async () => {
 	expect(content).toContain("backslash = path\\\\to\\\\file");
 });
 
+test("it passes ICU MessageFormat syntax through as plain text", async () => {
+	const imported = await runImportFiles(
+		"item_count = {count, plural, one {1 item} other {{count} items}}\ngreeting = {gender, select, male {Mr.} female {Ms.} other {Mx.}} {name}"
+	);
+
+	expect(imported.bundles).lengthOf(2);
+	// ICU syntax is treated as a single variant with plain text — not parsed into selectors
+	expect(imported.variants).lengthOf(2);
+
+	// Roundtrip: ICU syntax should survive export unchanged
+	const exported = await runExportFiles(imported);
+	const content = new TextDecoder().decode(exported[0]?.content);
+	expect(content).toContain(
+		"item_count = {count, plural, one {1 item} other {{count} items}}"
+	);
+	expect(content).toContain(
+		"greeting = {gender, select, male {Mr.} female {Ms.} other {Mx.}} {name}"
+	);
+});
+
 test("it throws on multi-variant messages", async () => {
 	// Construct a message with multiple variants (simulating a plural)
 	const bundles: Bundle[] = [{ id: "item_count", declarations: [] }];
