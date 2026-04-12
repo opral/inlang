@@ -1,6 +1,7 @@
 {
 	"$schema": "https://inlang.com/schema/marketplace-manifest",
 	"id": "plugin.inlang.propertiesFile",
+	"icon": "./assets/icon.svg",
 	"displayName": {
 		"en": "Properties file format"
 	},
