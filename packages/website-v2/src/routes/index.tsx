@@ -2,7 +2,6 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { createServerFn } from "@tanstack/react-start";
 import { parse } from "@opral/markdown-wc";
 import { useEffect } from "react";
-import { registry } from "@inlang/marketplace-registry";
 import { initMarkdownInteractive } from "../components/markdown-interactive";
 import { getGithubStars } from "../github-stars-cache";
 import markdownCss from "../markdown.css?url";
@@ -48,103 +47,12 @@ export const Route = createFileRoute("/")({
   component: App,
 });
 
-const featuredIds = [
-  "library.inlang.paraglideJs",
-  "app.inlang.ideExtension",
-  "app.inlang.cli",
-];
-
-const toolStats: Record<
-  string,
-  { value: string; label: string; type: "npm" | "vscode" }
-> = {
-  "library.inlang.paraglideJs": {
-    value: "90k",
-    label: "weekly downloads",
-    type: "npm",
-  },
-  "app.inlang.ideExtension": {
-    value: "60k",
-    label: "installs",
-    type: "vscode",
-  },
-  "app.inlang.cli": { value: "40k", label: "weekly downloads", type: "npm" },
-};
-
-const usedByLogos = [
-  {
-    name: "Disney",
-    href: "https://www.disney.co.jp/",
-    src: "/images/used-by/disney.svg",
-  },
-  {
-    name: "Brave",
-    href: "https://brave.com/",
-    src: "/images/used-by/brave.svg",
-  },
-  {
-    name: "Bose",
-    href: "https://www.bose.com/",
-    src: "/images/used-by/bose.svg",
-  },
-  {
-    name: "Kraft Heinz",
-    href: "https://www.kraftheinz.com/",
-    src: "/images/used-by/kraft-heinz.png",
-  },
-  {
-    name: "ETH Zurich",
-    href: "https://ethz.ch/de.html",
-    src: "/images/used-by/eth-zurich.svg",
-  },
-  {
-    name: "Minecraft",
-    href: "https://www.minecraft.net/",
-    src: "/images/used-by/minecraft.png",
-  },
-  {
-    name: "idealista",
-    href: "https://www.idealista.com/",
-    src: "/images/used-by/idealista.svg",
-  },
-  {
-    name: "Architonic",
-    href: "https://www.architonic.com/",
-    src: "/images/used-by/architonic.png",
-  },
-  {
-    name: "Michelin",
-    href: "https://www.michelin.com/",
-    src: "/images/used-by/michelin.svg",
-  },
-  {
-    name: "Finanzen100",
-    href: "https://www.finanzen100.de/",
-    src: "/images/used-by/finanzen100.jpg",
-  },
-  {
-    name: "0.email",
-    href: "https://0.email/",
-    src: "/images/used-by/zero-email.svg",
-  },
-] as const;
-
 const formatStars = (count: number) => {
   if (count >= 1000) {
     return `${(count / 1000).toFixed(1).replace(/\.0$/, "")}k`;
   }
   return count.toString();
 };
-
-function SectionHeading(props: { title: string; className?: string }) {
-  return (
-    <div className={props.className}>
-      <h2 className="text-xl font-semibold tracking-tight text-slate-900 sm:text-2xl">
-        {props.title}
-      </h2>
-    </div>
-  );
-}
 
 function App() {
   const { html } = Route.useLoaderData();
