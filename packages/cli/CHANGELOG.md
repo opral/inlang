@@ -1,5 +1,29 @@
 # @inlang/cli
 
+## 3.3.0
+
+### Minor Changes
+
+- ca8003f: Add a free, third-party translation service as the default fallback for `machine translate`.
+
+  When `INLANG_MACHINE_TRANSLATE_PROVIDER` is unset and neither `INLANG_GOOGLE_TRANSLATE_API_KEY` nor `INLANG_DEEPL_API_KEY` is set, the CLI now falls back to a free translation service at translate.demosjarco.dev instead of failing. This service is community-run and is not owned, operated, or maintained by inlang. The CLI prints a notice to that effect, noting that stability is not guaranteed and that you should provide your own API key for higher reliability and control. Select it explicitly with `INLANG_MACHINE_TRANSLATE_PROVIDER=inlang`, and optionally pin a model with `INLANG_FREE_TRANSLATE_MODEL`. If the service is unreachable, the CLI explains how to configure your own provider instead.
+
+  See the updated BYOK guide for details.
+
+- e779b1e: Add an optional `INLANG_FREE_TRANSLATE_ZDR` environment variable for the free, third-party translation service.
+
+  When set to `true`, the CLI passes a `zdr=true` query parameter to the free service so the request is processed with Zero Data Retention. This is scoped to the free service only and has no effect on the Google or DeepL providers. When unset, no ZDR parameter is sent and the service's default behavior applies.
+
+- 7d74143: Address review feedback on the free translation fallback for `machine translate`.
+
+  - Renamed the fallback's identifiers so they no longer read as inlang-owned: select it with `INLANG_MACHINE_TRANSLATE_PROVIDER=demosjarco` (was `inlang`), and pin a model or opt in to Zero Data Retention with `DEMOSJARCO_TRANSLATE_MODEL` / `DEMOSJARCO_TRANSLATE_ZDR` (was `INLANG_FREE_TRANSLATE_MODEL` / `INLANG_FREE_TRANSLATE_ZDR`). Docs and runtime messages now consistently refer to it as the community-operated service at translate.demosjarco.dev.
+  - A complete outage of the fallback service now fails `machine translate` with a non-zero exit code instead of logging success. Partial, per-bundle translation failures keep the existing warn-and-continue behavior.
+  - The fallback now also treats request timeouts, HTTP 429 throttling, and malformed responses as a service outage (previously only network errors and 5xx responses were detected), each pointing you at configuring Google or DeepL instead.
+
+### Patch Changes
+
+- d60b2a0: Use `format=html` when translating through the free hosted translation service (translate.demosjarco.dev), now that it supports it. Message patterns are serialized with placeholders wrapped in `<span class="notranslate">`, matching the same convention the Google and DeepL providers already rely on to keep placeholder markup untouched during translation.
+
 ## 3.2.0
 
 ### Minor Changes
