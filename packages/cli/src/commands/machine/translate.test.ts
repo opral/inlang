@@ -9,24 +9,61 @@ import {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 test("requires INLANG_GOOGLE_TRANSLATE_API_KEY", async () => {
   vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "google");
   vi.stubEnv("INLANG_GOOGLE_TRANSLATE_API_KEY", "");
 
-  await expect(
-    translateCommandAction({ project: {} as any })
-  ).rejects.toThrow("INLANG_GOOGLE_TRANSLATE_API_KEY must be set");
+  await expect(translateCommandAction({ project: {} as any })).rejects.toThrow(
+    "INLANG_GOOGLE_TRANSLATE_API_KEY must be set",
+  );
 });
 
 test("requires INLANG_DEEPL_API_KEY when provider is deepl", async () => {
   vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "deepl");
   vi.stubEnv("INLANG_DEEPL_API_KEY", "");
 
-  await expect(
-    translateCommandAction({ project: {} as any })
-  ).rejects.toThrow("INLANG_DEEPL_API_KEY must be set");
+  await expect(translateCommandAction({ project: {} as any })).rejects.toThrow(
+    "INLANG_DEEPL_API_KEY must be set",
+  );
+});
+
+test("fails with a non-zero-triggering error when the fallback service is completely unavailable", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "demosjarco");
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+
+  const project = await loadProjectInMemory({
+    blob: await newProject({
+      settings: {
+        baseLocale: "en",
+        locales: ["en", "de"],
+      },
+    }),
+  });
+
+  await insertBundleNested(project.db, {
+    id: "mock",
+    messages: [
+      {
+        id: "mock_en",
+        bundleId: "mock",
+        locale: "en",
+        variants: [
+          {
+            id: "mock_en",
+            messageId: "mock_en",
+            pattern: [{ type: "text", value: "Hello World" }],
+          },
+        ],
+      },
+    ],
+  });
+
+  await expect(translateCommandAction({ project })).rejects.toThrow(
+    "translate.demosjarco.dev is not available",
+  );
 });
 
 test.runIf(process.env.INLANG_GOOGLE_TRANSLATE_API_KEY)(

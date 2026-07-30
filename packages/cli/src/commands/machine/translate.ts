@@ -24,7 +24,7 @@ export const translate = new Command()
   .option("--locale <source>", "Locales for translation.")
   .option(
     "--targetLocales <targets...>",
-    "Comma separated list of target locales for translation."
+    "Comma separated list of target locales for translation.",
   )
   .option("-n, --nobar", "disable progress bar", false)
   .description("Machine translate bundles.")
@@ -53,7 +53,7 @@ export async function translateCommandAction(args: { project: InlangProject }) {
           clearOnComplete: true,
           format: `🤖 Machine translating bundles | {bar} | {percentage}% | {value}/{total} Bundles`,
         },
-        progessBar.Presets.shades_grey
+        progessBar.Presets.shades_grey,
       );
   try {
     const settings = await args.project.settings.get();
@@ -68,7 +68,7 @@ export async function translateCommandAction(args: { project: InlangProject }) {
 
     if (bundles.length === 0) {
       log.warn(
-        "No message bundles found to translate. Check your project setup with `inlang validate`"
+        "No message bundles found to translate. Check your project setup with `inlang validate`",
       );
       return;
     }
@@ -98,9 +98,13 @@ export async function translateCommandAction(args: { project: InlangProject }) {
 
     const updatedBundles = await Promise.all(promises);
 
+    let unavailableError: string | undefined;
     for (const bundle of updatedBundles) {
       if (bundle.error) {
         errors.push(bundle.error);
+        if (bundle.unavailable) {
+          unavailableError = bundle.error;
+        }
         continue;
       } else if (bundle.data) {
         await upsertBundleNested(args.project.db, bundle.data);
@@ -108,12 +112,19 @@ export async function translateCommandAction(args: { project: InlangProject }) {
     }
     bar?.stop();
 
+    // The provider itself is unavailable (not just a handful of bundles that
+    // failed to translate): fail the command instead of reporting success.
+    if (unavailableError) {
+      throw new Error(unavailableError);
+    }
+
     log.success("Machine translate complete.");
     if (errors.length > 0) {
       log.warn("Some bundles could not be translated.");
       log.warn(errors.join("\n"));
     }
   } catch (error) {
-    logError(error);
+    bar?.stop();
+    throw error;
   }
 }

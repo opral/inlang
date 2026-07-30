@@ -22,6 +22,8 @@ type MachineTranslateArgs = {
 export type MachineTranslateResult = {
   data?: NewBundleNested;
   error?: string;
+  /** Set when `error` means the translation provider itself is unavailable. */
+  unavailable?: boolean;
 };
 
 /**
@@ -96,7 +98,10 @@ export async function machineTranslateBundle(
         });
 
         if (!translation.ok) {
-          return { error: translation.error };
+          return {
+            error: translation.error,
+            unavailable: translation.unavailable,
+          };
         }
 
         const pattern = deserializePattern(translation.translatedText);
