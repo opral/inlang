@@ -34,7 +34,7 @@ const config = defineConfig(({ mode, command }) => {
           targets: [
             {
               src: "../../blog/**",
-              dest: "../client/blog",
+              dest: command === "serve" ? "blog" : "../client/blog",
             },
           ],
           watch: command === "serve" ? { reloadPageOnChange: true } : undefined,

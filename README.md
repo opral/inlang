@@ -23,13 +23,7 @@
 
 <br>
 
-<p align="center">
-  <a href="https://github.com/opral/inlang"><strong>1.9k+</strong> GitHub stars</a>
-  &nbsp;·&nbsp;
-  <a href="https://www.npmjs.com/package/@inlang/sdk"><strong>395k+</strong> weekly npm downloads</a>
-  &nbsp;·&nbsp;
-  <a href="https://github.com/opral/inlang/graphs/contributors"><strong>110+</strong> contributors</a>
-</p>
+[**1.9k+**](https://github.com/opral/inlang) [**GitHub stars**](https://github.com/opral/inlang) · [**395k+**](https://www.npmjs.com/package/@inlang/sdk) [**weekly npm downloads**](https://www.npmjs.com/package/@inlang/sdk) · [**110+**](https://github.com/opral/inlang/graphs/contributors) [**contributors**](https://github.com/opral/inlang/graphs/contributors)
 
 <p align="center">
   <sub>Used across the inlang ecosystem by teams at</sub><br/><br/>
