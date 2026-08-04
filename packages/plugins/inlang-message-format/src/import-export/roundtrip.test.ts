@@ -562,6 +562,72 @@ test("local variables with function declarations and options", async () => {
 	});
 });
 
+test("adds undeclared inputs referenced by local declarations", async () => {
+	const imported = await runImportFiles({
+		with_number: [
+			{
+				declarations: [
+					"local formatted = count: number style=unit unit=minute unitDisplay=long",
+				],
+				selectors: [],
+				match: { "*": "{formatted}" },
+			},
+		],
+	});
+
+	expect(imported.bundles[0]?.declarations).toContainEqual({
+		type: "input-variable",
+		name: "count",
+	});
+});
+
+test("infers inputs referenced by formatter options", async () => {
+	const imported = await runImportFiles({
+		relative_time: [
+			{
+				declarations: ["local formatted = duration: relativetime unit=$unit"],
+				selectors: [],
+				match: { "*": "{formatted}" },
+			},
+		],
+	});
+
+	const declarations = imported.bundles[0]?.declarations ?? [];
+	expect(declarations).toContainEqual({
+		type: "input-variable",
+		name: "duration",
+	});
+	expect(declarations).toContainEqual({
+		type: "input-variable",
+		name: "unit",
+	});
+});
+
+test("infers free inputs from local declarations without shadowing locals", async () => {
+	const imported = await runImportFiles({
+		formatted: [
+			{
+				declarations: [
+					"local base = count: number",
+					"local formatted = base: number",
+				],
+				selectors: [],
+				match: { "*": "{formatted}" },
+			},
+		],
+	});
+
+	const declarations = imported.bundles[0]?.declarations ?? [];
+	expect(declarations).toContainEqual({
+		type: "input-variable",
+		name: "count",
+	});
+	expect(declarations).not.toContainEqual({
+		type: "input-variable",
+		name: "base",
+	});
+});
+
 test("local variables support whitespace around literal formatter options", async () => {
 	const imported = await runImportFiles({
 		some_happy_cat: [

@@ -65,6 +65,7 @@ function parseBundle(
 } {
 	const parsed = parseVariants(key, locale, value);
 	const declarations = unique(parsed.declarations);
+	addInputDeclarationsForLocalReferences(declarations);
 	const selectors = unique(parsed.selectors);
 
 	const undeclaredSelectors = selectors.filter(
@@ -91,6 +92,43 @@ function parseBundle(
 		},
 		variants: parsed.variants,
 	};
+}
+
+/**
+ * Local declarations may reference inputs without repeating them as explicit
+ * `input` declarations. Keep the SDK bundle declarations complete so
+ * consumers can generate the correct message function signature.
+ */
+function addInputDeclarationsForLocalReferences(
+	declarations: Declaration[]
+): void {
+	const declaredNames = new Set(
+		declarations.map((declaration) => declaration.name)
+	);
+
+	for (const declaration of declarations) {
+		if (declaration.type !== "local-variable") {
+			continue;
+		}
+
+		const references: string[] = [];
+		if (declaration.value.arg.type === "variable-reference") {
+			references.push(declaration.value.arg.name);
+		}
+		for (const option of declaration.value.annotation?.options ?? []) {
+			if (option.value.type === "variable-reference") {
+				references.push(option.value.name);
+			}
+		}
+
+		for (const name of references) {
+			if (declaredNames.has(name)) {
+				continue;
+			}
+			declarations.push({ type: "input-variable", name });
+			declaredNames.add(name);
+		}
+	}
 }
 
 function parseVariants(
