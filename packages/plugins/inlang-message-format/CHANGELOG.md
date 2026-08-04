@@ -1,5 +1,11 @@
 # @inlang/plugin-message-format
 
+## 4.4.1
+
+### Patch Changes
+
+- 1def3b3: Infer input declarations referenced by local message-format declarations.
+
 ## 4.4.0
 
 ### Minor Changes
