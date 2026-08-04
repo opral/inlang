@@ -89,7 +89,7 @@ export default function Footer() {
             </span>
           </Link>
           <p className="pt-0.5 text-sm text-slate-600">
-            The open-format TMS for software teams.
+            The open format TMS for software products.
           </p>
           <div className="flex flex-wrap gap-6 pt-1">
             {socialMediaLinks.map((link) => (
@@ -189,7 +189,7 @@ export default function Footer() {
           rel="noreferrer"
           className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
         >
-          Copyright 2025 Opral
+          Copyright 2026 Opral
         </a>
       </div>
     </footer>
