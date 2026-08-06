@@ -391,12 +391,10 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		const files = await project.lix.db.selectFrom("file").selectAll().execute();
 
-		expect(files.length).toBe(
-			6 + 1 /* the db.sqlite file */ + 1 /* project_id */
-		);
+		expect(files.length).toBe(6 + 1 /* project_id */);
 
 		const filesByPath = files.reduce((acc, file) => {
-			acc[file.path] = new TextDecoder().decode(file.data);
+			acc[file.path] = new TextDecoder().decode(file.content);
 			return acc;
 		}, {} as any);
 
@@ -459,7 +457,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 		);
 
 		const filesByPath = files.reduce((acc, file) => {
-			acc[file.path] = new TextDecoder().decode(file.data);
+			acc[file.path] = new TextDecoder().decode(file.content);
 			return acc;
 		}, {} as any);
 
@@ -535,7 +533,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			.where("path", "=", "/file-created-on-fs.txt")
 			.executeTakeFirstOrThrow();
 
-		expect(new TextDecoder().decode(randomFileInLix.data)).toBe(
+		expect(new TextDecoder().decode(randomFileInLix.content)).toBe(
 			"value written by fs"
 		);
 	});
@@ -568,7 +566,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			.executeTakeFirstOrThrow();
 
 		const settingsAfterUpdateOnDisk = JSON.parse(
-			new TextDecoder().decode(fileInLix.data)
+			new TextDecoder().decode(fileInLix.content)
 		);
 
 		expect(settingsAfterUpdateOnDisk.baseLocale).toBe(
@@ -622,7 +620,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			.insertInto("file")
 			.values({
 				path: "/file-created-in.lix.txt",
-				data: new TextEncoder().encode("random value lix"),
+				content: new TextEncoder().encode("random value lix"),
 			})
 			.execute();
 
@@ -651,7 +649,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			.updateTable("file")
 			.where("path", "=", "/settings.json")
 			.set({
-				data: new TextEncoder().encode(
+				content: new TextEncoder().encode(
 					JSON.stringify({ ...mockSettings, baseLocale: "brand-new-locale2" })
 				),
 			})
@@ -713,7 +711,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			.updateTable("file")
 			.where("path", "=", "/settings.json")
 			.set({
-				data: new TextEncoder().encode(
+				content: new TextEncoder().encode(
 					JSON.stringify({ ...mockSettings, baseLocale: "lix-version" })
 				),
 			})
@@ -734,7 +732,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			.executeTakeFirstOrThrow();
 
 		const settingsAfterUpdateOnDiskAndLix = JSON.parse(
-			new TextDecoder().decode(fileInLixUpdated.data)
+			new TextDecoder().decode(fileInLixUpdated.content)
 		);
 
 		expect(settingsAfterUpdateOnDiskAndLix.baseLocale).toBe("fs-version");
@@ -1062,7 +1060,7 @@ test("it can import plugins via http", async () => {
 
 	expect(
 		pluginCache.some(
-			(file) => new TextDecoder().decode(file.data) === mockPluginModule
+			(file) => new TextDecoder().decode(file.content) === mockPluginModule
 		),
 		"expecting the plugin to be cached"
 	).toBe(true);

@@ -1,10 +1,7 @@
-import { toBlob, type Account, type Lix } from "@lix-js/sdk";
+import type { Lix } from "@lix-js/sdk";
+import type { Account } from "../lix/compat.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
-import {
-	contentFromDatabase,
-	type SqliteWasmDatabase,
-} from "sqlite-wasm-kysely";
 import { initDb } from "../database/initDb.js";
 import {
 	importPlugins,
@@ -15,12 +12,13 @@ import { withLanguageTagToLocaleMigration } from "../migrations/v2/withLanguageT
 import { v4 } from "uuid";
 import { importFiles } from "../import-export/importFiles.js";
 import { exportFiles } from "../import-export/exportFiles.js";
+import { projectToBlob } from "./snapshot.js";
+import { withInlangLixDb } from "../lix/withDb.js";
 
 /**
  * Common load project logic.
  */
 export async function loadProject(args: {
-	sqlite: SqliteWasmDatabase;
 	lix: Lix;
 	/**
 	 * The account that loaded the project.
@@ -54,18 +52,14 @@ export async function loadProject(args: {
 	 */
 	preprocessPluginBeforeImport?: PreprocessPluginBeforeImportFunction;
 }): Promise<InlangProject> {
-	const db = initDb({ sqlite: args.sqlite });
+	const db = initDb({ lix: args.lix });
 
 	await maybeMigrateFirstProjectId({ lix: args.lix });
 
-	const settingsFile = await args.lix.db
-		.selectFrom("file")
-		.select("data")
-		.where("path", "=", "/settings.json")
-		.executeTakeFirstOrThrow();
+	const settingsFile = await readLixFile(args.lix, "/settings.json");
 
 	const settings = withLanguageTagToLocaleMigration(
-		JSON.parse(new TextDecoder().decode(settingsFile.data)) as ProjectSettings
+		JSON.parse(new TextDecoder().decode(settingsFile)) as ProjectSettings
 	);
 
 	const importedPlugins = await importPlugins({
@@ -75,6 +69,14 @@ export async function loadProject(args: {
 	});
 
 	const plugins = [...(args.providePlugins ?? []), ...importedPlugins.plugins];
+	const projectId = new TextDecoder().decode(
+		await readLixFile(args.lix, "/project_id")
+	);
+	const inlangLix = await withInlangLixDb({
+		lix: args.lix,
+		projectId,
+		account: args.account,
+	});
 
 	// const state = createProjectState({
 	// 	...args,
@@ -85,23 +87,16 @@ export async function loadProject(args: {
 		db,
 		id: {
 			get: async () => {
-				const file = await args.lix.db
-					.selectFrom("file")
-					.where("path", "=", "/project_id")
-					.select("file.data")
-					.executeTakeFirstOrThrow();
-				return new TextDecoder().decode(file.data);
+				return new TextDecoder().decode(
+					await readLixFile(args.lix, "/project_id")
+				);
 			},
 		},
 		settings: {
 			get: async () => {
-				const file = await args.lix.db
-					.selectFrom("file")
-					.where("path", "=", "/settings.json")
-					.select("file.data")
-					.executeTakeFirstOrThrow();
+				const file = await readLixFile(args.lix, "/settings.json");
 				return withLanguageTagToLocaleMigration(
-					JSON.parse(new TextDecoder().decode(file.data))
+					JSON.parse(new TextDecoder().decode(file))
 				);
 			},
 			set: async (newSettings) => {
@@ -109,15 +104,13 @@ export async function loadProject(args: {
 				cloned.languageTags = cloned.locales;
 				cloned.sourceLanguageTag = cloned.baseLocale;
 
-				await args.lix.db
-					.updateTable("file")
-					.where("path", "=", "/settings.json")
-					.set({
-						data: new TextEncoder().encode(
-							JSON.stringify(cloned, undefined, 2)
-						),
-					})
-					.execute();
+				await args.lix.execute(
+					"UPDATE lix_file SET content = $1 WHERE path = $2",
+					[
+						new TextEncoder().encode(JSON.stringify(cloned, undefined, 2)),
+						"/settings.json",
+					]
+				);
 			},
 		},
 		plugins: {
@@ -128,14 +121,10 @@ export async function loadProject(args: {
 		},
 		// errors: state.errors,
 		importFiles: async ({ files, pluginKey }) => {
-			const settingsFile = await args.lix.db
-				.selectFrom("file")
-				.where("path", "=", "/settings.json")
-				.select("file.data")
-				.executeTakeFirstOrThrow();
+			const settingsFile = await readLixFile(args.lix, "/settings.json");
 
 			const settings = JSON.parse(
-				new TextDecoder().decode(settingsFile.data)
+				new TextDecoder().decode(settingsFile)
 			) as ProjectSettings;
 
 			return await importFiles({
@@ -148,14 +137,10 @@ export async function loadProject(args: {
 			});
 		},
 		exportFiles: async ({ pluginKey }) => {
-			const settingsFile = await args.lix.db
-				.selectFrom("file")
-				.where("path", "=", "/settings.json")
-				.select("file.data")
-				.executeTakeFirstOrThrow();
+			const settingsFile = await readLixFile(args.lix, "/settings.json");
 
 			const settings = JSON.parse(
-				new TextDecoder().decode(settingsFile.data)
+				new TextDecoder().decode(settingsFile)
 			) as ProjectSettings;
 
 			return (
@@ -169,29 +154,12 @@ export async function loadProject(args: {
 			).map((output) => ({ ...output, pluginKey }));
 		},
 		close: async () => {
-			await saveDbToLix({ sqlite: args.sqlite, lix: args.lix });
 			await db.destroy();
-			await args.lix.db.destroy();
+			await args.lix.close();
 		},
-		_sqlite: args.sqlite,
-		toBlob: async () => {
-			await saveDbToLix({ sqlite: args.sqlite, lix: args.lix });
-			return await toBlob({ lix: args.lix });
-		},
-		lix: args.lix,
+		toBlob: async () => await projectToBlob(args.lix),
+		lix: inlangLix,
 	};
-}
-
-async function saveDbToLix(args: {
-	sqlite: SqliteWasmDatabase;
-	lix: Lix;
-}): Promise<void> {
-	const data = contentFromDatabase(args.sqlite);
-	await args.lix.db
-		.updateTable("file")
-		.set("data", data)
-		.where("path", "=", "/db.sqlite")
-		.execute();
 }
 
 /**
@@ -200,19 +168,25 @@ async function saveDbToLix(args: {
  * Kept it in just in case.
  */
 async function maybeMigrateFirstProjectId(args: { lix: Lix }): Promise<void> {
-	const firstProjectIdFile = await args.lix.db
-		.selectFrom("file")
-		.select("data")
-		.where("path", "=", "/project_id")
-		.executeTakeFirst();
+	const firstProjectIdFile = await args.lix.execute(
+		"SELECT content FROM lix_file WHERE path = $1",
+		["/project_id"]
+	);
 
-	if (!firstProjectIdFile) {
-		await args.lix.db
-			.insertInto("file")
-			.values({
-				path: "/project_id",
-				data: new TextEncoder().encode(v4()),
-			})
-			.execute();
+	if (firstProjectIdFile.rows.length === 0) {
+		await args.lix.execute(
+			"INSERT INTO lix_file (path, content) VALUES ($1, $2)",
+			["/project_id", new TextEncoder().encode(v4())]
+		);
 	}
+}
+
+async function readLixFile(lix: Lix, path: string): Promise<Uint8Array> {
+	const result = await lix.execute(
+		"SELECT content FROM lix_file WHERE path = $1",
+		[path]
+	);
+	const data = result.rows[0]?.value("content").asBytes();
+	if (!data) throw new Error(`Missing project file: ${path}`);
+	return data;
 }

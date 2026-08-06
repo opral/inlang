@@ -90,10 +90,12 @@ export async function saveProjectToDirectory(args: {
 	}
 	const fsModule = getPromisesFs(args.fs);
 
-	const files = await args.project.lix.db
-		.selectFrom("file")
-		.selectAll()
-		.execute();
+	const files = (
+		await args.project.lix.execute("SELECT path, content FROM lix_file")
+	).rows.map((row) => ({
+		path: row.get("path") as string,
+		content: row.value("content").asBytes()!,
+	}));
 
 	const gitignoreContent = new TextEncoder().encode(
 		"# IF GIT SHOWED THAT THIS FILE CHANGED\n#\n# 1. RUN THE FOLLOWING COMMAND\n#\n# ---\n# git rm --cached '**/*.inlang/.gitignore'\n# ---\n#\n# 2. COMMIT THE CHANGE\n#\n# ---\n# git commit -m \"fix: remove tracked .gitignore from inlang project\"\n# ---\n#\n# Inlang handles the gitignore itself starting with version ^2.5.\n#\n# everything is ignored except settings.json\n*\n!settings.json"
@@ -129,7 +131,7 @@ export async function saveProjectToDirectory(args: {
 		}
 		const p = path.join(args.path, file.path);
 		await fsModule.mkdir(path.dirname(p), { recursive: true });
-		await fsModule.writeFile(p, new Uint8Array(file.data));
+		await fsModule.writeFile(p, new Uint8Array(file.content));
 	}
 
 	if (shouldWriteGitignore) {

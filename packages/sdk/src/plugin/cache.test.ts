@@ -1,7 +1,6 @@
 import { test, expect, vi } from "vitest";
 import { withCache } from "./cache.js";
-import { newLixFile, openLixInMemory } from "@lix-js/sdk";
-import { sql } from "kysely";
+import { openLix } from "@lix-js/sdk";
 
 test("it should be network-first", async () => {
 	const mockLoader = vi
@@ -11,23 +10,24 @@ test("it should be network-first", async () => {
 
 	const mockModulePath = "https://mock.com/module.js";
 
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 
 	const result1 = await withCache(mockLoader, lix)(mockModulePath);
 
 	expect(mockLoader).toHaveBeenCalledTimes(1);
 	expect(result1).toBe("module content 1");
 
-	const cachedPlugins = await lix.db
-		.selectFrom("file")
-		.selectAll()
-		// @ts-expect-error - kysely doesn't know about GLOB
-		.where(sql`path GLOB '/cache/plugins/*'`)
-		.execute();
+	const cachedPlugins = (
+		await lix.execute(
+			"SELECT content FROM lix_file WHERE path LIKE '/cache/plugins/%'"
+		)
+	).rows;
 
 	expect(cachedPlugins.length).toBe(1);
 
-	const parsed = new TextDecoder().decode(cachedPlugins[0]!.data);
+	const parsed = new TextDecoder().decode(
+		cachedPlugins[0]!.value("content").asBytes()
+	);
 
 	expect(parsed).toBe("module content 1");
 
@@ -36,16 +36,17 @@ test("it should be network-first", async () => {
 	expect(mockLoader).toHaveBeenCalledTimes(2);
 	expect(result2).toBe("module content 2");
 
-	const cachedPlugins2 = await lix.db
-		.selectFrom("file")
-		.selectAll()
-		// @ts-expect-error - kysely doesn't know about GLOB
-		.where(sql`path GLOB '/cache/plugins/*'`)
-		.execute();
+	const cachedPlugins2 = (
+		await lix.execute(
+			"SELECT content FROM lix_file WHERE path LIKE '/cache/plugins/%'"
+		)
+	).rows;
 
 	expect(cachedPlugins2.length).toBe(1);
 
-	const parsed2 = new TextDecoder().decode(cachedPlugins2[0]!.data);
+	const parsed2 = new TextDecoder().decode(
+		cachedPlugins2[0]!.value("content").asBytes()
+	);
 
 	expect(parsed2).toBe("module content 2");
 });
@@ -55,7 +56,7 @@ test("it should throw the error from the loader if the cache does not exist", as
 
 	const mockModulePath = "https://mock.com/module.js";
 
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 
 	await expect(
 		async () => await withCache(mockLoader, lix)(mockModulePath)
@@ -68,15 +69,12 @@ test("it should fallback to the cache if the loader fails", async () => {
 	const mockModulePath = "https://mock.com/module.js";
 	const mockModuleCachePath = "/cache/plugins/31i1etp0l413h";
 
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 
-	await lix.db
-		.insertInto("file")
-		.values({
-			path: mockModuleCachePath,
-			data: new TextEncoder().encode("cached module content"),
-		})
-		.execute();
+	await lix.execute("INSERT INTO lix_file (path, content) VALUES ($1, $2)", [
+		mockModuleCachePath,
+		new TextEncoder().encode("cached module content"),
+	]);
 
 	const result = await withCache(mockLoader, lix)(mockModulePath);
 	expect(result).toBe("cached module content");

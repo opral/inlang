@@ -2,18 +2,10 @@ import type { Kysely } from "kysely";
 import type { InlangDatabaseSchema } from "../database/schema.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
-import type { Lix } from "@lix-js/sdk";
-import type { SqliteWasmDatabase } from "sqlite-wasm-kysely";
+import type { InlangLix } from "../lix/withDb.js";
 
 export type InlangProject = {
 	db: Kysely<InlangDatabaseSchema>;
-	/**
-	 * @deprecated Don't use this. Only an internal hack to unblock
-	 * fink v2.
-	 *
-	 * TODO remove this
-	 */
-	_sqlite: SqliteWasmDatabase;
 	id: {
 		/**
 		 * Stable for packed `.inlang` files. For unpacked projects loaded from a
@@ -31,7 +23,7 @@ export type InlangProject = {
 		get: () => Promise<ProjectSettings>;
 		set: (settings: ProjectSettings) => Promise<void>;
 	};
-	lix: Lix;
+	lix: InlangLix;
 	importFiles: (args: {
 		pluginKey: InlangPlugin["key"];
 		files: ImportFile[];

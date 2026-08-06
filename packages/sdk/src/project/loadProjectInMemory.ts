@@ -1,6 +1,8 @@
-import { openLixInMemory, type NewKeyValue } from "@lix-js/sdk";
-import { createInMemoryDatabase, importDatabase } from "sqlite-wasm-kysely";
+import { openLix } from "@lix-js/sdk";
+import type { NewKeyValue } from "../lix/compat.js";
+import { registerInlangSchemas } from "../database/registerSchemas.js";
 import { loadProject } from "./loadProject.js";
+import { restoreProjectBlob } from "./snapshot.js";
 
 /**
  * Load a project from a blob in memory.
@@ -9,30 +11,22 @@ export async function loadProjectInMemory(
 	args: {
 		blob: Blob;
 		lixKeyValues?: NewKeyValue[];
-	} & Omit<Parameters<typeof loadProject>[0], "sqlite" | "lix">
+	} & Omit<Parameters<typeof loadProject>[0], "lix">
 ) {
-	const lix = await openLixInMemory({
-		blob: args.blob,
-		account: args.account,
-		keyValues: args.lixKeyValues,
-		providePlugins: [
-			// inlangLixPluginV1
-		],
-	});
-
-	const dbFile = await lix.db
-		.selectFrom("file")
-		.select("data")
-		.where("path", "=", "/db.sqlite")
-		.executeTakeFirstOrThrow();
-
-	const sqlite = await createInMemoryDatabase({});
-	importDatabase({ db: sqlite, content: new Uint8Array(dbFile.data) });
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	await restoreProjectBlob(lix, args.blob);
+	const projectId = args.lixKeyValues?.find((entry) => entry.key === "lix_id");
+	if (typeof projectId?.value === "string") {
+		await lix.execute(
+			"UPDATE lix_file SET content = $1 WHERE path = '/project_id'",
+			[new TextEncoder().encode(projectId.value)]
+		);
+	}
 
 	return await loadProject({
 		// pass common arguments to loadProject
 		...args,
-		sqlite,
 		lix,
 	});
 }

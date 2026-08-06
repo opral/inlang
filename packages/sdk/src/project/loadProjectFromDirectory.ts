@@ -1,6 +1,6 @@
 import { newProject } from "./newProject.js";
 import { loadProjectInMemory } from "./loadProjectInMemory.js";
-import { closeLix, openLixInMemory, toBlob, type Lix } from "@lix-js/sdk";
+import { openLix, type Lix } from "@lix-js/sdk";
 import fs from "node:fs";
 import nodePath from "node:path";
 import type { InlangPlugin } from "../plugin/schema.js";
@@ -14,6 +14,8 @@ import { absolutePathFromProject, withAbsolutePaths } from "./path-helpers.js";
 import { saveProjectToDirectory } from "./saveProjectToDirectory.js";
 import { ENV_VARIABLES } from "../services/env-variables/index.js";
 import { compareSemver, pickHighestVersion, readProjectMeta } from "./meta.js";
+import { registerInlangSchemas } from "../database/registerSchemas.js";
+import { projectToBlob, restoreProjectBlob } from "./snapshot.js";
 
 /**
  * Loads a project from a directory.
@@ -84,7 +86,9 @@ export async function loadProjectFromDirectory(
 		settings,
 	});
 
-	const tempLix = await openLixInMemory({ blob: newLix });
+	const tempLix = await openLix();
+	await registerInlangSchemas(tempLix);
+	await restoreProjectBlob(tempLix, newLix);
 
 	await syncLixFsFiles({
 		fs: args.fs,
@@ -104,11 +108,11 @@ export async function loadProjectFromDirectory(
 			? // reversing the id to have distinguishable lix ids from inlang ids
 				[{ key: "lix_id", value: inlangId }]
 			: undefined,
-		blob: await toBlob({ lix: tempLix }),
+		blob: await projectToBlob(tempLix),
 	});
 
 	// Closing the temp lix
-	await closeLix({ lix: tempLix });
+	await tempLix.close();
 
 	await syncLixFsFiles({
 		fs: args.fs,
@@ -234,17 +238,11 @@ async function loadLegacyMessages(args: {
 		// @ts-expect-error - type mismatch
 		nodeishFs: withAbsolutePaths(args.fs.promises, args.projectPath),
 	});
-	const upsertQueries = [];
-
 	for (const legacyMessage of loadedLegacyMessages) {
 		const messageBundle = fromMessageV1(legacyMessage);
-
-		upsertQueries.push(
-			upsertBundleNestedMatchByProperties(args.project.db, messageBundle)
-		);
+		// One in-memory Lix handle owns one transaction at a time.
+		await upsertBundleNestedMatchByProperties(args.project.db, messageBundle);
 	}
-
-	return await Promise.all(upsertQueries);
 }
 
 type FsFileState = Record<
@@ -347,11 +345,15 @@ async function syncLixFsFiles(args: {
 
 	async function checkLixState(currentLixState: FsFileState) {
 		// go through all files in lix and check there state
-		const filesInLix = await args.lix.db
-			.selectFrom("file")
-			.where("path", "not like", "%db.sqlite")
-			.selectAll()
-			.execute();
+		const filesInLix = (
+			await args.lix.execute(
+				"SELECT path, content FROM lix_file WHERE path NOT LIKE $1",
+				["%db.sqlite"]
+			)
+		).rows.map((row) => ({
+			path: row.get("path") as string,
+			content: row.value("content").asBytes()!,
+		}));
 
 		for (const fileInLix of filesInLix) {
 			if (!shouldSyncPath(fileInLix.path)) {
@@ -361,20 +363,20 @@ async function syncLixFsFiles(args: {
 			// NOTE we could start with comparing the mdate and skip file read completely...
 			if (!currentStateOfFileInLix) {
 				currentLixState[fileInLix.path] = {
-					content: new Uint8Array(fileInLix.data).buffer,
+				content: new Uint8Array(fileInLix.content).buffer,
 					state: "unknown",
 				};
 			} else {
 				if (
 					arrayBuffersEqual(
 						currentStateOfFileInLix.content,
-						fileInLix.data.buffer as ArrayBuffer
+						fileInLix.content.buffer as ArrayBuffer
 					)
 				) {
 					currentStateOfFileInLix.state = "known";
 				} else {
 					currentStateOfFileInLix.state = "updated";
-					currentStateOfFileInLix.content = fileInLix.data
+					currentStateOfFileInLix.content = fileInLix.content
 						.buffer as ArrayBuffer;
 				}
 			}
@@ -511,18 +513,16 @@ async function syncLixFsFiles(args: {
 						);
 					} else if (lixState.state === "known") {
 						// file is in known state with lix - means we have only changes on the fs - easy
-						await args.lix.db
-							.deleteFrom("file")
-							.where("path", "=", path)
-							.execute();
+						await args.lix.execute("DELETE FROM lix_file WHERE path = $1", [
+							path,
+						]);
 						// NOTE: states where both are gone will get removed in the lix state loop
 						lixState.state = "gone";
 					} else if (lixState.state === "updated") {
 						// seems like we saw an update on the file in fs while some changes on lix have not been reached fs? FS -> Winns?
-						await args.lix.db
-							.deleteFrom("file")
-							.where("path", "=", path)
-							.execute();
+						await args.lix.execute("DELETE FROM lix_file WHERE path = $1", [
+							path,
+						]);
 						// NOTE: states where both are gone will get removed in the lix state loop
 						lixState.state = "gone";
 						fsState.state = "gone";
@@ -653,16 +653,10 @@ async function upsertFileInLix(
 		posixPath = "/" + posixPath;
 	}
 
-	await args.lix.db
-		.insertInto("file") // change queue
-		.values({
-			path: posixPath,
-			data: new Uint8Array(data),
-		})
-		.onConflict((oc) =>
-			oc.column("path").doUpdateSet({ data: new Uint8Array(data) })
-		)
-		.execute();
+	await args.lix.execute(
+		"INSERT INTO lix_file (path, content) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET content = excluded.content",
+		[posixPath, new Uint8Array(data)]
+	);
 }
 /**
  * Filters legacy load and save messages plugins.

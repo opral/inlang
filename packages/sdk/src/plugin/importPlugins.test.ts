@@ -1,7 +1,7 @@
 import { test, expect, vi } from "vitest";
 import { importPlugins } from "./importPlugins.js";
 import { PluginImportError } from "./errors.js";
-import { newLixFile, openLixInMemory } from "@lix-js/sdk";
+import { openLix } from "@lix-js/sdk";
 
 test("it should preprocess a plugin", async () => {
 	global.fetch = vi.fn().mockResolvedValue({
@@ -9,7 +9,7 @@ test("it should preprocess a plugin", async () => {
 		text: vi.fn().mockResolvedValue("export default { key: 'mock' }"),
 	});
 
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 	const result = await importPlugins({
 		lix,
 		settings: {
@@ -32,7 +32,7 @@ test("if a fetch fails, a plugin import error is expected", async () => {
 		ok: false,
 		statusText: "HTTP 404",
 	});
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 
 	const result = await importPlugins({
 		lix,
@@ -50,7 +50,7 @@ test("if a fetch fails, a plugin import error is expected", async () => {
 });
 
 test("if a network error occurs during fetch, a plugin import error is expected", async () => {
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 	global.fetch = vi.fn().mockRejectedValue(new Error("Network error"));
 
 	const result = await importPlugins({
@@ -80,7 +80,7 @@ test("it should filter message lint rules for legacy reasons", async () => {
 			.mockResolvedValue("export default { id: 'messageLintRule.something' }"),
 	});
 
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 
 	const result = await importPlugins({
 		lix,
@@ -104,15 +104,12 @@ test("cache should work", async () => {
 	const mockModulePath = "https://mock.com/module.js";
 	const mockModuleCachePath = "/cache/plugins/31i1etp0l413h";
 
-	const lix = await openLixInMemory({ blob: await newLixFile() });
+	const lix = await openLix();
 
-	await lix.db
-		.insertInto("file")
-		.values({
-			path: mockModuleCachePath,
-			data: new TextEncoder().encode("export default { key: 'mock' }"),
-		})
-		.execute();
+	await lix.execute("INSERT INTO lix_file (path, content) VALUES ($1, $2)", [
+		mockModuleCachePath,
+		new TextEncoder().encode("export default { key: 'mock' }"),
+	]);
 
 	const result = await importPlugins({
 		lix,

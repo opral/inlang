@@ -1,10 +1,8 @@
-import { newLixFile, openLixInMemory, toBlob } from "@lix-js/sdk";
+import { openLix } from "@lix-js/sdk";
 import type { ProjectSettings } from "../json-schema/settings.js";
-import {
-	contentFromDatabase,
-	createInMemoryDatabase,
-} from "sqlite-wasm-kysely";
-import { initDb } from "../database/initDb.js";
+import { registerInlangSchemas } from "../database/registerSchemas.js";
+import { projectToBlob } from "./snapshot.js";
+import { v4 } from "uuid";
 
 /**
  * Creates a new inlang project.
@@ -15,56 +13,37 @@ import { initDb } from "../database/initDb.js";
 export async function newProject(args?: {
 	settings?: ProjectSettings;
 }): Promise<Blob> {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	initDb({ sqlite });
-
+	const lix = await openLix();
 	try {
-		const inlangDbContent = contentFromDatabase(sqlite);
-
-		const lix = await openLixInMemory({ blob: await newLixFile() });
-
-		const { value: lixId } = await lix.db
-			.selectFrom("key_value")
-			.select("value")
-			.where("key", "=", "lix_id")
-			.executeTakeFirstOrThrow();
-
-		// write files to lix
-		await lix.db
-			.insertInto("file")
-			.values([
-				{
-					path: "/db.sqlite",
-					data: inlangDbContent,
-				},
-				{
-					path: "/settings.json",
-					data: new TextEncoder().encode(
+		await registerInlangSchemas(lix);
+		const projectId = v4();
+		await lix.executeBatch([
+			{
+				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
+				params: [
+					"/settings.json",
+					new TextEncoder().encode(
 						JSON.stringify(
 							args?.settings ?? defaultProjectSettings,
 							undefined,
 							2
 						)
 					),
-				},
-				{
-					path: "/project_id",
-					data: new TextEncoder().encode(lixId),
-				},
-			])
-			.execute();
-		const blob = toBlob({ lix });
-		lix.sqlite.close();
-		return blob;
+				],
+			},
+			{
+				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
+				params: ["/project_id", new TextEncoder().encode(projectId)],
+			},
+		]);
+		return await projectToBlob(lix);
 	} catch (e) {
 		const error = new Error(`Failed to create new inlang project: ${e}`, {
 			cause: e,
 		});
 		throw error;
 	} finally {
-		sqlite.close();
+		await lix.close();
 	}
 }
 

@@ -53,27 +53,22 @@ export async function importFiles(args: {
 					.executeTakeFirst();
 				message.id = exisingMessage?.id;
 			}
-			try {
+			const referencedBundle = await trx
+				.selectFrom("bundle")
+				.select("id")
+				.where("id", "=", message.bundleId)
+				.executeTakeFirst();
+			if (!referencedBundle) {
 				await trx
-					.insertInto("message")
-					.values(message)
-					.onConflict((oc) => oc.column("id").doUpdateSet(message))
+					.insertInto("bundle")
+					.values({ id: message.bundleId })
 					.execute();
-			} catch (e) {
-				// 787 = SQLITE_CONSTRAINT_FOREIGNKEY
-				// handle foreign key violation
-				// e.g. a message references a bundle that doesn't exist
-				// by creating the bundle
-				if ((e as any)?.resultCode === 787) {
-					await trx
-						.insertInto("bundle")
-						.values({ id: message.bundleId })
-						.execute();
-					await trx.insertInto("message").values(message).execute();
-				} else {
-					throw e;
-				}
 			}
+			await trx
+				.insertInto("message")
+				.values(message)
+				.onConflict((oc) => oc.column("id").doUpdateSet(message))
+				.execute();
 		}
 		// upsert every variant
 		for (const variant of imported.variants) {

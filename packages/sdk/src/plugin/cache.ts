@@ -21,14 +21,14 @@ async function readModuleFromCache(
 	const moduleHash = escape(moduleURI);
 	const filePath = `/cache/plugins/${moduleHash}`;
 
-	const file = await lix.db
-		.selectFrom("file")
-		.where("path", "=", filePath)
-		.selectAll()
-		.executeTakeFirst();
+	const result = await lix.execute(
+		"SELECT content FROM lix_file WHERE path = $1",
+		[filePath]
+	);
+	const file = result.rows[0];
 
 	if (file) {
-		return new TextDecoder().decode(file.data);
+		return new TextDecoder().decode(file.value("content").asBytes());
 	}
 	return undefined;
 }
@@ -41,17 +41,10 @@ async function writeModuleToCache(
 	const moduleHash = escape(moduleURI);
 	const filePath = `/cache/plugins/${moduleHash}`;
 
-	await lix.db
-		.insertInto("file")
-		.values({
-			path: filePath,
-			data: new TextEncoder().encode(moduleContent),
-		})
-		// update the cache
-		.onConflict((oc) =>
-			oc.doUpdateSet({ data: new TextEncoder().encode(moduleContent) })
-		)
-		.execute();
+	await lix.execute(
+		"INSERT INTO lix_file (path, content) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET content = excluded.content",
+		[filePath, new TextEncoder().encode(moduleContent)]
+	);
 }
 
 /**
