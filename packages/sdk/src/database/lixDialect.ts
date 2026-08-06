@@ -9,7 +9,12 @@ import {
 	type Kysely,
 	type QueryResult,
 } from "kysely";
-import type { Lix, LixTransaction, SqlParam } from "@lix-js/sdk";
+import type {
+	Lix,
+	LixBatchStatement,
+	LixTransaction,
+	SqlParam,
+} from "@lix-js/sdk";
 
 /** Kysely bridge for Lix's DataFusion SQL interface. */
 export class LixDialect implements Dialect {
@@ -110,7 +115,6 @@ class LixConnection implements DatabaseConnection {
 		const parameters = prepared.parameterPositions.map(
 			(position) => compiledQuery.parameters[position - 1]
 		);
-
 		const result = await executor.execute(
 			prepared.sql,
 			parameters as SqlParam[]
@@ -131,10 +135,26 @@ type PreparedLixQuery = {
 	parameterPositions: number[];
 };
 
-function prepareLixQuery(compiledSql: string): PreparedLixQuery {
+/** Convert Kysely's compiled query to the one Lix SQL/parameter contract. */
+export function compileLixQuery(
+	compiledQuery: CompiledQuery
+): LixBatchStatement {
+	const prepared = prepareLixQuery(compiledQuery.sql);
+	const parameters = prepared.parameterPositions.map(
+		(position) => compiledQuery.parameters[position - 1]
+	);
+	return {
+		sql: prepared.sql,
+		params: parameters as SqlParam[],
+	};
+}
+
+function prepareLixQuery(compiledSql: string): {
+	sql: string;
+	parameterPositions: number[];
+} {
 	const sql = omitPrimaryKeyAssignments(
-		compiledSql
-		.replaceAll('"file"', '"lix_file"')
+		compiledSql.replaceAll('"file"', '"lix_file"')
 	);
 	const compacted = compactSqlParameters(sql);
 	return {
@@ -173,8 +193,7 @@ function omitPrimaryKeyAssignments(sql: string): string {
 
 function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(
-		Object.entries(row)
-			.filter(([column]) => !column.startsWith("lixcol_"))
+		Object.entries(row).filter(([column]) => !column.startsWith("lixcol_"))
 	);
 }
 

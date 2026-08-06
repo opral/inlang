@@ -18,6 +18,7 @@ export * from "./query-utilities/index.js";
 export * from "./plugin/errors.js";
 export { humanId } from "./human-id/human-id.js";
 export type { InlangDatabaseSchema } from "./database/schema.js";
+export { executeLixBatch } from "./database/lixBatch.js";
 export type { ImportFile, ExportFile } from "./project/api.js";
 export type {
 	InlangPlugin,
