@@ -23,6 +23,7 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	files,
 }) => {
 	const bundles: Bundle[] = [];
+	const bundlesById = new Map<string, Bundle>();
 	const messages: MessageImport[] = [];
 	const variants: VariantImport[] = [];
 
@@ -38,9 +39,10 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 			messages.push(result.message);
 			variants.push(...result.variants);
 
-			const existingBundle = bundles.find((b) => b.id === result.bundle.id);
+			const existingBundle = bundlesById.get(result.bundle.id);
 			if (existingBundle === undefined) {
 				bundles.push(result.bundle);
+				bundlesById.set(result.bundle.id, result.bundle);
 			} else {
 				// merge declarations without duplicates
 				existingBundle.declarations = unique([
@@ -291,7 +293,10 @@ function parsePattern(value: string): {
 	};
 }
 
-function findPlaceholderClosingIndex(value: string, openingIndex: number): number {
+function findPlaceholderClosingIndex(
+	value: string,
+	openingIndex: number
+): number {
 	let inQuotedLiteral = false;
 
 	for (let cursor = openingIndex + 1; cursor < value.length; cursor += 1) {
@@ -478,14 +483,14 @@ function parseMarkupValue(
 		let cursor = index + 1;
 		let literal = "";
 		while (cursor < value.length) {
-				const char = value[cursor]!;
-				if (char === "\\") {
-					const next = value[cursor + 1];
-					if (next === "|" || next === "\\" || next === "}") {
-						literal += next;
-						cursor += 2;
-						continue;
-					}
+			const char = value[cursor]!;
+			if (char === "\\") {
+				const next = value[cursor + 1];
+				if (next === "|" || next === "\\" || next === "}") {
+					literal += next;
+					cursor += 2;
+					continue;
+				}
 				literal += char;
 				cursor += 1;
 				continue;
