@@ -9,6 +9,17 @@ import type { InlangPlugin, VariantImport } from "../plugin/schema.js";
 import type { ImportFile } from "../project/api.js";
 import { v7 } from "uuid";
 
+const messageReferenceKey = (bundleId: string, locale: string) =>
+	JSON.stringify([bundleId, locale]);
+
+const variantReferenceKey = (
+	bundleId: string,
+	locale: string,
+	matches: unknown
+) => JSON.stringify([bundleId, locale, matches]);
+
+const INSERT_BATCH_SIZE = 500;
+
 export async function importFiles(args: {
 	files: ImportFile[];
 	readonly pluginKey: string;
@@ -50,17 +61,39 @@ export async function importFiles(args: {
 		const messageKeys = new Set<string>();
 		let messagesHaveUniqueKeys = true;
 		for (const message of imported.messages) {
-			const key = `${message.bundleId}\u0000${message.locale}`;
+			const key = messageReferenceKey(message.bundleId, message.locale);
 			if (messageKeys.has(key)) {
 				messagesHaveUniqueKeys = false;
 				break;
 			}
 			messageKeys.add(key);
 		}
+		const variantKeys = new Set<string>();
+		let variantsHaveUniqueKeys = true;
+		for (const variant of imported.variants) {
+			if (
+				variant.messageBundleId === undefined ||
+				variant.messageLocale === undefined
+			) {
+				variantsHaveUniqueKeys = false;
+				break;
+			}
+			const key = variantReferenceKey(
+				variant.messageBundleId,
+				variant.messageLocale,
+				variant.matches
+			);
+			if (variantKeys.has(key)) {
+				variantsHaveUniqueKeys = false;
+				break;
+			}
+			variantKeys.add(key);
+		}
 		const canBatchImportFreshProject =
 			hasExistingBundles === undefined &&
 			bundlesHaveUniqueIds &&
 			messagesHaveUniqueKeys &&
+			variantsHaveUniqueKeys &&
 			imported.messages.every((message) => message.id === undefined) &&
 			imported.variants.every(
 				(variant) =>
@@ -72,36 +105,50 @@ export async function importFiles(args: {
 			imported.messages.every((message) => bundleIds.has(message.bundleId)) &&
 			imported.variants.every((variant) =>
 				messageKeys.has(
-					`${variant.messageBundleId}\u0000${variant.messageLocale}`
+					messageReferenceKey(variant.messageBundleId!, variant.messageLocale!)
 				)
 			);
 
 		if (canBatchImportFreshProject) {
-			if (imported.bundles.length > 0) {
-				await trx.insertInto("bundle").values(imported.bundles).execute();
+			for (
+				let offset = 0;
+				offset < imported.bundles.length;
+				offset += INSERT_BATCH_SIZE
+			) {
+				await trx
+					.insertInto("bundle")
+					.values(imported.bundles.slice(offset, offset + INSERT_BATCH_SIZE))
+					.execute();
 			}
 
 			const messagesWithIds = imported.messages.map((message) => ({
 				...message,
 				id: v7(),
 			}));
-			for (let offset = 0; offset < messagesWithIds.length; offset += 500) {
+			for (
+				let offset = 0;
+				offset < messagesWithIds.length;
+				offset += INSERT_BATCH_SIZE
+			) {
 				await trx
 					.insertInto("message")
-					.values(messagesWithIds.slice(offset, offset + 500))
+					.values(messagesWithIds.slice(offset, offset + INSERT_BATCH_SIZE))
 					.execute();
 			}
 
 			const messageIds = new Map(
 				messagesWithIds.map((message) => [
-					`${message.bundleId}\u0000${message.locale}`,
+					messageReferenceKey(message.bundleId, message.locale),
 					message.id,
 				])
 			);
 			const variantsWithMessageIds: NewVariant[] = imported.variants.map(
 				(variant) => {
 					const messageId = messageIds.get(
-						`${variant.messageBundleId}\u0000${variant.messageLocale}`
+						messageReferenceKey(
+							variant.messageBundleId!,
+							variant.messageLocale!
+						)
 					);
 					if (messageId === undefined) {
 						throw new Error("Imported variant does not reference a message");
@@ -113,10 +160,16 @@ export async function importFiles(args: {
 					};
 				}
 			);
-			for (let offset = 0; offset < variantsWithMessageIds.length; offset += 500) {
+			for (
+				let offset = 0;
+				offset < variantsWithMessageIds.length;
+				offset += INSERT_BATCH_SIZE
+			) {
 				await trx
 					.insertInto("variant")
-					.values(variantsWithMessageIds.slice(offset, offset + 500))
+					.values(
+						variantsWithMessageIds.slice(offset, offset + INSERT_BATCH_SIZE)
+					)
 					.execute();
 			}
 			return;
