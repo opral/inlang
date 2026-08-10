@@ -29,11 +29,13 @@ function makeFiles(locales: number, keys: number) {
 	return files;
 }
 
-for (const [locales, keys] of [
+const benchmarks: [number, number][] = [
 	[30, 5000],
 	[10, 1000],
 	[1, 200],
-]) {
+];
+
+for (const [locales, keys] of benchmarks) {
 	const files = makeFiles(locales, keys);
 	describe(`importFiles (${locales} locales × ${keys} keys)`, () => {
 		bench(
