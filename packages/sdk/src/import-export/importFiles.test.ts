@@ -4,6 +4,42 @@ import { loadProjectInMemory } from "../project/loadProjectInMemory.js";
 import { newProject } from "../project/newProject.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 
+test("batch imports an unambiguous fresh project", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "mock-bundle" }],
+			messages: [
+				{ bundleId: "mock-bundle", locale: "en" },
+				{ bundleId: "mock-bundle", locale: "de" },
+			],
+			variants: [
+				{ messageBundleId: "mock-bundle", messageLocale: "en" },
+				{ messageBundleId: "mock-bundle", messageLocale: "de" },
+			],
+		}),
+	};
+
+	await importFiles({
+		db: project.db,
+		files: [{ content: new Uint8Array(), locale: "mock" }],
+		pluginKey: "mock",
+		plugins: [mockPlugin],
+		settings: {} as any,
+	});
+
+	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const variants = await project.db.selectFrom("variant").selectAll().execute();
+
+	expect(messages).toHaveLength(2);
+	expect(variants).toHaveLength(2);
+	expect(new Set(variants.map((variant) => variant.messageId))).toEqual(
+		new Set(messages.map((message) => message.id))
+	);
+});
+
 test("it should insert a message as is if the id is provided", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 

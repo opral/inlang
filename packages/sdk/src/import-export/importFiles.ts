@@ -7,6 +7,7 @@ import type { ProjectSettings } from "../json-schema/settings.js";
 import type { InlangDatabaseSchema, NewVariant } from "../database/schema.js";
 import type { InlangPlugin, VariantImport } from "../plugin/schema.js";
 import type { ImportFile } from "../project/api.js";
+import { v7 } from "uuid";
 
 export async function importFiles(args: {
 	files: ImportFile[];
@@ -32,6 +33,95 @@ export async function importFiles(args: {
 	});
 
 	await args.db.transaction().execute(async (trx) => {
+		const hasExistingBundles = await trx
+			.selectFrom("bundle")
+			.select("id")
+			.limit(1)
+			.executeTakeFirst();
+		const bundleIds = new Set<string>();
+		let bundlesHaveUniqueIds = true;
+		for (const bundle of imported.bundles) {
+			if (bundle.id === undefined || bundleIds.has(bundle.id)) {
+				bundlesHaveUniqueIds = false;
+				break;
+			}
+			bundleIds.add(bundle.id);
+		}
+		const messageKeys = new Set<string>();
+		let messagesHaveUniqueKeys = true;
+		for (const message of imported.messages) {
+			const key = `${message.bundleId}\u0000${message.locale}`;
+			if (messageKeys.has(key)) {
+				messagesHaveUniqueKeys = false;
+				break;
+			}
+			messageKeys.add(key);
+		}
+		const canBatchImportFreshProject =
+			hasExistingBundles === undefined &&
+			bundlesHaveUniqueIds &&
+			messagesHaveUniqueKeys &&
+			imported.messages.every((message) => message.id === undefined) &&
+			imported.variants.every(
+				(variant) =>
+					variant.id === undefined &&
+					variant.messageId === undefined &&
+					variant.messageBundleId !== undefined &&
+					variant.messageLocale !== undefined
+			) &&
+			imported.messages.every((message) => bundleIds.has(message.bundleId)) &&
+			imported.variants.every((variant) =>
+				messageKeys.has(
+					`${variant.messageBundleId}\u0000${variant.messageLocale}`
+				)
+			);
+
+		if (canBatchImportFreshProject) {
+			if (imported.bundles.length > 0) {
+				await trx.insertInto("bundle").values(imported.bundles).execute();
+			}
+
+			const messagesWithIds = imported.messages.map((message) => ({
+				...message,
+				id: v7(),
+			}));
+			for (let offset = 0; offset < messagesWithIds.length; offset += 500) {
+				await trx
+					.insertInto("message")
+					.values(messagesWithIds.slice(offset, offset + 500))
+					.execute();
+			}
+
+			const messageIds = new Map(
+				messagesWithIds.map((message) => [
+					`${message.bundleId}\u0000${message.locale}`,
+					message.id,
+				])
+			);
+			const variantsWithMessageIds: NewVariant[] = imported.variants.map(
+				(variant) => {
+					const messageId = messageIds.get(
+						`${variant.messageBundleId}\u0000${variant.messageLocale}`
+					);
+					if (messageId === undefined) {
+						throw new Error("Imported variant does not reference a message");
+					}
+					return {
+						messageId,
+						matches: variant.matches,
+						pattern: variant.pattern,
+					};
+				}
+			);
+			for (let offset = 0; offset < variantsWithMessageIds.length; offset += 500) {
+				await trx
+					.insertInto("variant")
+					.values(variantsWithMessageIds.slice(offset, offset + 500))
+					.execute();
+			}
+			return;
+		}
+
 		// upsert every bundle
 		for (const bundle of imported.bundles) {
 			await trx
