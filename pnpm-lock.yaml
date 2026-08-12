@@ -493,6 +493,59 @@ importers:
         specifier: ^4.8.0
         version: 4.10.0(webpack@5.99.9)
 
+  packages/plugins/android:
+    dependencies:
+      '@inlang/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@sinclair/typebox':
+        specifier: ^0.31.17
+        version: 0.31.28
+      fast-xml-parser:
+        specifier: ^4.5.3
+        version: 4.5.3
+    devDependencies:
+      '@inlang/tsconfig':
+        specifier: workspace:*
+        version: link:../../tsconfig
+      esbuild:
+        specifier: ^0.25.9
+        version: 0.25.12
+      prettier:
+        specifier: 3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.5.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.6
+        version: 4.0.16(@types/node@24.10.2)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(lightningcss@1.30.2)(msw@2.10.2(@types/node@24.10.2)(typescript@5.9.3))(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+
+  packages/plugins/apple-strings:
+    dependencies:
+      '@inlang/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
+      '@sinclair/typebox':
+        specifier: ^0.31.17
+        version: 0.31.28
+    devDependencies:
+      '@inlang/tsconfig':
+        specifier: workspace:*
+        version: link:../../tsconfig
+      esbuild:
+        specifier: ^0.25.9
+        version: 0.25.12
+      prettier:
+        specifier: 3.3.3
+        version: 3.3.3
+      typescript:
+        specifier: ^5.5.2
+        version: 5.9.3
+      vitest:
+        specifier: ^4.0.6
+        version: 4.0.16(@types/node@24.10.2)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(lightningcss@1.30.2)(msw@2.10.2(@types/node@24.10.2)(typescript@5.9.3))(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+
   packages/plugins/i18next:
     dependencies:
       '@inlang/sdk':
@@ -16381,6 +16434,15 @@ snapshots:
       msw: 2.10.2(@types/node@24.10.2)(typescript@5.7.3)
       vite: 7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
 
+  '@vitest/mocker@4.0.16(msw@2.10.2(@types/node@24.10.2)(typescript@5.9.3))(vite@7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))':
+    dependencies:
+      '@vitest/spy': 4.0.16
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      msw: 2.10.2(@types/node@24.10.2)(typescript@5.9.3)
+      vite: 7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+
   '@vitest/mocker@4.0.6(msw@2.10.2(@types/node@22.15.33)(typescript@5.7.3))(vite@7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))':
     dependencies:
       '@vitest/spy': 4.0.6
@@ -18918,7 +18980,6 @@ snapshots:
   fast-xml-parser@4.5.3:
     dependencies:
       strnum: 1.1.2
-    optional: true
 
   fastest-levenshtein@1.0.16: {}
 
@@ -22841,8 +22902,7 @@ snapshots:
     dependencies:
       js-tokens: 9.0.1
 
-  strnum@1.1.2:
-    optional: true
+  strnum@1.1.2: {}
 
   strong-log-transformer@2.1.0:
     dependencies:
@@ -23241,8 +23301,7 @@ snapshots:
 
   typescript@5.7.3: {}
 
-  typescript@5.9.3:
-    optional: true
+  typescript@5.9.3: {}
 
   ufo@1.6.1: {}
 
@@ -24117,6 +24176,45 @@ snapshots:
     dependencies:
       '@vitest/expect': 4.0.16
       '@vitest/mocker': 4.0.16(msw@2.10.2(@types/node@24.10.2)(typescript@5.7.3))(vite@7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))
+      '@vitest/pretty-format': 4.0.16
+      '@vitest/runner': 4.0.16
+      '@vitest/snapshot': 4.0.16
+      '@vitest/spy': 4.0.16
+      '@vitest/utils': 4.0.16
+      es-module-lexer: 1.7.0
+      expect-type: 1.2.2
+      magic-string: 0.30.21
+      obug: 2.1.1
+      pathe: 2.0.3
+      picomatch: 4.0.3
+      std-env: 3.10.0
+      tinybench: 2.9.0
+      tinyexec: 1.0.2
+      tinyglobby: 0.2.15
+      tinyrainbow: 3.0.3
+      vite: 7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/node': 24.10.2
+      happy-dom: 18.0.1
+      jsdom: 27.3.0(postcss@8.5.6)
+    transitivePeerDependencies:
+      - jiti
+      - less
+      - lightningcss
+      - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - terser
+      - tsx
+      - yaml
+
+  vitest@4.0.16(@types/node@24.10.2)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(lightningcss@1.30.2)(msw@2.10.2(@types/node@24.10.2)(typescript@5.9.3))(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1):
+    dependencies:
+      '@vitest/expect': 4.0.16
+      '@vitest/mocker': 4.0.16(msw@2.10.2(@types/node@24.10.2)(typescript@5.9.3))(vite@7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))
       '@vitest/pretty-format': 4.0.16
       '@vitest/runner': 4.0.16
       '@vitest/snapshot': 4.0.16
