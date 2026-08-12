@@ -11,7 +11,6 @@ import { withLanguageTagToLocaleMigration } from "../migrations/v2/withLanguageT
 import { importFiles } from "../import-export/importFiles.js";
 import { exportFiles } from "../import-export/exportFiles.js";
 import { projectToBlob } from "./snapshot.js";
-import { withInlangLixDb } from "../lix/withDb.js";
 
 /**
  * Common load project logic.
@@ -57,7 +56,6 @@ export async function loadProject(args: {
 	});
 
 	const plugins = [...(args.providePlugins ?? []), ...importedPlugins.plugins];
-	const inlangLix = withInlangLixDb({ lix: args.lix });
 
 	// const state = createProjectState({
 	// 	...args,
@@ -137,7 +135,7 @@ export async function loadProject(args: {
 			}
 		},
 		toBlob: async () => await projectToBlob(args.lix),
-		lix: inlangLix,
+		lix: args.lix,
 	};
 }
 

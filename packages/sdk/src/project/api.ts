@@ -2,7 +2,7 @@ import type { Kysely } from "kysely";
 import type { InlangDatabaseSchema } from "../database/schema.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
-import type { InlangLix } from "../lix/withDb.js";
+import type { Lix } from "@lix-js/sdk";
 
 export type InlangProject = {
 	db: Kysely<InlangDatabaseSchema>;
@@ -23,7 +23,8 @@ export type InlangProject = {
 		get: () => Promise<ProjectSettings>;
 		set: (settings: ProjectSettings) => Promise<void>;
 	};
-	lix: InlangLix;
+	/** The exact Lix instance supplied by the caller or opened by Inlang. */
+	lix: Lix;
 	importFiles: (args: {
 		pluginKey: InlangPlugin["key"];
 		files: ImportFile[];

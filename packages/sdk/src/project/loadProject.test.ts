@@ -113,11 +113,11 @@ test("uses the active account owned by Lix", async () => {
 		blob: await newProject(),
 	});
 	const activeAccountId = await project.lix.activeAccountId();
-	const activeAccount = await project.lix.db
-		.selectFrom("account")
-		.selectAll()
-		.where("id", "=", activeAccountId)
-		.executeTakeFirstOrThrow();
+	const result = await project.lix.execute(
+		"SELECT id, kind, status FROM lix_account WHERE id = $1",
+		[activeAccountId]
+	);
+	const activeAccount = result.rows[0]?.toObject();
 
 	expect(activeAccount).toMatchObject({
 		id: activeAccountId,
@@ -136,19 +136,19 @@ test("uses the active account owned by Lix", async () => {
 // 		errorsFromSub = value;
 // 	});
 
-// 	await project.lix.db
-// 		.updateTable("file")
-// 		.where("path", "=", "/settings.json")
-// 		.set({
-// 			data: new TextEncoder().encode(
+// 	await project.lix.execute(
+// 		"UPDATE lix_file SET content = $1 WHERE path = $2",
+// 		[
+// 			new TextEncoder().encode(
 // 				JSON.stringify({
 // 					baseLocale: "en",
 // 					locales: ["en"],
 // 					modules: ["invalid-module.js"],
 // 				})
 // 			),
-// 		})
-// 		.execute();
+// 			"/settings.json",
+// 		]
+// 	);
 
 // 	const errors = await project.errors.get();
 

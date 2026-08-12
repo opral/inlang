@@ -19,6 +19,37 @@ import type {
 import { saveProjectToDirectory } from "./saveProjectToDirectory.js";
 import { insertBundleNested } from "../query-utilities/insertBundleNested.js";
 import { ENV_VARIABLES } from "../services/env-variables/index.js";
+import type { Lix } from "@lix-js/sdk";
+
+async function selectLixFiles(
+	lix: Lix,
+	where = "",
+	params: NonNullable<Parameters<Lix["execute"]>[1]> = []
+) {
+	const result = await lix.execute(
+		`SELECT path, content FROM lix_file ${where}`,
+		params
+	);
+	return result.rows.map((row) => ({
+		path: row.get("path") as string,
+		content: row.value("content").asBytes() ?? new Uint8Array(),
+	}));
+}
+
+async function selectLixId(lix: Lix) {
+	const result = await lix.execute(
+		"SELECT value FROM lix_key_value WHERE key = 'lix_id'"
+	);
+	return result.rows[0]?.value("value").toJS();
+}
+
+async function selectLixFile(lix: Lix, path: string) {
+	const files = await selectLixFiles(lix, "WHERE path = $1", [path]);
+	if (!files[0]) {
+		throw new Error(`Missing Lix file: ${path}`);
+	}
+	return files[0];
+}
 
 test("plugin.loadMessages and plugin.saveMessages must not be configured together with import export", async () => {
 	const mockLegacyPlugin: InlangPlugin = {
@@ -389,7 +420,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			syncInterval: syncInterval,
 		});
 
-		const files = await project.lix.db.selectFrom("file").selectAll().execute();
+		const files = await selectLixFiles(project.lix);
 
 		expect(files.length).toBe(6);
 
@@ -450,7 +481,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			path: "\\project.inlang",
 		});
 
-		const files = await project.lix.db.selectFrom("file").selectAll().execute();
+		const files = await selectLixFiles(project.lix);
 
 		expect(files.length).toBe(6 + 1 /* the db.sqlite file */);
 
@@ -525,11 +556,10 @@ describe("it should keep files between the inlang directory and lix in sync", as
 		// lets wait a seconds to allow the sync process catch up
 		await new Promise((resolve) => setTimeout(resolve, syncInterval + 10));
 
-		const randomFileInLix = await project.lix.db
-			.selectFrom("file")
-			.selectAll()
-			.where("path", "=", "/file-created-on-fs.txt")
-			.executeTakeFirstOrThrow();
+		const randomFileInLix = await selectLixFile(
+			project.lix,
+			"/file-created-on-fs.txt"
+		);
 
 		expect(new TextDecoder().decode(randomFileInLix.content)).toBe(
 			"value written by fs"
@@ -557,11 +587,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		// console.log("wrting fs settings");
 		await new Promise((resolve) => setTimeout(resolve, syncInterval + 10));
-		const fileInLix = await project.lix.db
-			.selectFrom("file")
-			.selectAll()
-			.where("path", "=", "/settings.json")
-			.executeTakeFirstOrThrow();
+		const fileInLix = await selectLixFile(project.lix, "/settings.json");
 
 		const settingsAfterUpdateOnDisk = JSON.parse(
 			new TextDecoder().decode(fileInLix.content)
@@ -582,11 +608,11 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			syncInterval: syncInterval,
 		});
 
-		const filesInLixBefore = await project.lix.db
-			.selectFrom("file")
-			.selectAll()
-			.where("path", "=", "/README.md")
-			.execute();
+		const filesInLixBefore = await selectLixFiles(
+			project.lix,
+			"WHERE path = $1",
+			["/README.md"]
+		);
 
 		expect(filesInLixBefore.length).toBe(1);
 
@@ -595,11 +621,11 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		// console.log("wrting fs settings");
 		await new Promise((resolve) => setTimeout(resolve, syncInterval + 10));
-		const fileInLixAfter = await project.lix.db
-			.selectFrom("file")
-			.selectAll()
-			.where("path", "=", "/README.md")
-			.execute();
+		const fileInLixAfter = await selectLixFiles(
+			project.lix,
+			"WHERE path = $1",
+			["/README.md"]
+		);
 
 		expect(fileInLixAfter.length).toBe(0);
 	});
@@ -614,13 +640,10 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			syncInterval: syncInterval,
 		});
 
-		await project.lix.db
-			.insertInto("file")
-			.values({
-				path: "/file-created-in.lix.txt",
-				content: new TextEncoder().encode("random value lix"),
-			})
-			.execute();
+		await project.lix.execute(
+			"INSERT INTO lix_file (path, content) VALUES ($1, $2)",
+			["/file-created-in.lix.txt", new TextEncoder().encode("random value lix")]
+		);
 
 		// lets wait a seconds to allow the sync process catch up
 		await new Promise((resolve) => setTimeout(resolve, syncInterval + 10));
@@ -643,15 +666,15 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		// console.log("wrting lix settings");
 		// changes to a file in lix should reflect in the project directory
-		await project.lix.db
-			.updateTable("file")
-			.where("path", "=", "/settings.json")
-			.set({
-				content: new TextEncoder().encode(
+		await project.lix.execute(
+			"UPDATE lix_file SET content = $1 WHERE path = $2",
+			[
+				new TextEncoder().encode(
 					JSON.stringify({ ...mockSettings, baseLocale: "brand-new-locale2" })
 				),
-			})
-			.execute();
+				"/settings.json",
+			]
+		);
 
 		// lets wait a seconds to allow the sync process catch up
 		await new Promise((resolve) => setTimeout(resolve, syncInterval + 10));
@@ -674,10 +697,9 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		// console.log("wrting lix settings");
 		// changes to a file in lix should reflect in the project directory
-		await project.lix.db
-			.deleteFrom("file")
-			.where("path", "=", "/.gitignore")
-			.execute();
+		await project.lix.execute("DELETE FROM lix_file WHERE path = $1", [
+			"/.gitignore",
+		]);
 
 		// lets wait a seconds to allow the sync process catch up
 		await new Promise((resolve) => setTimeout(resolve, syncInterval + 10));
@@ -705,15 +727,15 @@ describe("it should keep files between the inlang directory and lix in sync", as
 		);
 
 		// console.log("wrting lix settings simultanous");
-		await project.lix.db
-			.updateTable("file")
-			.where("path", "=", "/settings.json")
-			.set({
-				content: new TextEncoder().encode(
+		await project.lix.execute(
+			"UPDATE lix_file SET content = $1 WHERE path = $2",
+			[
+				new TextEncoder().encode(
 					JSON.stringify({ ...mockSettings, baseLocale: "lix-version" })
 				),
-			})
-			.execute();
+				"/settings.json",
+			]
+		);
 
 		// lets wait a seconds to allow the sync process catch up
 		await new Promise((resolve) => setTimeout(resolve, 1010));
@@ -723,11 +745,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		expect(settingsUpdated.baseLocale).toBe("fs-version");
 
-		const fileInLixUpdated = await project.lix.db
-			.selectFrom("file")
-			.selectAll()
-			.where("path", "=", "/settings.json")
-			.executeTakeFirstOrThrow();
+		const fileInLixUpdated = await selectLixFile(project.lix, "/settings.json");
 
 		const settingsAfterUpdateOnDiskAndLix = JSON.parse(
 			new TextDecoder().decode(fileInLixUpdated.content)
@@ -1050,11 +1068,9 @@ test("it can import plugins via http", async () => {
 	expect(global.fetch).toHaveBeenCalledWith("https://example.com/plugin.js");
 	expect(plugins.length).toBe(1);
 
-	const pluginCache = await project.lix.db
-		.selectFrom("file")
-		.selectAll()
-		.where("path", "like", "/cache/plugins/%")
-		.execute();
+	const pluginCache = await selectLixFiles(project.lix, "WHERE path LIKE $1", [
+		"/cache/plugins/%",
+	]);
 
 	expect(
 		pluginCache.some(
@@ -1153,11 +1169,7 @@ test.skip("the lix id should be stable between loadings of the same project", as
 
 	const inlangId = await project1.id.get();
 
-	const { value: lixId } = await project1.lix.db
-		.selectFrom("key_value")
-		.where("key", "=", "lix_id")
-		.selectAll()
-		.executeTakeFirstOrThrow();
+	const lixId = await selectLixId(project1.lix);
 
 	// the project_id file does not exist on the first load
 	await saveProjectToDirectory({
@@ -1173,11 +1185,7 @@ test.skip("the lix id should be stable between loadings of the same project", as
 
 	const inlangId2 = await project2.id.get();
 
-	const { value: lixId2 } = await project2.lix.db
-		.selectFrom("key_value")
-		.where("key", "=", "lix_id")
-		.selectAll()
-		.executeTakeFirstOrThrow();
+	const lixId2 = await selectLixId(project2.lix);
 
 	const project3 = await loadProjectFromDirectory({
 		fs: fs as any,
@@ -1185,11 +1193,7 @@ test.skip("the lix id should be stable between loadings of the same project", as
 	});
 
 	const inlangId3 = await project3.id.get();
-	const { value: lixId3 } = await project3.lix.db
-		.selectFrom("key_value")
-		.where("key", "=", "lix_id")
-		.selectAll()
-		.executeTakeFirstOrThrow();
+	const lixId3 = await selectLixId(project3.lix);
 
 	expect(inlangId).not.toBeUndefined();
 	expect(inlangId).toBe(inlangId2);

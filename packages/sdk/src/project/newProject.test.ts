@@ -32,22 +32,18 @@ test("it should have the lix id as project id", async () => {
 	const project = await loadProjectInMemory({
 		blob: await newProject(),
 	});
-	const { value: lixId } = await project.lix.db
-		.selectFrom("key_value")
-		.select("value")
-		.where("key", "=", "lix_id")
-		.executeTakeFirstOrThrow();
+	const lixIdResult = await project.lix.execute(
+		"SELECT value FROM lix_key_value WHERE key = 'lix_id'"
+	);
+	const lixId = lixIdResult.rows[0]?.value("value").toJS();
 
 	const projectId = await project.id.get();
 	expect(projectId).toBeDefined();
 	expect(projectId).toBe(lixId);
-	expect(
-		await project.lix.db
-			.selectFrom("file")
-			.select("path")
-			.where("path", "=", "/project_id")
-			.executeTakeFirst()
-	).toBeUndefined();
+	const legacyProjectId = await project.lix.execute(
+		"SELECT path FROM lix_file WHERE path = '/project_id'"
+	);
+	expect(legacyProjectId.rows).toHaveLength(0);
 });
 
 test("it should not persist the removed SDK metadata key during project creation", async () => {
@@ -57,11 +53,10 @@ test("it should not persist the removed SDK metadata key during project creation
 
 	const removedSdkKey = ["lix", "tele" + "metry"].join("_");
 
-	const removedKey = await project.lix.db
-		.selectFrom("key_value")
-		.select("value")
-		.where("key", "=", removedSdkKey)
-		.executeTakeFirst();
+	const removedKey = await project.lix.execute(
+		"SELECT value FROM lix_key_value WHERE key = $1",
+		[removedSdkKey]
+	);
 
-	expect(removedKey).toBeUndefined();
+	expect(removedKey.rows).toHaveLength(0);
 });

@@ -8,6 +8,8 @@ test("opens a project on a caller-owned Lix", async () => {
 		lix,
 		settings: { baseLocale: "fr", locales: ["fr", "en"], modules: [] },
 	});
+	expect(project.lix).toBe(lix);
+	expect(Object.prototype.hasOwnProperty.call(lix, "db")).toBe(false);
 
 	expect(await project.settings.get()).toMatchObject({
 		baseLocale: "fr",
