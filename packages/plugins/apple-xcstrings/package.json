@@ -1,0 +1,40 @@
+{
+  "name": "@inlang/plugin-apple-xcstrings",
+  "version": "0.1.0",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "./dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "dev": "node build.js",
+    "build": "NODE_ENV=production node build.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@inlang/sdk": "workspace:*",
+    "@sinclair/typebox": "^0.31.17"
+  },
+  "devDependencies": {
+    "@inlang/tsconfig": "workspace:*",
+    "esbuild": "^0.25.9",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opral/inlang.git",
+    "directory": "packages/plugins/apple-xcstrings"
+  },
+  "license": "Apache-2.0"
+}
