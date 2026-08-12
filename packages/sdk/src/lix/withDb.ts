@@ -27,13 +27,13 @@ export async function withInlangLixDb(args: {
 	account?: Account;
 }): Promise<InlangLix> {
 	await args.lix.execute(
-		"INSERT INTO key_value (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+		"INSERT INTO inlang_key_value (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = excluded.value",
 		["lix_id", args.projectId]
 	);
 	if (args.account) {
-		await args.lix.execute("DELETE FROM active_account");
+		await args.lix.execute("DELETE FROM inlang_active_account");
 		await args.lix.execute(
-			"INSERT INTO active_account (id, name) VALUES ($1, $2)",
+			"INSERT INTO inlang_active_account (id, name) VALUES ($1, $2)",
 			[args.account.id, args.account.name]
 		);
 	}

@@ -1,5 +1,5 @@
 export const InlangKeyValueSchema = {
-	"x-lix-key": "key_value",
+	"x-lix-key": "inlang_key_value",
 	"x-lix-primary-key": ["/key"],
 	type: "object",
 	properties: {
@@ -11,7 +11,7 @@ export const InlangKeyValueSchema = {
 } as const;
 
 export const InlangActiveAccountSchema = {
-	"x-lix-key": "active_account",
+	"x-lix-key": "inlang_active_account",
 	"x-lix-primary-key": ["/id"],
 	type: "object",
 	properties: {

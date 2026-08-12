@@ -14,12 +14,12 @@ type Snapshot = {
 export async function projectToBlob(lix: Lix): Promise<Blob> {
 	const [files, bundles, messages, variants] = await Promise.all([
 		lix.execute("SELECT path, content FROM lix_file ORDER BY path"),
-		lix.execute("SELECT id, declarations FROM bundle ORDER BY id"),
+		lix.execute("SELECT id, declarations FROM inlang_bundle ORDER BY id"),
 		lix.execute(
-			'SELECT id, "bundleId", locale, selectors FROM message ORDER BY id'
+			'SELECT id, "bundleId", locale, selectors FROM inlang_message ORDER BY id'
 		),
 		lix.execute(
-			'SELECT id, "messageId", matches, pattern FROM variant ORDER BY id'
+			'SELECT id, "messageId", matches, pattern FROM inlang_variant ORDER BY id'
 		),
 	]);
 
@@ -64,19 +64,19 @@ export async function restoreProjectBlob(lix: Lix, blob: Blob): Promise<void> {
 	}
 	for (const bundle of snapshot.bundles) {
 		statements.push({
-			sql: "INSERT INTO bundle (id, declarations) VALUES ($1, $2)",
+			sql: "INSERT INTO inlang_bundle (id, declarations) VALUES ($1, $2)",
 			params: [bundle.id, bundle.declarations],
 		});
 	}
 	for (const message of snapshot.messages) {
 		statements.push({
-			sql: 'INSERT INTO message (id, "bundleId", locale, selectors) VALUES ($1, $2, $3, $4)',
+			sql: 'INSERT INTO inlang_message (id, "bundleId", locale, selectors) VALUES ($1, $2, $3, $4)',
 			params: [message.id, message.bundleId, message.locale, message.selectors],
 		});
 	}
 	for (const variant of snapshot.variants) {
 		statements.push({
-			sql: 'INSERT INTO variant (id, "messageId", matches, pattern) VALUES ($1, $2, $3, $4)',
+			sql: 'INSERT INTO inlang_variant (id, "messageId", matches, pattern) VALUES ($1, $2, $3, $4)',
 			params: [variant.id, variant.messageId, variant.matches, variant.pattern],
 		});
 	}
