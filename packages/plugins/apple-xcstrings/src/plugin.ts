@@ -460,11 +460,13 @@ function inferDirectPluralFormat(
   const sourceExpressions = sourcePattern.filter(
     (part) => part.type === "expression",
   );
-  const candidates = sourceExpressions.length
+  const variantExpressions = variants.flatMap(({ parsed }) =>
+    parsed.pattern.filter((part) => part.type === "expression"),
+  );
+  const sourceNumeric = numericExpressionFormats(sourceExpressions);
+  const candidates = sourceNumeric.length
     ? sourceExpressions
-    : variants.flatMap(({ parsed }) =>
-        parsed.pattern.filter((part) => part.type === "expression"),
-      );
+    : variantExpressions;
   if (!candidates.length)
     throw new Error(
       `Direct Apple plural "${id}" must contain a numeric printf argument in its key or variants`,
@@ -493,6 +495,19 @@ function inferDirectPluralFormat(
       `Direct Apple plural "${id}" must use one consistent numeric argument`,
     );
   return first;
+}
+
+function numericExpressionFormats(
+  expressions: Array<Extract<Pattern[number], { type: "expression" }>>,
+) {
+  return expressions.filter((expression) => {
+    if (expression.arg.type !== "variable-reference") return false;
+    const format = printfFormat(
+      expression.annotation,
+      argumentPosition(expression.arg.name),
+    );
+    return /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(format.specifier);
+  });
 }
 
 function parseCatalog(content: Uint8Array): Catalog {
