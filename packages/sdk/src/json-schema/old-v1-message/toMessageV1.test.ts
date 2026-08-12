@@ -56,7 +56,44 @@ test("throws when message contains markup placeholders", () => {
 	);
 });
 
-test.todo("with variable references", () => {});
+test("serializes nested selectors and matches", () => {
+	const serialized = toMessageV1({
+		id: "welcome",
+		declarations: [{ type: "input-variable", name: "audience" }],
+		messages: [
+			{
+				id: "welcome_en",
+				bundleId: "welcome",
+				locale: "en",
+				selectors: [{ type: "variable-reference", name: "audience" }],
+				variants: [
+					{
+						id: "welcome_en_admin",
+						messageId: "welcome_en",
+						matches: [
+							{ type: "literal-match", key: "audience", value: "admin" },
+						],
+						pattern: [{ type: "text", value: "Welcome, admin" }],
+					},
+					{
+						id: "welcome_en_other",
+						messageId: "welcome_en",
+						matches: [{ type: "catchall-match", key: "audience" }],
+						pattern: [{ type: "text", value: "Welcome" }],
+					},
+				],
+			},
+		],
+	});
+
+	expect(serialized.selectors).toEqual([
+		{ type: "VariableReference", name: "audience" },
+	]);
+	expect(serialized.variants.map((variant) => variant.match)).toEqual([
+		["admin"],
+		["*"],
+	]);
+});
 
 const messageV1: MessageV1 = {
 	id: "hello_world",
