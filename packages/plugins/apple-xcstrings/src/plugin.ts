@@ -223,6 +223,13 @@ function importLocalization(id: string, localization: Localization) {
         `Apple .xcstrings substitution template in "${id}" must contain exactly one ${token}`,
       );
     const [prefix, suffix] = template.split(token);
+    if (
+      hasImplicitPrintfExpression(prefix!) ||
+      hasImplicitPrintfExpression(suffix!)
+    )
+      throw new Error(
+        `Apple .xcstrings substitution template in "${id}" cannot mix implicit printf arguments with positional argNum`,
+      );
     const parsedPrefix = parsePattern(prefix!);
     const parsedSuffix = parsePattern(
       suffix!,
@@ -802,6 +809,20 @@ function hasPrintfExpression(source: string, regex: RegExp) {
       continue;
     }
     if (source[cursor] === "%" && regex.test(source.slice(cursor))) return true;
+  }
+  return false;
+}
+
+function hasImplicitPrintfExpression(source: string) {
+  const implicit =
+    /^%(?!\d+\$)(?:[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])/;
+  for (let cursor = 0; cursor < source.length; cursor++) {
+    if (source.startsWith("%%", cursor)) {
+      cursor++;
+      continue;
+    }
+    if (source[cursor] === "%" && implicit.test(source.slice(cursor)))
+      return true;
   }
   return false;
 }
