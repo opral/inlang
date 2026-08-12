@@ -224,7 +224,10 @@ function importLocalization(id: string, localization: Localization) {
       );
     const [prefix, suffix] = template.split(token);
     const parsedPrefix = parsePattern(prefix!);
-    const parsedSuffix = parsePattern(suffix!);
+    const parsedSuffix = parsePattern(
+      suffix!,
+      Math.max(argNum + 1, parsedPrefix.nextImplicit),
+    );
     const parsed = Object.entries(substitution.variations.plural).map(
       ([key, unit]) => ({
         key,
@@ -467,10 +470,13 @@ function inferDirectPluralFormat(
       argumentPosition(expression.arg.name),
     );
   });
-  const first = formats[0]!;
+  const numericFormats = formats.filter((format) =>
+    /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(format.specifier),
+  );
+  const first = numericFormats[0]!;
   if (
-    !/(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(first.specifier) ||
-    formats.some(
+    !first ||
+    numericFormats.some(
       (format) =>
         format.position !== first.position ||
         format.specifier !== first.specifier,
@@ -506,7 +512,11 @@ function parsePattern(value: string, implicitStart = 1) {
   const regex =
     /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])|((?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]))/;
   if (!hasPrintfExpression(value, regex))
-    return { pattern: [{ type: "text", value }] as Pattern, variables };
+    return {
+      pattern: [{ type: "text", value }] as Pattern,
+      variables,
+      nextImplicit: implicitStart,
+    };
   let cursor = 0;
   let implicit = implicitStart - 1;
   let sawImplicit = false;
@@ -566,7 +576,7 @@ function parsePattern(value: string, implicitStart = 1) {
     cursor += found[0].length;
   }
   if (text) pattern.push({ type: "text", value: text });
-  return { pattern, variables };
+  return { pattern, variables, nextImplicit: implicit + 1 };
 }
 
 function serializePattern(
