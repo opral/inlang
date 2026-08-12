@@ -166,9 +166,7 @@ function rewriteTableNames(sql: string): string {
 		.replaceAll('"file"', '"lix_file"')
 		.replaceAll('"bundle"', '"inlang_bundle"')
 		.replaceAll('"message"', '"inlang_message"')
-		.replaceAll('"variant"', '"inlang_variant"')
-		.replaceAll('"key_value"', '"inlang_key_value"')
-		.replaceAll('"active_account"', '"inlang_active_account"');
+		.replaceAll('"variant"', '"inlang_variant"');
 }
 
 function omitPrimaryKeyAssignments(sql: string): string {

@@ -2,7 +2,6 @@ import { openLix } from "@lix-js/sdk";
 import type { ProjectSettings } from "../json-schema/settings.js";
 import { registerInlangSchemas } from "../database/registerSchemas.js";
 import { projectToBlob } from "./snapshot.js";
-import { v4 } from "uuid";
 
 /**
  * Creates a new inlang project.
@@ -16,25 +15,11 @@ export async function newProject(args?: {
 	const lix = await openLix();
 	try {
 		await registerInlangSchemas(lix);
-		const projectId = v4();
-		await lix.executeBatch([
-			{
-				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
-				params: [
-					"/settings.json",
-					new TextEncoder().encode(
-						JSON.stringify(
-							args?.settings ?? defaultProjectSettings,
-							undefined,
-							2
-						)
-					),
-				],
-			},
-			{
-				sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
-				params: ["/project_id", new TextEncoder().encode(projectId)],
-			},
+		await lix.execute("INSERT INTO lix_file (path, content) VALUES ($1, $2)", [
+			"/settings.json",
+			new TextEncoder().encode(
+				JSON.stringify(args?.settings ?? defaultProjectSettings, undefined, 2)
+			),
 		]);
 		return await projectToBlob(lix);
 	} catch (e) {

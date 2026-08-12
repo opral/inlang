@@ -1,5 +1,4 @@
 import type { Lix } from "@lix-js/sdk";
-import type { Account } from "../lix/compat.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
 import { initDb } from "../database/initDb.js";
@@ -9,11 +8,9 @@ import {
 } from "../plugin/importPlugins.js";
 import type { InlangProject } from "./api.js";
 import { withLanguageTagToLocaleMigration } from "../migrations/v2/withLanguageTagToLocaleMigration.js";
-import { v4 } from "uuid";
 import { importFiles } from "../import-export/importFiles.js";
 import { exportFiles } from "../import-export/exportFiles.js";
 import { projectToBlob } from "./snapshot.js";
-import { withInlangLixDb } from "../lix/withDb.js";
 
 /**
  * Common load project logic.
@@ -22,16 +19,6 @@ export async function loadProject(args: {
 	lix: Lix;
 	/** Internal lifecycle option for Lix instances owned by the caller. */
 	closeLixOnClose?: boolean;
-	/**
-	 * The account that loaded the project.
-	 *
-	 * Defaults to an anonymous/new account if undefined.
-	 *
-	 * @example
-	 *   const account = localStorage.getItem("account")
-	 *   const project = await loadProject({ account })
-	 */
-	account?: Account;
 	/**
 	 * Provide plugins to the project.
 	 *
@@ -56,8 +43,6 @@ export async function loadProject(args: {
 }): Promise<InlangProject> {
 	const db = initDb({ lix: args.lix });
 
-	await maybeMigrateFirstProjectId({ lix: args.lix });
-
 	const settingsFile = await readLixFile(args.lix, "/settings.json");
 
 	const settings = withLanguageTagToLocaleMigration(
@@ -71,14 +56,6 @@ export async function loadProject(args: {
 	});
 
 	const plugins = [...(args.providePlugins ?? []), ...importedPlugins.plugins];
-	const projectId = new TextDecoder().decode(
-		await readLixFile(args.lix, "/project_id")
-	);
-	const inlangLix = await withInlangLixDb({
-		lix: args.lix,
-		projectId,
-		account: args.account,
-	});
 
 	// const state = createProjectState({
 	// 	...args,
@@ -88,11 +65,7 @@ export async function loadProject(args: {
 	return {
 		db,
 		id: {
-			get: async () => {
-				return new TextDecoder().decode(
-					await readLixFile(args.lix, "/project_id")
-				);
-			},
+			get: async () => await readLixId(args.lix),
 		},
 		settings: {
 			get: async () => {
@@ -162,27 +135,17 @@ export async function loadProject(args: {
 			}
 		},
 		toBlob: async () => await projectToBlob(args.lix),
-		lix: inlangLix,
+		lix: args.lix,
 	};
 }
 
-/**
- * Old leftover migration from v1. Probably not needed anymore.
- *
- * Kept it in just in case.
- */
-async function maybeMigrateFirstProjectId(args: { lix: Lix }): Promise<void> {
-	const firstProjectIdFile = await args.lix.execute(
-		"SELECT content FROM lix_file WHERE path = $1",
-		["/project_id"]
+async function readLixId(lix: Lix): Promise<string> {
+	const result = await lix.execute(
+		"SELECT value FROM lix_key_value WHERE key = 'lix_id'"
 	);
-
-	if (firstProjectIdFile.rows.length === 0) {
-		await args.lix.execute(
-			"INSERT INTO lix_file (path, content) VALUES ($1, $2)",
-			["/project_id", new TextEncoder().encode(v4())]
-		);
-	}
+	const id = result.rows[0]?.value("value").toJS();
+	if (typeof id !== "string") throw new Error("Missing Lix id");
+	return id;
 }
 
 async function readLixFile(lix: Lix, path: string): Promise<Uint8Array> {

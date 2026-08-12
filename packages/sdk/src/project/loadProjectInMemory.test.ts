@@ -59,7 +59,8 @@ test("serializes bundles with nested messages and variants", async () => {
 	const blob = await project.toBlob();
 	const serialized = JSON.parse(await blob.text());
 	expect(serialized).toMatchObject({
-		format: "inlang-lix-memory-v2",
+		format: "inlang-lix-memory-v3",
+		lixId: expect.any(String),
 		bundles: [
 			{
 				id: "welcome",
@@ -83,12 +84,35 @@ test("serializes bundles with nested messages and variants", async () => {
 		matches: [{ type: "literal-match", key: "audience", value: "admin" }],
 		pattern: [{ type: "text", value: "Welcome, admin" }],
 	});
+	expect(await reopened.id.get()).toBe(serialized.lixId);
 	await reopened.close();
+
+	const previousFiles = [
+		...serialized.files,
+		{
+			path: "/project_id",
+			data: Buffer.from(serialized.lixId).toString("base64"),
+		},
+	];
+	const previousBlob = new Blob([
+		JSON.stringify({
+			format: "inlang-lix-memory-v2",
+			files: previousFiles,
+			bundles: serialized.bundles,
+		}),
+	]);
+	const reopenedPrevious = await loadProjectInMemory({ blob: previousBlob });
+	expect(await reopenedPrevious.id.get()).toBe(serialized.lixId);
+	expect(
+		(await selectBundleNested(reopenedPrevious.db).executeTakeFirstOrThrow())
+			.messages[0]?.variants[0]?.id
+	).toBe("welcome_en_admin");
+	await reopenedPrevious.close();
 
 	const legacyBlob = new Blob([
 		JSON.stringify({
 			format: "inlang-lix-memory-v1",
-			files: serialized.files,
+			files: previousFiles,
 			bundles: serialized.bundles.map(
 				(bundle: { id: string; declarations: unknown[] }) => ({
 					id: bundle.id,
@@ -118,6 +142,7 @@ test("serializes bundles with nested messages and variants", async () => {
 		}),
 	]);
 	const reopenedLegacy = await loadProjectInMemory({ blob: legacyBlob });
+	expect(await reopenedLegacy.id.get()).toBe(serialized.lixId);
 	expect(
 		(await selectBundleNested(reopenedLegacy.db).executeTakeFirstOrThrow())
 			.messages[0]?.variants[0]?.id

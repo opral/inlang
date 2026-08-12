@@ -8,6 +8,8 @@ test("opens a project on a caller-owned Lix", async () => {
 		lix,
 		settings: { baseLocale: "fr", locales: ["fr", "en"], modules: [] },
 	});
+	expect(project.lix).toBe(lix);
+	expect(Object.prototype.hasOwnProperty.call(lix, "db")).toBe(false);
 
 	expect(await project.settings.get()).toMatchObject({
 		baseLocale: "fr",
@@ -21,13 +23,13 @@ test("opens a project on a caller-owned Lix", async () => {
 			.map((row) => row.value("schema_key").toJS())
 			.filter((key) => typeof key === "string" && key.startsWith("inlang_"))
 			.sort()
-	).toEqual([
-		"inlang_active_account",
-		"inlang_bundle",
-		"inlang_key_value",
-		"inlang_message",
-		"inlang_variant",
-	]);
+	).toEqual(["inlang_bundle", "inlang_message", "inlang_variant"]);
+	await expect(
+		lix.execute("SELECT key, value FROM lix_key_value")
+	).resolves.toBeDefined();
+	await expect(
+		lix.execute("SELECT id, name FROM lix_account")
+	).resolves.toBeDefined();
 
 	await project.db
 		.insertInto("bundle")

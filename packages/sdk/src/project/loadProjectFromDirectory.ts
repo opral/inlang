@@ -52,22 +52,6 @@ export async function loadProjectFromDirectory(
 		await args.fs.promises.readFile(settingsPath, "utf8")
 	) as ProjectSettings;
 
-	let inlangId: string | undefined = undefined;
-
-	try {
-		inlangId = await args.fs.promises.readFile(
-			nodePath.join(args.path, "project_id"),
-			"utf8"
-		);
-	} catch {
-		// await args.fs.promises.writeFile(
-		// 	nodePath.join(args.path, "project_id"),
-		// 	,
-		// 	{ encoding: "utf8" }
-		// );
-		// file doesn't exist yet
-	}
-
 	const localImport = await importLocalPlugins({
 		fs: args.fs,
 		settings,
@@ -104,10 +88,6 @@ export async function loadProjectFromDirectory(
 	const project = await loadProjectInMemory({
 		...args,
 		providePlugins: providePluginsWithLocalPlugins,
-		lixKeyValues: inlangId
-			? // reversing the id to have distinguishable lix ids from inlang ids
-				[{ key: "lix_id", value: inlangId }]
-			: undefined,
 		blob: await projectToBlob(tempLix),
 	});
 
