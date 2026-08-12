@@ -698,11 +698,16 @@ function pluralDeclaration(
 }
 
 function inputPosition(bundle: Bundle, name: string) {
-  const namedPosition = argumentPosition(name);
-  if (namedPosition !== Number.MAX_SAFE_INTEGER) return namedPosition;
   const inputs = bundle.declarations.filter(
     (declaration) => declaration.type === "input-variable",
   );
+  if (!inputs.some((declaration) => declaration.name === name))
+    throw new Error(`Variable "${name}" is not declared in "${bundle.id}"`);
+  const namedMatch = /^arg([1-9]\d*)$/.exec(name);
+  if (namedMatch) {
+    const namedPosition = Number(namedMatch[1]);
+    if (Number.isSafeInteger(namedPosition)) return namedPosition;
+  }
   const position =
     inputs.findIndex((declaration) => declaration.name === name) + 1;
   if (position === 0)
