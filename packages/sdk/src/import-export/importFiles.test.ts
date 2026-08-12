@@ -40,6 +40,66 @@ test("batch imports an unambiguous fresh project", async () => {
 	);
 });
 
+test("batches rows with mixed optional columns", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "plain-bundle" }, { id: "rich-bundle" }],
+			messages: [
+				{ bundleId: "plain-bundle", locale: "en" },
+				{
+					bundleId: "rich-bundle",
+					locale: "de",
+					selectors: [{ type: "variable-reference", name: "platform" }],
+				},
+			],
+			variants: [
+				{ messageBundleId: "plain-bundle", messageLocale: "en" },
+				{
+					messageBundleId: "rich-bundle",
+					messageLocale: "de",
+					matches: [
+						{
+							type: "literal-match",
+							key: "platform",
+							value: "web",
+						},
+					],
+					pattern: [{ type: "text", value: "Hello web" }],
+				},
+			],
+		}),
+	};
+
+	await importFiles({
+		db: project.db,
+		files: [{ content: new Uint8Array(), locale: "mock" }],
+		pluginKey: "mock",
+		plugins: [mockPlugin],
+		settings: {} as any,
+	});
+
+	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const variants = await project.db.selectFrom("variant").selectAll().execute();
+
+	expect(messages).toHaveLength(2);
+	expect(
+		messages.find((message) => message.locale === "en")?.selectors
+	).toStrictEqual([]);
+	expect(
+		messages.find((message) => message.locale === "de")?.selectors
+	).toStrictEqual([{ type: "variable-reference", name: "platform" }]);
+	expect(variants).toHaveLength(2);
+	expect(
+		variants.find((variant) => variant.matches.length === 0)?.pattern
+	).toStrictEqual([]);
+	expect(
+		variants.find((variant) => variant.matches.length > 0)?.pattern
+	).toStrictEqual([{ type: "text", value: "Hello web" }]);
+});
+
 test("preserves variant upsert semantics for duplicate matches", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 

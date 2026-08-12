@@ -20,6 +20,43 @@ const variantReferenceKey = (
 
 const INSERT_BATCH_SIZE = 500;
 
+/**
+ * Kysely uses one column list for every row in a multi-row insert. SQLite's
+ * default-value handling for omitted NOT NULL JSON columns is not reliable
+ * when rows with different optional-column shapes are mixed, so keep each
+ * shape in its own insert statement.
+ */
+async function insertInBatchesByShape<T extends object>(args: {
+	rows: readonly T[];
+	optionalColumns: readonly string[];
+	insert: (rows: T[]) => Promise<void>;
+}) {
+	const rowsByShape = new Map<string, T[]>();
+	for (const row of args.rows) {
+		const shape = args.optionalColumns
+			.map((column) =>
+				(row as Record<string, unknown>)[column] === undefined ? "0" : "1"
+			)
+			.join("");
+		const rowsForShape = rowsByShape.get(shape);
+		if (rowsForShape) {
+			rowsForShape.push(row);
+		} else {
+			rowsByShape.set(shape, [row]);
+		}
+	}
+
+	for (const rowsForShape of rowsByShape.values()) {
+		for (
+			let offset = 0;
+			offset < rowsForShape.length;
+			offset += INSERT_BATCH_SIZE
+		) {
+			await args.insert(rowsForShape.slice(offset, offset + INSERT_BATCH_SIZE));
+		}
+	}
+}
+
 export async function importFiles(args: {
 	files: ImportFile[];
 	readonly pluginKey: string;
@@ -110,31 +147,25 @@ export async function importFiles(args: {
 			);
 
 		if (canBatchImportFreshProject) {
-			for (
-				let offset = 0;
-				offset < imported.bundles.length;
-				offset += INSERT_BATCH_SIZE
-			) {
-				await trx
-					.insertInto("bundle")
-					.values(imported.bundles.slice(offset, offset + INSERT_BATCH_SIZE))
-					.execute();
-			}
+			await insertInBatchesByShape({
+				rows: imported.bundles,
+				optionalColumns: ["declarations"],
+				insert: async (rows) => {
+					await trx.insertInto("bundle").values(rows).execute();
+				},
+			});
 
 			const messagesWithIds = imported.messages.map((message) => ({
 				...message,
 				id: v7(),
 			}));
-			for (
-				let offset = 0;
-				offset < messagesWithIds.length;
-				offset += INSERT_BATCH_SIZE
-			) {
-				await trx
-					.insertInto("message")
-					.values(messagesWithIds.slice(offset, offset + INSERT_BATCH_SIZE))
-					.execute();
-			}
+			await insertInBatchesByShape({
+				rows: messagesWithIds,
+				optionalColumns: ["selectors"],
+				insert: async (rows) => {
+					await trx.insertInto("message").values(rows).execute();
+				},
+			});
 
 			const messageIds = new Map(
 				messagesWithIds.map((message) => [
@@ -160,18 +191,13 @@ export async function importFiles(args: {
 					};
 				}
 			);
-			for (
-				let offset = 0;
-				offset < variantsWithMessageIds.length;
-				offset += INSERT_BATCH_SIZE
-			) {
-				await trx
-					.insertInto("variant")
-					.values(
-						variantsWithMessageIds.slice(offset, offset + INSERT_BATCH_SIZE)
-					)
-					.execute();
-			}
+			await insertInBatchesByShape({
+				rows: variantsWithMessageIds,
+				optionalColumns: ["matches", "pattern"],
+				insert: async (rows) => {
+					await trx.insertInto("variant").values(rows).execute();
+				},
+			});
 			return;
 		}
 
