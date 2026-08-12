@@ -391,7 +391,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		const files = await project.lix.db.selectFrom("file").selectAll().execute();
 
-		expect(files.length).toBe(6 + 1 /* project_id */);
+		expect(files.length).toBe(6);
 
 		const filesByPath = files.reduce((acc, file) => {
 			acc[file.path] = new TextDecoder().decode(file.content);
@@ -452,9 +452,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		const files = await project.lix.db.selectFrom("file").selectAll().execute();
 
-		expect(files.length).toBe(
-			6 + 1 /* the db.sqlite file */ + 1 /* project_id */
-		);
+		expect(files.length).toBe(6 + 1 /* the db.sqlite file */);
 
 		const filesByPath = files.reduce((acc, file) => {
 			acc[file.path] = new TextDecoder().decode(file.content);

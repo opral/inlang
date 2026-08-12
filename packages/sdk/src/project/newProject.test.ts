@@ -41,6 +41,13 @@ test("it should have the lix id as project id", async () => {
 	const projectId = await project.id.get();
 	expect(projectId).toBeDefined();
 	expect(projectId).toBe(lixId);
+	expect(
+		await project.lix.db
+			.selectFrom("file")
+			.select("path")
+			.where("path", "=", "/project_id")
+			.executeTakeFirst()
+	).toBeUndefined();
 });
 
 test("it should not persist the removed SDK metadata key during project creation", async () => {

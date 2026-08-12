@@ -49,10 +49,6 @@ beforeAll(async () => {
 	await lix.executeBatch([
 		{
 			sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
-			params: ["/project_id", new TextEncoder().encode("benchmark-project")],
-		},
-		{
-			sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
 			params: [
 				"/settings.json",
 				new TextEncoder().encode(

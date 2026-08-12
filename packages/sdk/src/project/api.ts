@@ -8,8 +8,8 @@ export type InlangProject = {
 	db: Kysely<InlangDatabaseSchema>;
 	id: {
 		/**
-		 * Stable for packed `.inlang` files. For unpacked projects loaded from a
-		 * directory, the id is unstable because `project_id` is not persisted.
+		 * The built-in Lix id. Stable for packed `.inlang` files. Unpacked projects
+		 * loaded into a fresh Lix receive a new id on each load.
 		 */
 		get: () => Promise<string>;
 	};
