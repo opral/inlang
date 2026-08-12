@@ -1,4 +1,5 @@
 import { context } from "esbuild";
+import { execFileSync } from "node:child_process";
 
 // eslint-disable-next-line no-undef
 const isProduction = process.env.NODE_ENV === "production";
@@ -21,10 +22,24 @@ const ctx = await context({
 });
 
 if (isProduction === false) {
-  await ctx.watch();
-  // eslint-disable-next-line no-undef
-  console.info("Watching for changes...");
+	await ctx.watch();
+	// eslint-disable-next-line no-undef
+	console.info("Watching for changes...");
 } else {
-  await ctx.rebuild();
-  await ctx.dispose();
+	await ctx.rebuild();
+	await ctx.dispose();
+	execFileSync(
+		"tsc",
+		[
+			"--emitDeclarationOnly",
+			"--declaration",
+			"--declarationMap",
+			"false",
+			"--outDir",
+			"dist",
+			"--noEmit",
+			"false",
+		],
+		{ stdio: "inherit" }
+	);
 }

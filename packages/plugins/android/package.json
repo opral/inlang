@@ -2,6 +2,7 @@
   "name": "@inlang/plugin-android",
   "version": "0.1.0",
   "type": "module",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": "./dist/index.js"
   },

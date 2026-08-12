@@ -1,4 +1,5 @@
 import { context } from "esbuild";
+import { execFileSync } from "node:child_process";
 const isProduction = process.env.NODE_ENV === "production";
 const ctx = await context({
   entryPoints: ["./src/index.ts"],
@@ -13,6 +14,20 @@ const ctx = await context({
 if (isProduction) {
   await ctx.rebuild();
   await ctx.dispose();
+  execFileSync(
+    "tsc",
+    [
+      "--emitDeclarationOnly",
+      "--declaration",
+      "--declarationMap",
+      "false",
+      "--outDir",
+      "dist",
+      "--noEmit",
+      "false",
+    ],
+    { stdio: "inherit" },
+  );
 } else {
   await ctx.watch();
   console.info("Watching for changes...");
