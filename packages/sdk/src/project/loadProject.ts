@@ -20,6 +20,8 @@ import { withInlangLixDb } from "../lix/withDb.js";
  */
 export async function loadProject(args: {
 	lix: Lix;
+	/** Internal lifecycle option for Lix instances owned by the caller. */
+	closeLixOnClose?: boolean;
 	/**
 	 * The account that loaded the project.
 	 *
@@ -155,7 +157,9 @@ export async function loadProject(args: {
 		},
 		close: async () => {
 			await db.destroy();
-			await args.lix.close();
+			if (args.closeLixOnClose ?? true) {
+				await args.lix.close();
+			}
 		},
 		toBlob: async () => await projectToBlob(args.lix),
 		lix: inlangLix,

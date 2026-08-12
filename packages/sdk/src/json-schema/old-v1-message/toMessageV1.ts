@@ -1,4 +1,4 @@
-import type { BundleNested } from "../../database/schema.js";
+import type { BundleNested, Match } from "../../database/schema.js";
 import type { Pattern } from "../pattern.js";
 import type {
 	ExpressionV1,
@@ -14,28 +14,32 @@ import type {
  */
 export function toMessageV1(bundle: BundleNested): MessageV1 {
 	const variants: VariantV1[] = [];
-	const selectorNames = new Set<string>();
+	const selectorNames =
+		bundle.messages[0]?.selectors.map((selector) => selector.name) ?? [];
 
 	for (const message of bundle.messages) {
-		// collect all selector names
-		for (const selector of message.selectors.map((s) => ({
-			type: "variable-reference",
-			name: s.name,
-		}))) {
-			selectorNames.add(selector.name);
+		if (
+			message.selectors.length !== selectorNames.length ||
+			message.selectors.some(
+				(selector, index) => selector.name !== selectorNames[index]
+			)
+		) {
+			throw new Error(
+				"MessageV1 conversion requires identical selectors in every locale"
+			);
 		}
 
 		// collect all variants
 		for (const variant of message.variants) {
 			variants.push({
 				languageTag: message.locale,
-				match: [],
+				match: toV1Match(variant.matches, selectorNames),
 				pattern: toV1Pattern(variant.pattern),
 			});
 		}
 	}
 
-	const selectors: ExpressionV1[] = [...selectorNames].map((name) => ({
+	const selectors: ExpressionV1[] = selectorNames.map((name) => ({
 		type: "VariableReference",
 		name,
 	}));
@@ -46,6 +50,30 @@ export function toMessageV1(bundle: BundleNested): MessageV1 {
 		variants,
 		selectors,
 	};
+}
+
+function toV1Match(matches: Match[], selectorNames: string[]): string[] {
+	const matchesByKey = new Map<string, Match>();
+	for (const match of matches) {
+		if (matchesByKey.has(match.key)) {
+			throw new Error(
+				`MessageV1 conversion found duplicate match "${match.key}"`
+			);
+		}
+		matchesByKey.set(match.key, match);
+	}
+	if (
+		matchesByKey.size !== selectorNames.length ||
+		selectorNames.some((name) => !matchesByKey.has(name))
+	) {
+		throw new Error(
+			"MessageV1 conversion requires one match for every selector"
+		);
+	}
+	return selectorNames.map((selectorName) => {
+		const match = matchesByKey.get(selectorName)!;
+		return match.type === "catchall-match" ? "*" : match.value;
+	});
 }
 
 /**

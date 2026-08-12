@@ -1,5 +1,5 @@
 export const InlangBundleSchema = {
-	"x-lix-key": "bundle",
+	"x-lix-key": "inlang_bundle",
 	"x-lix-primary-key": ["/id"],
 	type: "object",
 	properties: {

@@ -3,7 +3,7 @@ import type {
 	MessageNested,
 	Variant,
 } from "../../database/schema.js";
-import type { Declaration, Pattern } from "../pattern.js";
+import type { Pattern, VariableReference } from "../pattern.js";
 import type { MessageV1, PatternV1 } from "./schemaV1.js";
 
 /**
@@ -18,7 +18,12 @@ export function fromMessageV1(messageV1: MessageV1): BundleNested {
 		...new Set(messageV1.variants.map((variant) => variant.languageTag)),
 	];
 
-	const declarations = new Set<Declaration>();
+	const selectorNames = messageV1.selectors.map((selector) => selector.name);
+	const variableNames = new Set(selectorNames);
+	const selectors: VariableReference[] = selectorNames.map((name) => ({
+		type: "variable-reference",
+		name,
+	}));
 
 	const messages: MessageNested[] = languages.map((language): MessageNested => {
 		const messageId = bundleId + "_" + language;
@@ -27,17 +32,14 @@ export function fromMessageV1(messageV1: MessageV1): BundleNested {
 			(variant) => variant.languageTag === language
 		);
 
-		//find all selector names
-		const selectorNames = new Set<string>();
-		for (const v1Selector of messageV1.selectors ?? []) {
-			selectorNames.add(v1Selector.name);
-		}
-
-		//The set of variables that need to be defined - Certainly includes the selectors
-		const variableNames = new Set<string>(selectorNames);
 		const variants: Variant[] = [];
 		let variantIndex = 1;
 		for (const v1Variant of v1Variants) {
+			if (v1Variant.match.length !== selectorNames.length) {
+				throw new Error(
+					`Legacy variant for locale "${language}" has ${v1Variant.match.length} matches for ${selectorNames.length} selectors`
+				);
+			}
 			for (const element of v1Variant.pattern) {
 				if (element.type === "VariableReference") {
 					variableNames.add(element.name);
@@ -45,8 +47,15 @@ export function fromMessageV1(messageV1: MessageV1): BundleNested {
 			}
 
 			variants.push({
-				// matching was not supported. no problem should arise
-				matches: [],
+				matches: v1Variant.match.map((value, index) =>
+					value === "*"
+						? { type: "catchall-match", key: selectorNames[index]! }
+						: {
+								type: "literal-match",
+								key: selectorNames[index]!,
+								value,
+							}
+				),
 				pattern: fromPatternV1(v1Variant.pattern),
 				id: messageId + "_" + variantIndex,
 				messageId: messageId,
@@ -54,26 +63,21 @@ export function fromMessageV1(messageV1: MessageV1): BundleNested {
 			variantIndex += 1;
 		}
 
-		//Create an input declaration for each variable and selector we need
-		for (const variable of variableNames) {
-			declarations.add({
-				type: "input-variable",
-				name: variable,
-			});
-		}
-
 		return {
 			id: messageId,
 			bundleId: bundleId,
 			locale: language,
-			selectors: [],
+			selectors: [...selectors],
 			variants,
 		};
 	});
 
 	return {
 		id: bundleId,
-		declarations: [...declarations],
+		declarations: [...variableNames].map((name) => ({
+			type: "input-variable",
+			name,
+		})),
 		messages,
 	};
 }

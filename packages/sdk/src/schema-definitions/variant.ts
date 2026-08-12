@@ -1,10 +1,10 @@
 export const InlangVariantSchema = {
-	"x-lix-key": "variant",
+	"x-lix-key": "inlang_variant",
 	"x-lix-primary-key": ["/id"],
 	"x-lix-foreign-keys": [
 		{
 			properties: ["/messageId"],
-			references: { schemaKey: "message", properties: ["/id"] },
+			references: { schemaKey: "inlang_message", properties: ["/id"] },
 		},
 	],
 	type: "object",

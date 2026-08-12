@@ -153,14 +153,22 @@ function prepareLixQuery(compiledSql: string): {
 	sql: string;
 	parameterPositions: number[];
 } {
-	const sql = omitPrimaryKeyAssignments(
-		compiledSql.replaceAll('"file"', '"lix_file"')
-	);
+	const sql = rewriteTableNames(omitPrimaryKeyAssignments(compiledSql));
 	const compacted = compactSqlParameters(sql);
 	return {
 		sql: compacted.sql,
 		parameterPositions: compacted.positions,
 	};
+}
+
+function rewriteTableNames(sql: string): string {
+	return sql
+		.replaceAll('"file"', '"lix_file"')
+		.replaceAll('"bundle"', '"inlang_bundle"')
+		.replaceAll('"message"', '"inlang_message"')
+		.replaceAll('"variant"', '"inlang_variant"')
+		.replaceAll('"key_value"', '"inlang_key_value"')
+		.replaceAll('"active_account"', '"inlang_active_account"');
 }
 
 function omitPrimaryKeyAssignments(sql: string): string {

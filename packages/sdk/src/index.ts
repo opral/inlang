@@ -1,4 +1,5 @@
 export { newProject } from "./project/newProject.js";
+export { openProject, type OpenProjectArgs } from "./project/openProject.js";
 export { loadProjectInMemory } from "./project/loadProjectInMemory.js";
 
 export {

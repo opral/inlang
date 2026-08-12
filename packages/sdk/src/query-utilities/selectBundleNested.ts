@@ -41,7 +41,10 @@ export const selectBundleNested = (db: Kysely<InlangDatabaseSchema>) => {
 					"variant.id as variantId",
 					"variant.matches as variantMatches",
 					"variant.pattern as variantPattern",
-				]);
+				])
+				.orderBy("bundle.id")
+				.orderBy("message.id")
+				.orderBy("variant.id");
 			if (bundleId !== undefined) {
 				flatQuery = flatQuery.where("bundle.id", "=", bundleId);
 			}

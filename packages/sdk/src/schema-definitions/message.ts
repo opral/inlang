@@ -1,10 +1,10 @@
 export const InlangMessageSchema = {
-	"x-lix-key": "message",
+	"x-lix-key": "inlang_message",
 	"x-lix-primary-key": ["/id"],
 	"x-lix-foreign-keys": [
 		{
 			properties: ["/bundleId"],
-			references: { schemaKey: "bundle", properties: ["/id"] },
+			references: { schemaKey: "inlang_bundle", properties: ["/id"] },
 		},
 	],
 	type: "object",
