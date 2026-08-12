@@ -56,13 +56,14 @@ const pluralCategories = new Set([
   "other",
 ]);
 const deviceCategories = new Set([
+  "appletv",
+  "applevision",
   "applewatch",
   "ipad",
   "iphone",
+  "ipod",
   "mac",
   "other",
-  "tv",
-  "vision",
 ]);
 
 export const plugin: InlangPlugin<Config> = {
@@ -165,26 +166,13 @@ function importLocalization(id: string, localization: Localization) {
     const units = localization.variations!.plural!;
     assertVariationUnits(units, id, "plural", pluralCategories);
     const sourcePattern = parsePattern(id);
-    const sourceExpressions = sourcePattern.pattern.filter(
-      (part) => part.type === "expression",
-    );
-    if (sourceExpressions.length !== 1)
-      throw new Error(
-        `Direct Apple plural "${id}" must contain exactly one printf argument in its key`,
-      );
-    const sourceExpression = sourceExpressions[0]!;
-    if (sourceExpression.arg.type !== "variable-reference")
-      throw new Error(`Invalid direct Apple plural argument in "${id}"`);
-    const inputName = sourceExpression.arg.name;
-    const format = printfFormat(
-      sourceExpression.annotation,
-      argumentPosition(inputName),
-    );
-    const selector = "countPlural";
     const parsed = Object.entries(units).map(([key, unit]) => ({
       key,
       parsed: parsePattern(unit.stringUnit.value),
     }));
+    const format = inferDirectPluralFormat(id, sourcePattern.pattern, parsed);
+    const inputName = `arg${format.position}`;
+    const selector = "countPlural";
     return {
       declarations: [
         { type: "input-variable", name: inputName } as Declaration,
@@ -240,7 +228,7 @@ function importLocalization(id: string, localization: Localization) {
     const parsed = Object.entries(substitution.variations.plural).map(
       ([key, unit]) => ({
         key,
-        parsed: parsePattern(unit.stringUnit.value),
+        parsed: parsePattern(unit.stringUnit.value, argNum),
       }),
     );
     return {
@@ -285,12 +273,18 @@ function exportCatalog({ bundles, messages, variants, settings }: ExportArgs) {
   assertUniqueIds(bundles, "bundle");
   assertUniqueIds(messages, "message");
   const messageIds = new Set(messages.map((message) => message.id));
+  const bundleIds = new Set(bundles.map((bundle) => bundle.id));
+  for (const message of messages)
+    if (!bundleIds.has(message.bundleId))
+      throw new Error(
+        `Apple .xcstrings message "${message.id}" references missing bundle "${message.bundleId}"`,
+      );
   for (const variant of variants)
     if (!messageIds.has(variant.messageId))
       throw new Error(
         `Apple .xcstrings variant "${variant.id}" references missing message "${variant.messageId}"`,
       );
-  const strings: Catalog["strings"] = {};
+  const stringEntries: Array<[string, Catalog["strings"][string]]> = [];
   for (const bundle of bundles) {
     const bundleMessages = messages.filter(
       (message) => message.bundleId === bundle.id,
@@ -308,12 +302,15 @@ function exportCatalog({ bundles, messages, variants, settings }: ExportArgs) {
         variants,
       );
     }
-    strings[bundle.id] = { extractionState: "manual", localizations };
+    stringEntries.push([
+      bundle.id,
+      { extractionState: "manual", localizations },
+    ]);
   }
   const catalog: Catalog = {
     sourceLanguage: settings.baseLocale,
     strings: Object.fromEntries(
-      Object.entries(strings).sort(([a], [b]) => a.localeCompare(b)),
+      stringEntries.sort(([a], [b]) => a.localeCompare(b)),
     ),
     version: "1.0",
   };
@@ -445,6 +442,46 @@ function wrapPattern(
   ];
 }
 
+function inferDirectPluralFormat(
+  id: string,
+  sourcePattern: Pattern,
+  variants: Array<{ parsed: { pattern: Pattern } }>,
+) {
+  const sourceExpressions = sourcePattern.filter(
+    (part) => part.type === "expression",
+  );
+  const candidates = sourceExpressions.length
+    ? sourceExpressions
+    : variants.flatMap(({ parsed }) =>
+        parsed.pattern.filter((part) => part.type === "expression"),
+      );
+  if (!candidates.length)
+    throw new Error(
+      `Direct Apple plural "${id}" must contain a numeric printf argument in its key or variants`,
+    );
+  const formats = candidates.map((expression) => {
+    if (expression.arg.type !== "variable-reference")
+      throw new Error(`Invalid direct Apple plural argument in "${id}"`);
+    return printfFormat(
+      expression.annotation,
+      argumentPosition(expression.arg.name),
+    );
+  });
+  const first = formats[0]!;
+  if (
+    !/(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(first.specifier) ||
+    formats.some(
+      (format) =>
+        format.position !== first.position ||
+        format.specifier !== first.specifier,
+    )
+  )
+    throw new Error(
+      `Direct Apple plural "${id}" must use one consistent numeric argument`,
+    );
+  return first;
+}
+
 function parseCatalog(content: Uint8Array): Catalog {
   let parsed: unknown;
   try {
@@ -463,7 +500,7 @@ function parseCatalog(content: Uint8Array): Catalog {
   return parsed as Catalog;
 }
 
-function parsePattern(value: string) {
+function parsePattern(value: string, implicitStart = 1) {
   const pattern: Pattern = [];
   const variables: string[] = [];
   const regex =
@@ -471,7 +508,7 @@ function parsePattern(value: string) {
   if (!hasPrintfExpression(value, regex))
     return { pattern: [{ type: "text", value }] as Pattern, variables };
   let cursor = 0;
-  let implicit = 0;
+  let implicit = implicitStart - 1;
   let sawImplicit = false;
   let sawExplicit = false;
   const specifiersByPosition = new Map<number, string>();
@@ -661,6 +698,8 @@ function pluralDeclaration(
 }
 
 function inputPosition(bundle: Bundle, name: string) {
+  const namedPosition = argumentPosition(name);
+  if (namedPosition !== Number.MAX_SAFE_INTEGER) return namedPosition;
   const inputs = bundle.declarations.filter(
     (declaration) => declaration.type === "input-variable",
   );

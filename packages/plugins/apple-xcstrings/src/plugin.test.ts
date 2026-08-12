@@ -141,8 +141,8 @@ describe("Apple String Catalog plugin", () => {
                 formatSpecifier: "d",
                 variations: {
                   plural: {
-                    one: { stringUnit: translated("%1$@ has %2$d item") },
-                    other: { stringUnit: translated("%1$@ has %2$d items") },
+                    one: { stringUnit: translated("%d item") },
+                    other: { stringUnit: translated("%d items") },
                   },
                 },
               },
@@ -169,13 +169,13 @@ describe("Apple String Catalog plugin", () => {
     expect(localization.substitutions.items.formatSpecifier).toBe("d");
     expect(
       localization.substitutions.items.variations.plural.other.stringUnit.value,
-    ).toBe("You have %1$@ has %2$d items remaining");
+    ).toBe("You have %2$d items remaining");
     compileWithXcode(file!.content);
   });
 
   test("imports and compiles standard direct plural variations", async () => {
     const source = catalog({
-      "%1$lld item(s)": {
+      cart_items_direct: {
         localizations: {
           en: {
             variations: {
@@ -197,7 +197,7 @@ describe("Apple String Catalog plugin", () => {
       ...concretize(imported),
     });
     expect(
-      JSON.parse(decode(file!.content)).strings["%1$lld item(s)"].localizations
+      JSON.parse(decode(file!.content)).strings.cart_items_direct.localizations
         .en.variations.plural.other.stringUnit.value,
     ).toBe("%1$lld items");
     compileWithXcode(file!.content);
@@ -427,6 +427,45 @@ describe("Apple String Catalog plugin", () => {
         variants: [],
       }),
     ).toThrow("Duplicate Apple .xcstrings bundle id");
+  });
+
+  test("preserves prototype-looking exact keys and rejects missing bundles", () => {
+    const [file] = plugin.exportFiles!({
+      settings,
+      bundles: [{ id: "__proto__", declarations: [] }],
+      messages: [
+        {
+          id: "message",
+          bundleId: "__proto__",
+          locale: "en",
+          selectors: [],
+        },
+      ],
+      variants: [
+        {
+          id: "variant",
+          messageId: "message",
+          matches: [],
+          pattern: [{ type: "text", value: "safe" }],
+        },
+      ],
+    }) as any[];
+    expect(JSON.parse(decode(file!.content)).strings.__proto__).toBeTruthy();
+    expect(() =>
+      plugin.exportFiles!({
+        settings,
+        bundles: [],
+        messages: [
+          {
+            id: "message",
+            bundleId: "missing",
+            locale: "en",
+            selectors: [],
+          },
+        ],
+        variants: [],
+      }),
+    ).toThrow("references missing bundle");
   });
 });
 
