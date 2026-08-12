@@ -17,6 +17,8 @@ if (isProduction) {
   execFileSync(
     "tsc",
     [
+      "-p",
+      "tsconfig.build.json",
       "--emitDeclarationOnly",
       "--declaration",
       "--declarationMap",
