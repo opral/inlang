@@ -1,5 +1,17 @@
 # @inlang/plugin-i18next
 
+## 6.2.4
+
+### Patch Changes
+
+- dfe5d1e: Reject selectors that i18next cannot represent instead of silently dropping variants during export.
+- eb18b70: Emit the TypeScript declarations advertised by the package during production builds.
+- Updated dependencies [fb46551]
+- Updated dependencies [aaf4e05]
+- Updated dependencies [5d7b021]
+- Updated dependencies [7ea66f8]
+  - @inlang/sdk@3.0.0
+
 ## 6.2.3
 
 ### Patch Changes

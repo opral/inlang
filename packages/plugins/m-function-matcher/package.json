@@ -1,6 +1,6 @@
 {
 	"name": "@inlang/plugin-m-function-matcher",
-	"version": "2.2.9",
+	"version": "2.2.10",
 	"type": "module",
 	"types": "./dist/index.d.ts",
 	"exports": {
