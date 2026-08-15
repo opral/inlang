@@ -85,6 +85,20 @@ function serializeMessage(
 	variants: Variant[],
 	settings?: PluginSettings
 ): Array<{ key: string; value: string; locale: string }> {
+	const supportedSelectors = new Set([
+		"context",
+		"count",
+		"countPlural",
+		"countOrdinal",
+	]);
+	const unsupportedSelector = message.selectors.find(
+		(selector) => !supportedSelectors.has(selector.name)
+	);
+	if (unsupportedSelector) {
+		throw new Error(
+			`i18next export cannot represent selector "${unsupportedSelector.name}" in bundle "${bundle.id}"`
+		);
+	}
 	const result = [];
 
 	// emit base keys first and the most specific keys last, mirroring how

@@ -14,6 +14,7 @@
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": "./dist/index.js",
+		"./browser": "./dist/browser.js",
 		"./lix": "./dist/lix/index.js",
 		"./settings-schema": "./src/json-schema/settings.ts"
 	},
@@ -30,6 +31,7 @@
 		"typecheck": "npm run env-variables && tsc --noEmit",
 		"test": "npm run env-variables && tsc --noEmit && vitest run",
 		"test:watch": "vitest",
+		"bench": "vitest bench --run benchmark",
 		"lint": "eslint ./src",
 		"format": "prettier ./src --write",
 		"clean": "rm -rf ./dist ./node_modules"
@@ -38,7 +40,7 @@
 		"node": ">=20.0.0"
 	},
 	"dependencies": {
-		"@lix-js/sdk": "0.4.10",
+		"@lix-js/sdk": "0.12.0",
 		"@sinclair/typebox": "^0.31.17",
 		"kysely": "^0.28.12",
 		"sqlite-wasm-kysely": "0.3.0",

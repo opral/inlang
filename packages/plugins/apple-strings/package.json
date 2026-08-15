@@ -1,0 +1,38 @@
+{
+  "name": "@inlang/plugin-apple-strings",
+  "version": "0.1.0",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "./dist"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opral/inlang",
+    "directory": "packages/plugins/apple-strings"
+  },
+  "scripts": {
+    "dev": "node ./build.js",
+    "build": "NODE_ENV=production node ./build.js",
+    "test": "tsc --noEmit && vitest run",
+    "format": "prettier ./src --write",
+    "clean": "rm -rf ./dist ./node_modules"
+  },
+  "dependencies": {
+    "@inlang/sdk": "workspace:*",
+    "@sinclair/typebox": "^0.31.17"
+  },
+  "devDependencies": {
+    "@inlang/tsconfig": "workspace:*",
+    "esbuild": "^0.25.9",
+    "prettier": "3.3.3",
+    "typescript": "^5.5.2",
+    "vitest": "^4.0.6"
+  }
+}

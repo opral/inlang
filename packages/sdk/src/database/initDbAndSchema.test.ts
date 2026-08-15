@@ -1,14 +1,17 @@
-import { createInMemoryDatabase } from "sqlite-wasm-kysely";
 import { test, expect } from "vitest";
+import { openLix } from "@lix-js/sdk";
 import { initDb } from "./initDb.js";
-import { isHumanId } from "../human-id/human-id.js";
+import { registerInlangSchemas } from "./registerSchemas.js";
 import { validate as isUuid } from "uuid";
 
+async function createDb() {
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	return initDb({ lix });
+}
+
 test("bundle default values", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
+	const db = await createDb();
 
 	const bundle = await db
 		.insertInto("bundle")
@@ -16,15 +19,12 @@ test("bundle default values", async () => {
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
-	expect(isHumanId(bundle.id)).toBe(true);
+	expect(isUuid(bundle.id)).toBe(true);
 	expect(bundle.declarations).toStrictEqual([]);
 });
 
 test("message default values", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
+	const db = await createDb();
 
 	const bundle = await db
 		.insertInto("bundle")
@@ -46,10 +46,7 @@ test("message default values", async () => {
 });
 
 test("variant default values", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
+	const db = await createDb();
 
 	const bundle = await db
 		.insertInto("bundle")
@@ -80,10 +77,7 @@ test("variant default values", async () => {
 });
 
 test("it should handle json serialization and parsing for bundles", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
+	const db = await createDb();
 
 	const bundle = await db
 		.insertInto("bundle")
@@ -108,10 +102,7 @@ test("it should handle json serialization and parsing for bundles", async () => 
 
 // https://github.com/opral/paraglide-js/issues/571
 test("it should preserve json-like text in variant patterns", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
+	const db = await createDb();
 
 	const bundle = await db
 		.insertInto("bundle")
@@ -156,10 +147,7 @@ test("it should preserve json-like text in variant patterns", async () => {
 
 // https://github.com/opral/inlang/issues/209
 test.todo("it should enable foreign key constraints", async () => {
-	const sqlite = await createInMemoryDatabase({
-		readOnly: false,
-	});
-	const db = initDb({ sqlite });
+	const db = await createDb();
 
 	expect(() =>
 		db

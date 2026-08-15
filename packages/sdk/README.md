@@ -199,13 +199,16 @@ console.log(messages);
 > [!NOTE]  
 > The inlang plugin for lix is work in progress. If you stumble on issues, please open an issue on the [GitHub](https://github.com/opral/inlang).
 
-The inlang file format uses version control via lix. The lix APIs are exposed via `project.lix.*`. Visit the [lix documentation](https://lix.dev/) for more information on how to query changes.
+The inlang file format uses version control via lix. `project.lix` is the underlying Lix instance. Visit the [lix documentation](https://lix.dev/) for more information on how to query changes.
 
 ```typescript
-const changes = await project.lix.db
-  .selectFrom("change")
-  .selectAll()
-  .execute();
+const result = await project.lix.execute(`
+  SELECT created_at, schema_key, entity_pk, snapshot_content
+  FROM lix_change
+  ORDER BY created_at DESC
+`);
+
+const changes = result.rows.map((row) => row.toObject());
 ```
 
 ### Saving a project

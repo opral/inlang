@@ -1,5 +1,11 @@
 # @inlang/plugin-message-format
 
+## 4.4.2
+
+### Patch Changes
+
+- 9c719b3: Speed up importing large message-format projects by indexing bundles by id.
+
 ## 4.4.1
 
 ### Patch Changes

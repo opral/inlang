@@ -99,41 +99,31 @@ test("providing plugins should work", async () => {
 	expect(errors.length).toBe(0);
 });
 
-test("if a project has no id, it should be generated", async () => {
+test("the Lix id is preserved when serializing a project", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
-
-	await project.lix.db
-		.deleteFrom("file")
-		.where("path", "=", "/project_id")
-		.execute();
-
+	const id = await project.id.get();
 	const blob = await project.toBlob();
-
 	const project2 = await loadProjectInMemory({ blob });
-
-	const id = await project2.id.get();
-
-	expect(id).toBeDefined();
+	expect(await project2.id.get()).toBe(id);
 	expect(validate(id)).toBe(true);
 });
 
-test("providing an account should work", async () => {
-	const mockAccount = {
-		id: "mock-account-id",
-		name: "peter",
-	};
-
+test("uses the active account owned by Lix", async () => {
 	const project = await loadProjectInMemory({
 		blob: await newProject(),
-		account: mockAccount,
 	});
+	const activeAccountId = await project.lix.activeAccountId();
+	const result = await project.lix.execute(
+		"SELECT id, kind, status FROM lix_account WHERE id = $1",
+		[activeAccountId]
+	);
+	const activeAccount = result.rows[0]?.toObject();
 
-	const activeAccount = await project.lix.db
-		.selectFrom("active_account")
-		.selectAll()
-		.execute();
-
-	expect(activeAccount).toEqual([mockAccount]);
+	expect(activeAccount).toMatchObject({
+		id: activeAccountId,
+		kind: "anonymous",
+		status: "active",
+	});
 });
 
 // test("subscribing to errors should work", async () => {
@@ -146,19 +136,19 @@ test("providing an account should work", async () => {
 // 		errorsFromSub = value;
 // 	});
 
-// 	await project.lix.db
-// 		.updateTable("file")
-// 		.where("path", "=", "/settings.json")
-// 		.set({
-// 			data: new TextEncoder().encode(
+// 	await project.lix.execute(
+// 		"UPDATE lix_file SET content = $1 WHERE path = $2",
+// 		[
+// 			new TextEncoder().encode(
 // 				JSON.stringify({
 // 					baseLocale: "en",
 // 					locales: ["en"],
 // 					modules: ["invalid-module.js"],
 // 				})
 // 			),
-// 		})
-// 		.execute();
+// 			"/settings.json",
+// 		]
+// 	);
 
 // 	const errors = await project.errors.get();
 

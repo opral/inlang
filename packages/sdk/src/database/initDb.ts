@@ -1,34 +1,13 @@
-import { CamelCasePlugin, Kysely } from "kysely";
-import { applySchema, type InlangDatabaseSchema } from "./schema.js";
-import { createDialect, type SqliteWasmDatabase } from "sqlite-wasm-kysely";
-import { v7 } from "uuid";
-import { humanId } from "../human-id/human-id.js";
-import { JsonbPlugin } from "./jsonbPlugin.js";
+import { Kysely } from "kysely";
+import type { Lix } from "@lix-js/sdk";
+import type { InlangDatabaseSchema } from "./schema.js";
+import { LixDialect } from "./lixDialect.js";
+import { attachLixBatchExecutor } from "./lixBatch.js";
 
-export function initDb(args: { sqlite: SqliteWasmDatabase }) {
-	initDefaultValueFunctions({ sqlite: args.sqlite });
-	applySchema({ sqlite: args.sqlite });
+export function initDb(args: { lix: Lix }) {
 	const db = new Kysely<InlangDatabaseSchema>({
-		dialect: createDialect({
-			database: args.sqlite,
-		}),
-		plugins: [
-			new CamelCasePlugin(),
-			new JsonbPlugin({ database: args.sqlite }),
-		],
+		dialect: new LixDialect(args.lix),
 	});
+	attachLixBatchExecutor(db, args.lix);
 	return db;
-}
-
-function initDefaultValueFunctions(args: { sqlite: SqliteWasmDatabase }) {
-	args.sqlite.createFunction({
-		name: "uuid_v7",
-		arity: 0,
-		xFunc: () => v7(),
-	});
-	args.sqlite.createFunction({
-		name: "human_id",
-		arity: 0,
-		xFunc: () => humanId(),
-	});
 }

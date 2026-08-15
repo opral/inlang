@@ -1,0 +1,22 @@
+{
+  "$schema": "https://inlang.com/schema/marketplace-manifest",
+  "id": "plugin.inlang.apple-xcstrings",
+  "displayName": { "en": "Apple String Catalog" },
+  "description": {
+    "en": "Read and write Apple .xcstrings catalogs with variables, plurals, and device variations."
+  },
+  "pages": { "/": "./README.md" },
+  "keywords": [
+    "apple",
+    "ios",
+    "macos",
+    "xcstrings",
+    "string-catalog",
+    "localization",
+    "plugin"
+  ],
+  "publisherName": "inlang",
+  "publisherIcon": "https://inlang.com/favicon/safari-pinned-tab.svg",
+  "license": "Apache-2.0",
+  "module": "https://cdn.jsdelivr.net/npm/@inlang/plugin-apple-xcstrings@latest/dist/index.js"
+}

@@ -3,21 +3,13 @@ import type { InlangDatabaseSchema } from "../database/schema.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
 import type { Lix } from "@lix-js/sdk";
-import type { SqliteWasmDatabase } from "sqlite-wasm-kysely";
 
 export type InlangProject = {
 	db: Kysely<InlangDatabaseSchema>;
-	/**
-	 * @deprecated Don't use this. Only an internal hack to unblock
-	 * fink v2.
-	 *
-	 * TODO remove this
-	 */
-	_sqlite: SqliteWasmDatabase;
 	id: {
 		/**
-		 * Stable for packed `.inlang` files. For unpacked projects loaded from a
-		 * directory, the id is unstable because `project_id` is not persisted.
+		 * The built-in Lix id. Stable for packed `.inlang` files. Unpacked projects
+		 * loaded into a fresh Lix receive a new id on each load.
 		 */
 		get: () => Promise<string>;
 	};
@@ -31,6 +23,7 @@ export type InlangProject = {
 		get: () => Promise<ProjectSettings>;
 		set: (settings: ProjectSettings) => Promise<void>;
 	};
+	/** The exact Lix instance supplied by the caller or opened by Inlang. */
 	lix: Lix;
 	importFiles: (args: {
 		pluginKey: InlangPlugin["key"];
