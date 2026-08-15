@@ -1,5 +1,11 @@
 # @inlang/sdk
 
+## 3.0.1
+
+### Patch Changes
+
+- 78ad386: Update the SDK's Lix engine dependency to 0.12.2, including the Node.js WASM fallback for musl-based environments.
+
 ## 3.0.0
 
 ### Major Changes
