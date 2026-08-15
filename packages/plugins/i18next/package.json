@@ -1,6 +1,6 @@
 {
 	"name": "@inlang/plugin-i18next",
-	"version": "6.2.3",
+	"version": "6.2.4",
 	"type": "module",
 	"types": "./dist/index.d.ts",
 	"exports": {
