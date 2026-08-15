@@ -109,12 +109,14 @@ class LixConnection implements DatabaseConnection {
 		const executor = this.#transaction ?? this.#lix;
 		let prepared = this.#preparedQueries.get(compiledQuery.sql);
 		if (!prepared) {
-			prepared = prepareLixQuery(compiledQuery.sql);
+			const nextPrepared = prepareLixQuery(compiledQuery.sql);
+			prepared = nextPrepared;
 			this.#preparedQueries.set(compiledQuery.sql, prepared);
 		}
 		const parameters = prepared.parameterPositions.map(
 			(position) => compiledQuery.parameters[position - 1]
 		);
+		encodeIdentityParameters(parameters, prepared.identityParameterPositions);
 		const result = await executor.execute(
 			prepared.sql,
 			parameters as SqlParam[]
@@ -133,6 +135,7 @@ class LixConnection implements DatabaseConnection {
 type PreparedLixQuery = {
 	sql: string;
 	parameterPositions: number[];
+	identityParameterPositions: number[];
 };
 
 /** Convert Kysely's compiled query to the one Lix SQL/parameter contract. */
@@ -143,22 +146,56 @@ export function compileLixQuery(
 	const parameters = prepared.parameterPositions.map(
 		(position) => compiledQuery.parameters[position - 1]
 	);
+	encodeIdentityParameters(parameters, prepared.identityParameterPositions);
 	return {
 		sql: prepared.sql,
 		params: parameters as SqlParam[],
 	};
 }
 
-function prepareLixQuery(compiledSql: string): {
-	sql: string;
-	parameterPositions: number[];
-} {
-	const sql = rewriteTableNames(omitPrimaryKeyAssignments(compiledSql));
+function prepareLixQuery(compiledSql: string): PreparedLixQuery {
+	const sql = ensureGeneratedPrimaryKey(
+		rewriteTableNames(omitPrimaryKeyAssignments(compiledSql))
+	);
 	const compacted = compactSqlParameters(sql);
 	return {
 		sql: compacted.sql,
 		parameterPositions: compacted.positions,
+		identityParameterPositions: findIdentityParameterPositions(compacted.sql),
 	};
+}
+
+function ensureGeneratedPrimaryKey(sql: string): string {
+	const tables = "(?:inlang_bundle|inlang_message|inlang_variant)";
+	const insertWithColumns = new RegExp(
+		`^(insert\\s+into\\s+"${tables}"\\s*)\\(([^)]*)\\)(\\s+values\\s+)(.*)$`,
+		"i"
+	);
+	const withColumns = sql.match(insertWithColumns);
+	if (withColumns && !/(?:^|,)\s*"id"\s*(?:,|$)/i.test(withColumns[2] ?? "")) {
+		const valuesAndTail = withColumns[4] ?? "";
+		const tailStart = valuesAndTail.search(/\s+(?:on\s+conflict|returning)\b/i);
+		const values =
+			tailStart === -1 ? valuesAndTail : valuesAndTail.slice(0, tailStart);
+		const tail = tailStart === -1 ? "" : valuesAndTail.slice(tailStart);
+		const generatedValues = values.replace(
+			/\(([^()]*)\)/g,
+			(_, row: string) => {
+				return `(CAST(uuidv7() AS TEXT), ${row})`;
+			}
+		);
+		return `${withColumns[1]}("id", ${withColumns[2]})${withColumns[3]}${generatedValues}${tail}`;
+	}
+
+	const insertDefaultValues = new RegExp(
+		`^(insert\\s+into\\s+"${tables}"\\s*)default\\s+values(.*)$`,
+		"i"
+	);
+	const defaultValues = sql.match(insertDefaultValues);
+	if (defaultValues) {
+		return `${defaultValues[1]}("id") VALUES (CAST(uuidv7() AS TEXT))${defaultValues[2]}`;
+	}
+	return sql;
 }
 
 function rewriteTableNames(sql: string): string {
@@ -166,7 +203,9 @@ function rewriteTableNames(sql: string): string {
 		.replaceAll('"file"', '"lix_file"')
 		.replaceAll('"bundle"', '"inlang_bundle"')
 		.replaceAll('"message"', '"inlang_message"')
-		.replaceAll('"variant"', '"inlang_variant"');
+		.replaceAll('"variant"', '"inlang_variant"')
+		.replaceAll('"bundleId"', '"bundle_id"')
+		.replaceAll('"messageId"', '"message_id"');
 }
 
 function omitPrimaryKeyAssignments(sql: string): string {
@@ -199,8 +238,103 @@ function omitPrimaryKeyAssignments(sql: string): string {
 
 function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(
-		Object.entries(row).filter(([column]) => !column.startsWith("lixcol_"))
+		Object.entries(row)
+			.filter(([column]) => !column.startsWith("lixcol_"))
+			.map(([column, value]) => [
+				column === "bundle_id"
+					? "bundleId"
+					: column === "message_id"
+						? "messageId"
+						: column,
+				isIdentityColumn(column) && typeof value === "string"
+					? decodeIdentity(value)
+					: value,
+			])
 	);
+}
+
+function isIdentityColumn(column: string): boolean {
+	return column === "id" || column === "bundle_id" || column === "message_id";
+}
+
+const encodedIdentityPrefix = "lixid1:";
+
+function encodeIdentity(value: string): string {
+	if (!value.includes("\0") && !value.startsWith(encodedIdentityPrefix)) {
+		return value;
+	}
+	const bytes = new TextEncoder().encode(value);
+	let binary = "";
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return `${encodedIdentityPrefix}${btoa(binary)
+		.replaceAll("+", "-")
+		.replaceAll("/", "_")
+		.replace(/=+$/, "")}`;
+}
+
+function decodeIdentity(value: string): string {
+	if (!value.startsWith(encodedIdentityPrefix)) return value;
+	try {
+		const encoded = value
+			.slice(encodedIdentityPrefix.length)
+			.replaceAll("-", "+")
+			.replaceAll("_", "/");
+		const binary = atob(encoded + "=".repeat((4 - (encoded.length % 4)) % 4));
+		return new TextDecoder().decode(
+			Uint8Array.from(binary, (character) => character.charCodeAt(0))
+		);
+	} catch {
+		return value;
+	}
+}
+
+function encodeIdentityParameters(
+	parameters: unknown[],
+	positions: number[]
+): void {
+	for (const position of positions) {
+		const value = parameters[position - 1];
+		if (typeof value === "string")
+			parameters[position - 1] = encodeIdentity(value);
+	}
+}
+
+function findIdentityParameterPositions(sql: string): number[] {
+	const positions = new Set<number>();
+	const identityColumns = "(?:id|bundle_id|message_id)";
+	for (const match of sql.matchAll(
+		new RegExp(`"${identityColumns}"\\s*=\\s*\\$(\\d+)`, "gi")
+	)) {
+		positions.add(Number(match[1]));
+	}
+	for (const match of sql.matchAll(
+		new RegExp(`"${identityColumns}"\\s+in\\s*\\(([^)]*)\\)`, "gi")
+	)) {
+		for (const parameter of match[1]?.matchAll(/\$(\d+)/g) ?? []) {
+			positions.add(Number(parameter[1]));
+		}
+	}
+	const insert = sql.match(
+		/insert\s+into\s+"(?:inlang_bundle|inlang_message|inlang_variant)"\s*\(([^)]*)\)\s+values\s+([\s\S]*)/i
+	);
+	if (insert) {
+		const columns = [...(insert[1] ?? "").matchAll(/"([^"]+)"/g)]
+			.map((match) => match[1])
+			.filter((column): column is string => column !== undefined);
+		const identityIndexes = columns.flatMap((column, index) =>
+			isIdentityColumn(column) ? [index] : []
+		);
+		for (const row of (insert[2] ?? "").matchAll(/\(([^()]*)\)/g)) {
+			const values = [...(row[1] ?? "").matchAll(/\$(\d+)/g)].map((match) =>
+				Number(match[1])
+			);
+			for (const index of identityIndexes) {
+				const position = values[index];
+				if (position !== undefined) positions.add(position);
+			}
+		}
+	}
+	return [...positions].sort((left, right) => left - right);
 }
 
 function compactSqlParameters(sql: string): {

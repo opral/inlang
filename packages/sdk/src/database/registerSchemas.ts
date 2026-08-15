@@ -1,4 +1,4 @@
-import type { Lix } from "@lix-js/sdk";
+import { Value, type Lix } from "@lix-js/sdk";
 import {
 	InlangBundleSchema,
 	InlangMessageSchema,
@@ -13,7 +13,7 @@ const schemas = [
 
 export async function registerInlangSchemas(lix: Lix): Promise<void> {
 	const registered = await lix.execute(
-		"SELECT lix_json_get_text(value, 'x-lix-key') AS schema_key FROM lix_registered_schema"
+		"SELECT value ->> 'key' AS schema_key FROM lix_registered_schema"
 	);
 	const registeredKeys = new Set(
 		registered.rows
@@ -22,10 +22,9 @@ export async function registerInlangSchemas(lix: Lix): Promise<void> {
 	);
 
 	for (const schema of schemas) {
-		if (registeredKeys.has(schema["x-lix-key"])) continue;
-		await lix.execute(
-			"INSERT INTO lix_registered_schema (value) VALUES (lix_json($1))",
-			[JSON.stringify(schema)]
-		);
+		if (registeredKeys.has(schema.key)) continue;
+		await lix.execute("INSERT INTO lix_registered_schema (value) VALUES ($1)", [
+			Value.jsonb(schema),
+		]);
 	}
 }

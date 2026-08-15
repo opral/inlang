@@ -1,0 +1,14 @@
+{
+  "$schema": "https://inlang.com/schema/marketplace-manifest",
+  "id": "plugin.inlang.apple-strings",
+  "displayName": { "en": "Apple Strings" },
+  "description": {
+    "en": "Read and write Apple .strings localization files with positional variables."
+  },
+  "pages": { "/": "./README.md" },
+  "keywords": ["apple", "ios", "macos", "strings", "localization", "plugin"],
+  "publisherName": "inlang",
+  "publisherIcon": "https://inlang.com/favicon/safari-pinned-tab.svg",
+  "license": "Apache-2.0",
+  "module": "https://cdn.jsdelivr.net/npm/@inlang/plugin-apple-strings@latest/dist/index.js"
+}

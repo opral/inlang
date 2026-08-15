@@ -4,6 +4,183 @@ import { loadProjectInMemory } from "../project/loadProjectInMemory.js";
 import { newProject } from "../project/newProject.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 
+test("batch imports an unambiguous fresh project", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "mock-bundle" }],
+			messages: [
+				{ bundleId: "mock-bundle", locale: "en" },
+				{ bundleId: "mock-bundle", locale: "de" },
+			],
+			variants: [
+				{ messageBundleId: "mock-bundle", messageLocale: "en" },
+				{ messageBundleId: "mock-bundle", messageLocale: "de" },
+			],
+		}),
+	};
+
+	await importFiles({
+		db: project.db,
+		files: [{ content: new Uint8Array(), locale: "mock" }],
+		pluginKey: "mock",
+		plugins: [mockPlugin],
+		settings: {} as any,
+	});
+
+	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const variants = await project.db.selectFrom("variant").selectAll().execute();
+
+	expect(messages).toHaveLength(2);
+	expect(variants).toHaveLength(2);
+	expect(new Set(variants.map((variant) => variant.messageId))).toEqual(
+		new Set(messages.map((message) => message.id))
+	);
+});
+
+test("batches rows with mixed optional columns", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "plain-bundle" }, { id: "rich-bundle" }],
+			messages: [
+				{ bundleId: "plain-bundle", locale: "en" },
+				{
+					bundleId: "rich-bundle",
+					locale: "de",
+					selectors: [{ type: "variable-reference", name: "platform" }],
+				},
+			],
+			variants: [
+				{ messageBundleId: "plain-bundle", messageLocale: "en" },
+				{
+					messageBundleId: "rich-bundle",
+					messageLocale: "de",
+					matches: [
+						{
+							type: "literal-match",
+							key: "platform",
+							value: "web",
+						},
+					],
+					pattern: [{ type: "text", value: "Hello web" }],
+				},
+			],
+		}),
+	};
+
+	await importFiles({
+		db: project.db,
+		files: [{ content: new Uint8Array(), locale: "mock" }],
+		pluginKey: "mock",
+		plugins: [mockPlugin],
+		settings: {} as any,
+	});
+
+	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const variants = await project.db.selectFrom("variant").selectAll().execute();
+
+	expect(messages).toHaveLength(2);
+	expect(
+		messages.find((message) => message.locale === "en")?.selectors
+	).toStrictEqual([]);
+	expect(
+		messages.find((message) => message.locale === "de")?.selectors
+	).toStrictEqual([{ type: "variable-reference", name: "platform" }]);
+	expect(variants).toHaveLength(2);
+	expect(
+		variants.find((variant) => variant.matches.length === 0)?.pattern
+	).toStrictEqual([]);
+	expect(
+		variants.find((variant) => variant.matches.length > 0)?.pattern
+	).toStrictEqual([{ type: "text", value: "Hello web" }]);
+});
+
+test("preserves variant upsert semantics for duplicate matches", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "mock-bundle" }],
+			messages: [{ bundleId: "mock-bundle", locale: "en" }],
+			variants: [
+				{
+					messageBundleId: "mock-bundle",
+					messageLocale: "en",
+					matches: [],
+					pattern: [{ type: "text", value: "first" }],
+				},
+				{
+					messageBundleId: "mock-bundle",
+					messageLocale: "en",
+					matches: [],
+					pattern: [{ type: "text", value: "last" }],
+				},
+			],
+		}),
+	};
+
+	await importFiles({
+		db: project.db,
+		files: [{ content: new Uint8Array(), locale: "mock" }],
+		pluginKey: "mock",
+		plugins: [mockPlugin],
+		settings: {} as any,
+	});
+
+	const variants = await project.db.selectFrom("variant").selectAll().execute();
+
+	expect(variants).toHaveLength(1);
+	expect(variants[0]?.pattern).toStrictEqual([{ type: "text", value: "last" }]);
+});
+
+test("does not alias message references containing NUL characters", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "a" }, { id: "a\u0000b" }],
+			messages: [
+				{ bundleId: "a", locale: "b\u0000c" },
+				{ bundleId: "a\u0000b", locale: "c" },
+			],
+			variants: [
+				{
+					messageBundleId: "a",
+					messageLocale: "b\u0000c",
+					pattern: [{ type: "text", value: "first" }],
+				},
+				{
+					messageBundleId: "a\u0000b",
+					messageLocale: "c",
+					pattern: [{ type: "text", value: "second" }],
+				},
+			],
+		}),
+	};
+
+	await importFiles({
+		db: project.db,
+		files: [{ content: new Uint8Array(), locale: "mock" }],
+		pluginKey: "mock",
+		plugins: [mockPlugin],
+		settings: {} as any,
+	});
+
+	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const variants = await project.db.selectFrom("variant").selectAll().execute();
+
+	expect(variants).toHaveLength(2);
+	expect(new Set(variants.map((variant) => variant.messageId))).toHaveLength(2);
+	expect(messages).toHaveLength(2);
+});
+
 test("it should insert a message as is if the id is provided", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 

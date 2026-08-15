@@ -23,6 +23,7 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	files,
 }) => {
 	const bundles: Bundle[] = [];
+	const bundlesById = new Map<string, Bundle>();
 	const messages: MessageImport[] = [];
 	const variants: VariantImport[] = [];
 
@@ -38,9 +39,10 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 			messages.push(result.message);
 			variants.push(...result.variants);
 
-			const existingBundle = bundles.find((b) => b.id === result.bundle.id);
+			const existingBundle = bundlesById.get(result.bundle.id);
 			if (existingBundle === undefined) {
 				bundles.push(result.bundle);
+				bundlesById.set(result.bundle.id, result.bundle);
 			} else {
 				// merge declarations without duplicates
 				existingBundle.declarations = unique([

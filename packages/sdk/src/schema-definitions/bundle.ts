@@ -1,11 +1,18 @@
 export const InlangBundleSchema = {
-	"x-lix-key": "inlang_bundle",
-	"x-lix-primary-key": ["/id"],
-	type: "object",
-	properties: {
-		id: { type: "string", "x-lix-default": "lix_uuid_v7()" },
-		declarations: { type: "array", items: { type: "object" }, default: [] },
-	},
-	required: ["id", "declarations"],
-	additionalProperties: false,
+	$schema: "https://lix.dev/schema-v1.json",
+	key: "inlang_bundle",
+	columns: [
+		{
+			name: "id",
+			type: "text",
+			nullable: false,
+		},
+		{
+			name: "declarations",
+			type: "jsonb",
+			nullable: false,
+			default_value: [],
+		},
+	],
+	primary_key: ["id"],
 } as const;

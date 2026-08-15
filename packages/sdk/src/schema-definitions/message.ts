@@ -1,19 +1,34 @@
 export const InlangMessageSchema = {
-	"x-lix-key": "inlang_message",
-	"x-lix-primary-key": ["/id"],
-	"x-lix-foreign-keys": [
+	$schema: "https://lix.dev/schema-v1.json",
+	key: "inlang_message",
+	columns: [
 		{
-			properties: ["/bundleId"],
-			references: { schemaKey: "inlang_bundle", properties: ["/id"] },
+			name: "id",
+			type: "text",
+			nullable: false,
+		},
+		{
+			name: "bundle_id",
+			type: "text",
+			nullable: false,
+		},
+		{
+			name: "locale",
+			type: "text",
+			nullable: false,
+		},
+		{
+			name: "selectors",
+			type: "jsonb",
+			nullable: false,
+			default_value: [],
 		},
 	],
-	type: "object",
-	properties: {
-		id: { type: "string", "x-lix-default": "lix_uuid_v7()" },
-		bundleId: { type: "string" },
-		locale: { type: "string" },
-		selectors: { type: "array", items: { type: "object" }, default: [] },
-	},
-	required: ["id", "bundleId", "locale", "selectors"],
-	additionalProperties: false,
+	primary_key: ["id"],
+	foreign_keys: [
+		{
+			columns: ["bundle_id"],
+			references: { schema_key: "inlang_bundle", columns: ["id"] },
+		},
+	],
 } as const;
