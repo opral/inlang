@@ -1,0 +1,21 @@
+{
+  "$schema": "https://inlang.com/schema/marketplace-manifest",
+  "id": "plugin.inlang.android",
+  "displayName": { "en": "Android Resources" },
+  "description": {
+    "en": "Read and write Android strings.xml resources with variables and CLDR plurals."
+  },
+  "pages": { "/": "./README.md" },
+  "keywords": [
+    "android",
+    "xml",
+    "strings",
+    "resources",
+    "localization",
+    "plugin"
+  ],
+  "publisherName": "inlang",
+  "publisherIcon": "https://inlang.com/favicon/safari-pinned-tab.svg",
+  "license": "Apache-2.0",
+  "module": "https://cdn.jsdelivr.net/npm/@inlang/plugin-android@latest/dist/index.js"
+}

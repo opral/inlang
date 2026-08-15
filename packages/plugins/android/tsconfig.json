@@ -1,0 +1,1 @@
+{ "extends": "@inlang/tsconfig/default", "include": ["src/**/*"] }

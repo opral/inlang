@@ -15,6 +15,8 @@
 		"698iow33": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/plugins/t-function-matcher/marketplace-manifest.json",
 		"193hsyds": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/plugins/next-intl/marketplace-manifest.json",
 		"p7c8m1d2": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/plugins/icu1/marketplace-manifest.json",
+		"andr0id2": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/plugins/android/marketplace-manifest.json",
+		"applstr1": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/plugins/apple-strings/marketplace-manifest.json",
 		"neh2d6w7": "https://cdn.jsdelivr.net/npm/inlang-plugin-xcstrings@latest/marketplace-manifest.json",
 		"3gk8n4n4": "https://raw.githubusercontent.com/opral/inlang/refs/heads/inlang-v1/inlang/source-code/github-lint-action/marketplace-manifest.json",
 		"y0eo8f66": "https://raw.githubusercontent.com/opral/inlang/refs/heads/inlang-v1/inlang/source-code/message-lint-rules/emptyPattern/marketplace-manifest.json",
