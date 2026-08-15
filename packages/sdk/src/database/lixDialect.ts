@@ -153,7 +153,9 @@ function prepareLixQuery(compiledSql: string): {
 	sql: string;
 	parameterPositions: number[];
 } {
-	const sql = rewriteTableNames(omitPrimaryKeyAssignments(compiledSql));
+	const sql = ensureGeneratedPrimaryKey(
+		rewriteTableNames(omitPrimaryKeyAssignments(compiledSql))
+	);
 	const compacted = compactSqlParameters(sql);
 	return {
 		sql: compacted.sql,
@@ -161,12 +163,36 @@ function prepareLixQuery(compiledSql: string): {
 	};
 }
 
+function ensureGeneratedPrimaryKey(sql: string): string {
+	const tables = "(?:inlang_bundle|inlang_message|inlang_variant)";
+	const insertWithColumns = new RegExp(
+		`^(insert\\s+into\\s+"${tables}"\\s*)\\(([^)]*)\\)(\\s+values\\s*)\\(([^)]*)\\)(.*)$`,
+		"i"
+	);
+	const withColumns = sql.match(insertWithColumns);
+	if (withColumns && !/(?:^|,)\s*"id"\s*(?:,|$)/i.test(withColumns[2] ?? "")) {
+		return `${withColumns[1]}("id", ${withColumns[2]})${withColumns[3]}(CAST(uuidv7() AS TEXT), ${withColumns[4]})${withColumns[5]}`;
+	}
+
+	const insertDefaultValues = new RegExp(
+		`^(insert\\s+into\\s+"${tables}"\\s*)default\\s+values(.*)$`,
+		"i"
+	);
+	const defaultValues = sql.match(insertDefaultValues);
+	if (defaultValues) {
+		return `${defaultValues[1]}("id") VALUES (CAST(uuidv7() AS TEXT))${defaultValues[2]}`;
+	}
+	return sql;
+}
+
 function rewriteTableNames(sql: string): string {
 	return sql
 		.replaceAll('"file"', '"lix_file"')
 		.replaceAll('"bundle"', '"inlang_bundle"')
 		.replaceAll('"message"', '"inlang_message"')
-		.replaceAll('"variant"', '"inlang_variant"');
+		.replaceAll('"variant"', '"inlang_variant"')
+		.replaceAll('"bundleId"', '"bundle_id"')
+		.replaceAll('"messageId"', '"message_id"');
 }
 
 function omitPrimaryKeyAssignments(sql: string): string {
@@ -199,7 +225,16 @@ function omitPrimaryKeyAssignments(sql: string): string {
 
 function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 	return Object.fromEntries(
-		Object.entries(row).filter(([column]) => !column.startsWith("lixcol_"))
+		Object.entries(row)
+			.filter(([column]) => !column.startsWith("lixcol_"))
+			.map(([column, value]) => [
+				column === "bundle_id"
+					? "bundleId"
+					: column === "message_id"
+						? "messageId"
+						: column,
+				value,
+			])
 	);
 }
 

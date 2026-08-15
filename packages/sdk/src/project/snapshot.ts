@@ -116,12 +116,12 @@ export async function restoreProjectBlob(lix: Lix, blob: Blob): Promise<void> {
 		});
 		for (const message of bundle.messages) {
 			statements.push({
-				sql: 'INSERT INTO inlang_message (id, "bundleId", locale, selectors) VALUES ($1, $2, $3, $4)',
+				sql: "INSERT INTO inlang_message (id, bundle_id, locale, selectors) VALUES ($1, $2, $3, $4)",
 				params: [message.id, bundle.id, message.locale, message.selectors],
 			});
 			for (const variant of message.variants) {
 				statements.push({
-					sql: 'INSERT INTO inlang_variant (id, "messageId", matches, pattern) VALUES ($1, $2, $3, $4)',
+					sql: "INSERT INTO inlang_variant (id, message_id, matches, pattern) VALUES ($1, $2, $3, $4)",
 					params: [variant.id, message.id, variant.matches, variant.pattern],
 				});
 			}

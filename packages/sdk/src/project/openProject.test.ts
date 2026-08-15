@@ -16,7 +16,7 @@ test("opens a project on a caller-owned Lix", async () => {
 		locales: ["fr", "en"],
 	});
 	const registeredSchemas = await lix.execute(
-		"SELECT lix_json_get_text(value, 'x-lix-key') AS schema_key FROM lix_registered_schema"
+		"SELECT value ->> 'key' AS schema_key FROM lix_registered_schema"
 	);
 	expect(
 		registeredSchemas.rows
