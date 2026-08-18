@@ -840,8 +840,8 @@ importers:
   packages/sdk:
     dependencies:
       '@lix-js/sdk':
-        specifier: 0.12.2
-        version: 0.12.2
+        specifier: 0.12.3
+        version: 0.12.3
       '@sinclair/typebox':
         specifier: ^0.31.17
         version: 0.31.28
@@ -3307,28 +3307,28 @@ packages:
     resolution: {integrity: sha512-B9X3FjD8WmdG7tbA44JuniSO0KdKBWnjfxl8zpgrDCkavrp/GP7U0xxBkc0WgeeoHjQ/pkqq9VqtWB2kS9jIUg==}
     deprecated: use the lix sdk instead https://www.npmjs.com/package/@lix-js/sdk
 
-  '@lix-js/sdk-darwin-arm64@0.12.2':
-    resolution: {integrity: sha512-0mBRIfgZfaey1/d0mijv7fBIGPeaTIMCDOPr3s4RUlHy/j+llNmAyDS2iNlalFh9nQGys7JNzo2Hv3FQbdKmug==}
+  '@lix-js/sdk-darwin-arm64@0.12.3':
+    resolution: {integrity: sha512-YeMJyYGk+QwvQe8O4AAcBMgfNm68IjAGDvuvZHr1U1rIb3GC2kYFStajqf4mT4BGc+cN65/P/2kkqEo+Igu/sA==}
     cpu: [arm64]
     os: [darwin]
 
-  '@lix-js/sdk-linux-arm64@0.12.2':
-    resolution: {integrity: sha512-817uJlC2KTIKDaqQvALTu03hEJpNxEA+9d33FNs8sOm9pAguOWiAK1zGA2SD0IgS9Q8NqQeABLb84OesW5/NCA==}
+  '@lix-js/sdk-linux-arm64@0.12.3':
+    resolution: {integrity: sha512-jtmfNg6jLW61l1QvsU3W184l3hGtYUyPGzZrQyekk0vsMF1hxsP++7ONEGNI19PE7ldwSnGCB8Q6OzRKX87abQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@lix-js/sdk-linux-x64@0.12.2':
-    resolution: {integrity: sha512-rA7lw1jBr6azBHR5Sh/RzOKSAlRcmVea7VeI4VQqpy0PZs+5tWoK9iVC41V4oCIKssRv2wrkbvyP3CqInhoknQ==}
+  '@lix-js/sdk-linux-x64@0.12.3':
+    resolution: {integrity: sha512-PiQL4h1FJXbxnZx/PgenI5grgpFtYlS/ZtPtTYh638YHVu+6J0cqGY/pLVqP8CKv1dWAKsZ2YgftLd+1j2+WKA==}
     cpu: [x64]
     os: [linux]
 
-  '@lix-js/sdk-win32-x64@0.12.2':
-    resolution: {integrity: sha512-y9IikCdrYx6cFnfqeUvYKPw6KBY016U2F2wYDILYZDZndccK2xw7lJChX163w9PewMwY3GsC/UqRBi5yqFAJ2w==}
+  '@lix-js/sdk-win32-x64@0.12.3':
+    resolution: {integrity: sha512-hnxMI7kPS4ngXs0ZVnOve5CmtC4+vaNIyNDi/yWU0rSvxj7mqw/1RCegTrCB7LjxlX4DG+eg9HruXurk9NDjGg==}
     cpu: [x64]
     os: [win32]
 
-  '@lix-js/sdk@0.12.2':
-    resolution: {integrity: sha512-sKGOPdVKdChS5q60F4VQE4ZTcf0B7ZJM3KGCVQFN2suVNKhHcllbsCiwRYuM5WL7Yu1ql7YexltJ2FCsDqKePg==}
+  '@lix-js/sdk@0.12.3':
+    resolution: {integrity: sha512-T2194yoZsM2S9kyRmI8UtEJL0fgXYAkeY9jZ/PVyC0K78/wmBvrqOSt9SdvgYxM5qnZ57re3NLOjVlV+X5hWxQ==}
 
   '@manypkg/find-root@1.1.0':
     resolution: {integrity: sha512-mki5uBvhHzO8kYYix/WRy2WX8S3B5wdVSc9D6KcU5lQNglP2yt58/VfLuAK49glRXChosY8ap2oJ1qgma3GUVA==}
@@ -13711,26 +13711,26 @@ snapshots:
     dependencies:
       typescript: 5.2.2
 
-  '@lix-js/sdk-darwin-arm64@0.12.2':
+  '@lix-js/sdk-darwin-arm64@0.12.3':
     optional: true
 
-  '@lix-js/sdk-linux-arm64@0.12.2':
+  '@lix-js/sdk-linux-arm64@0.12.3':
     optional: true
 
-  '@lix-js/sdk-linux-x64@0.12.2':
+  '@lix-js/sdk-linux-x64@0.12.3':
     optional: true
 
-  '@lix-js/sdk-win32-x64@0.12.2':
+  '@lix-js/sdk-win32-x64@0.12.3':
     optional: true
 
-  '@lix-js/sdk@0.12.2':
+  '@lix-js/sdk@0.12.3':
     dependencies:
       fflate: 0.8.3
     optionalDependencies:
-      '@lix-js/sdk-darwin-arm64': 0.12.2
-      '@lix-js/sdk-linux-arm64': 0.12.2
-      '@lix-js/sdk-linux-x64': 0.12.2
-      '@lix-js/sdk-win32-x64': 0.12.2
+      '@lix-js/sdk-darwin-arm64': 0.12.3
+      '@lix-js/sdk-linux-arm64': 0.12.3
+      '@lix-js/sdk-linux-x64': 0.12.3
+      '@lix-js/sdk-win32-x64': 0.12.3
 
   '@manypkg/find-root@1.1.0':
     dependencies:
