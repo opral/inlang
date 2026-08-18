@@ -1,5 +1,11 @@
 # @inlang/sdk
 
+## 3.0.2
+
+### Patch Changes
+
+- b012f5e: Update the SDK's Lix engine dependency to 0.12.3, fixing Node.js worker startup when hosts provide worker-incompatible runtime flags.
+
 ## 3.0.1
 
 ### Patch Changes
