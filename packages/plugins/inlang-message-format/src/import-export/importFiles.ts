@@ -190,7 +190,7 @@ function parseVariants(
 				}
 			}
 			if (isDuplicate) {
-				break;
+				continue;
 			}
 			declarations.add(declaration);
 		}
@@ -293,7 +293,10 @@ function parsePattern(value: string): {
 	};
 }
 
-function findPlaceholderClosingIndex(value: string, openingIndex: number): number {
+function findPlaceholderClosingIndex(
+	value: string,
+	openingIndex: number
+): number {
 	let inQuotedLiteral = false;
 
 	for (let cursor = openingIndex + 1; cursor < value.length; cursor += 1) {
@@ -480,14 +483,14 @@ function parseMarkupValue(
 		let cursor = index + 1;
 		let literal = "";
 		while (cursor < value.length) {
-				const char = value[cursor]!;
-				if (char === "\\") {
-					const next = value[cursor + 1];
-					if (next === "|" || next === "\\" || next === "}") {
-						literal += next;
-						cursor += 2;
-						continue;
-					}
+			const char = value[cursor]!;
+			if (char === "\\") {
+				const next = value[cursor + 1];
+				if (next === "|" || next === "\\" || next === "}") {
+					literal += next;
+					cursor += 2;
+					continue;
+				}
 				literal += char;
 				cursor += 1;
 				continue;
@@ -527,14 +530,12 @@ function parseMatches(value: string): {
 	matches: Match[];
 	selectors: Message["selectors"];
 } {
-	const stripped = value.replace(" ", "");
-
 	const matches: Match[] = [];
 	const selectors: Message["selectors"] = [];
 
-	const parts = stripped.split(",");
+	const parts = value.split(",");
 	for (const part of parts) {
-		const [key, value] = part.split("=");
+		const [key, value] = part.split("=").map((segment) => segment.trim());
 		if (!key || !value) {
 			continue;
 		}
