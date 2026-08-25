@@ -31,7 +31,6 @@
 		"typecheck": "npm run env-variables && tsc --noEmit",
 		"test": "npm run env-variables && tsc --noEmit && vitest run",
 		"test:watch": "vitest",
-		"bench": "vitest bench --run benchmark",
 		"lint": "eslint ./src",
 		"format": "prettier ./src --write",
 		"clean": "rm -rf ./dist ./node_modules"
@@ -43,7 +42,6 @@
 		"@lix-js/sdk": "0.12.3",
 		"@sinclair/typebox": "^0.31.17",
 		"kysely": "^0.28.12",
-		"sqlite-wasm-kysely": "0.3.0",
 		"uuid": "^14.0.0"
 	},
 	"devDependencies": {

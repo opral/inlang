@@ -21,10 +21,9 @@ const variantReferenceKey = (
 const INSERT_BATCH_SIZE = 500;
 
 /**
- * Kysely uses one column list for every row in a multi-row insert. SQLite's
- * default-value handling for omitted NOT NULL JSON columns is not reliable
- * when rows with different optional-column shapes are mixed, so keep each
- * shape in its own insert statement.
+ * Kysely uses one column list for every row in a multi-row insert. Keep rows
+ * with different optional-column shapes in separate statements so omitted
+ * columns receive their schema defaults.
  */
 async function insertInBatchesByShape<T extends object>(args: {
 	rows: readonly T[];

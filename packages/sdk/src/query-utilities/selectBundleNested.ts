@@ -9,8 +9,7 @@ import type {
 /**
  * Select bundles with nested messages and variants.
  *
- * Lix uses DataFusion, which does not provide SQLite's json_group_array()
- * helper. A flat left join keeps this to one engine round-trip and the small
+ * A flat left join keeps this to one Lix engine round-trip and the small
  * reconstruction below preserves the established SDK result shape.
  */
 export const selectBundleNested = (db: Kysely<InlangDatabaseSchema>) => {

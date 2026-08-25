@@ -25,9 +25,9 @@ Inlang is the open-format TMS (translation management system) for software teams
 
 Store translations in your repo as a vendor-neutral file format, so developers, translators, CI, translation tools, and AI agents can read and update the same localization source of truth.
 
-An `.inlang` project is canonically a single binary file: a SQLite database with version control via [lix](https://lix.dev). Like `.sqlite` for relational data, `.inlang` packages localization data into one file that tools can share.
+An `.inlang` project is canonically a portable snapshot backed by [Lix](https://lix.dev). It packages localization data and project files into one file that tools can share.
 
-For Git repositories, the binary file can be unpacked into a directory of plain files so changes can be reviewed alongside code. The packed file is the canonical format; the unpacked directory is the Git-friendly representation. The `@inlang/sdk` is the reference implementation for reading and writing `.inlang` projects.
+For Git repositories, the packed file can be unpacked into a directory of plain files so changes can be reviewed alongside code. The packed file is the canonical format; the unpacked directory is the Git-friendly representation. The `@inlang/sdk` is the reference implementation for reading and writing `.inlang` projects.
 
 `.inlang` is the canonical open format for localization. Plugins import and export formats like JSON, ICU MessageFormat v1, i18next, and XLIFF for compatibility with existing translation files and runtimes.
 

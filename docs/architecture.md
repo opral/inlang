@@ -4,7 +4,7 @@ Inlang is the open-format TMS (translation management system) for software teams
 
 ```
 ┌─────────────────────────────────────────────┐
-│  Storage (SQLite + version control via Lix) │
+│  Storage and version control (Lix)          │
 ├─────────────────────────────────────────────┤
 │  Data Model (Bundle, Message, Variant)      │
 ├─────────────────────────────────────────────┤
@@ -14,9 +14,9 @@ Inlang is the open-format TMS (translation management system) for software teams
 
 ## Storage
 
-An `.inlang` project is canonically a single binary file: a SQLite database with version control via [lix](https://lix.dev). Like `.sqlite` for relational data, `.inlang` packages localization data into one file that tools can share.
+An `.inlang` project is canonically a portable snapshot backed by [Lix](https://lix.dev). It packages localization data and project files into one file that tools can share.
 
-For Git repositories, the binary file can be unpacked into a directory of plain files so changes can be reviewed alongside code. The packed file is the canonical format; the unpacked directory is the Git-friendly representation.
+For Git repositories, the packed file can be unpacked into a directory of plain files so changes can be reviewed alongside code. The packed file is the canonical format; the unpacked directory is the Git-friendly representation.
 
 Inlang defines the localization format and TMS surface. Lix provides the underlying versioning, history, review, change proposals, rollback, and merging infrastructure.
 

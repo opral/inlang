@@ -22,9 +22,9 @@ The inlang SDK is the reference implementation for reading and writing `.inlang`
 
 `.inlang` files are designed to become the open standard for localization data and make i18n tools work together. Build editors, CLIs, runtimes, agents, and plugins on the same shared project format instead of inventing another file structure.
 
-An `.inlang` project is canonically a single binary file: a SQLite database with version control via [lix](https://lix.dev). Like `.sqlite` for relational data, `.inlang` packages localization data into one file that tools can share.
+An `.inlang` project is canonically a portable snapshot backed by [Lix](https://lix.dev). It packages localization data and project files into one file that tools can share.
 
-For Git repositories, the binary file can be unpacked into a directory of plain files so changes can be reviewed alongside code. The packed file is the canonical format; the unpacked directory is the Git-friendly representation.
+For Git repositories, the packed file can be unpacked into a directory of plain files so changes can be reviewed alongside code. The packed file is the canonical format; the unpacked directory is the Git-friendly representation.
 
 `.inlang` is the canonical project format. Plugins import and export formats like JSON, ICU MessageFormat v1, i18next, and XLIFF for compatibility with existing translation files and runtimes. Version control via lix adds file-level history, merging, and change proposals to `.inlang` projects.
 
@@ -68,7 +68,7 @@ For coding agents:
 ## Getting Started
 
 > [!Note]
-> Inlang files are single binary files. They can be unpacked and [stored as directories](#unpacked-inlang-files-directories) when you want to review changes in Git. The packed file remains the canonical format.
+> Inlang projects are portable snapshots. They can be unpacked and [stored as directories](#unpacked-inlang-files-directories) when you want to review changes in Git. The packed file remains the canonical format.
 
 ### Installation
 
@@ -259,7 +259,7 @@ await project.settings.set(settings)
 > [!NOTE]  
 > Unpacked inlang files are the Git-friendly representation of packed `.inlang` files.
 >
-> Git can store binary files, but plain-file review and merge workflows work better with the unpacked directory. **If you don't intend to store the inlang file in git, use the packed binary file.**
+> Git can store packed snapshots, but plain-file review and merge workflows work better with the unpacked directory. **If you don't intend to store the inlang file in git, use the packed file.**
 > 
 > Unpacked inlang files are not portable. They depend on plugins and do not persist [version control via lix](https://lix.dev/) data.
 
