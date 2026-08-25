@@ -326,10 +326,7 @@ async function syncLixFsFiles(args: {
 	async function checkLixState(currentLixState: FsFileState) {
 		// go through all files in lix and check there state
 		const filesInLix = (
-			await args.lix.execute(
-				"SELECT path, content FROM lix_file WHERE path NOT LIKE $1",
-				["%db.sqlite"]
-			)
+			await args.lix.execute("SELECT path, content FROM lix_file")
 		).rows.map((row) => ({
 			path: row.get("path") as string,
 			content: row.value("content").asBytes()!,

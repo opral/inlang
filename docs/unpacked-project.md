@@ -2,7 +2,7 @@
 
 ## What is an unpacked project?
 
-An unpacked project is the Git-friendly representation of an `.inlang` file. The canonical `.inlang` format is a single binary file: a SQLite database with version control via [lix](https://lix.dev). The unpacked directory exists so changes can be reviewed alongside code.
+An unpacked project is the Git-friendly representation of an `.inlang` file. The canonical `.inlang` format is a portable snapshot backed by [Lix](https://lix.dev). The unpacked directory exists so changes can be reviewed alongside code.
 
 Messages, variants, and locale data live in the `.inlang` database. In unpacked Git projects, `settings.json` is the only tracked project file by default; translation files such as `messages/en.json` live outside `project.inlang/` and are connected through plugins.
 
@@ -21,8 +21,8 @@ project.inlang/
 
 |                  | Packed (`.inlang` file)           | Unpacked (directory)                  |
 | ---------------- | --------------------------------- | ------------------------------------- |
-| **Format**       | Canonical single binary file      | Git-friendly directory representation |
-| **Git-friendly** | No (binary)                       | Yes (diffable, mergeable)             |
+| **Format**       | Canonical portable snapshot       | Git-friendly directory representation |
+| **Git-friendly** | Limited                           | Yes (diffable, mergeable)             |
 | **Portable**     | Yes (one file to share)           | No                                    |
 | **Use case**     | Sharing, backups, tools like Fink | Storing in git repos                  |
 
@@ -32,12 +32,12 @@ project.inlang/
 
 Most codebases use git for version control. Developers want their translations co-located with their code — not in a separate system.
 
-### Git doesn't handle binary files well
+### Packed snapshots are difficult to review in Git
 
-An `.inlang` file is binary. Git can store binary files, but you lose:
+Git can store a packed `.inlang` snapshot, but it is not organized for review:
 
-- **Readable diffs** — Binary changes show as "file changed", not what changed
-- **Merge conflict resolution** — Git can't merge binary files
+- **Readable diffs** — Snapshot changes do not map cleanly to project files
+- **Merge conflict resolution** — Snapshot-level conflicts are difficult to resolve
 - **Code review** — Teammates can't review translation changes in PRs
 
 An unpacked project solves this for the project configuration. The generated `.gitignore` keeps `settings.json` in Git and ignores generated/cache files. Translation files are stored outside `project.inlang/` according to plugin configuration.

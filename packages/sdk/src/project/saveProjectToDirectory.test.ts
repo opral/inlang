@@ -21,7 +21,7 @@ test("it should throw if the path doesn't end with .inlang", async () => {
 	).rejects.toThrowError("The path must end with .inlang");
 });
 
-test("it should overwrite all files to the directory except the db.sqlite file", async () => {
+test("it should write project files to the directory", async () => {
 	const mockFs = Volume.fromJSON({
 		"/foo/bar.inlang/settings.json": JSON.stringify({
 			baseLocale: "en",
@@ -55,7 +55,6 @@ test("it should overwrite all files to the directory except the db.sqlite file",
 	// this test should be updated for files that should NOT
 	// be contained in the directory in the future
 	expect(files).toContain("settings.json");
-	expect(files).not.toContain("db.sqlite");
 	expect(updatedSettings.baseLocale).toBe("en");
 	expect(updatedSettings.locales).toEqual(["en", "fr", "mock"]);
 });

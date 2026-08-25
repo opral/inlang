@@ -73,7 +73,7 @@ export async function restoreProjectBlob(lix: Lix, blob: Blob): Promise<void> {
 		parsed = JSON.parse(await blob.text());
 	} catch (cause) {
 		throw new Error(
-			"The project uses the legacy Lix SQLite format, which Lix 0.9 cannot open in memory.",
+			"The project uses a legacy binary Lix format that this SDK cannot open in memory.",
 			{ cause }
 		);
 	}

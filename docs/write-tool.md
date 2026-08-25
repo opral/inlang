@@ -6,7 +6,7 @@ This guide walks through building a tool that flags missing translations. By the
 
 Tools read and write translations through the `.inlang` format via the CRUD API. Because plugins handle conversion at the boundary, your tool works with any translation format — JSON, XLIFF, i18next, etc. — without parsing each one directly.
 
-An `.inlang` project is canonically a single binary file. In Git repositories, it is often unpacked into a directory; `loadProjectFromDirectory()` loads that Git-friendly representation.
+An `.inlang` project is canonically a portable snapshot. In Git repositories, it is often unpacked into a directory; `loadProjectFromDirectory()` loads that Git-friendly representation.
 
 If a `project.inlang/` directory already exists, load it with `loadProjectFromDirectory()`. If your tool is generating a new localization project from scratch, start with `newProject()` and save the packed file with `project.toBlob()`; see [Getting Started](/docs/getting-started) for a runnable create-save-reload example.
 

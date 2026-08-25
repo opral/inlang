@@ -13,7 +13,7 @@ This is an [unpacked (git-friendly)](https://inlang.com/docs/unpacked-project) i
 
 Purpose:
 - This folder is the Git-friendly representation of an \`.inlang\` project.
-- The canonical \`.inlang\` format is a single binary file; this directory is the unpacked version for Git.
+- The canonical \`.inlang\` format is a portable snapshot; this directory is the unpacked version for Git.
 - This folder stores project configuration and plugin cache data.
 - Translation files live outside this folder and are referenced from \`settings.json\`.
 
@@ -44,9 +44,9 @@ Translation files (like \`messages/en.json\`) live **outside** this folder and a
 
 ## What is inlang?
 
-[Inlang](https://inlang.com) is an open project file format for localization. An \`.inlang\` project is canonically a single binary file: a SQLite database with version control via [lix](https://lix.dev). Like \`.sqlite\` for relational data, \`.inlang\` packages localization data into one file that tools can share.
+[Inlang](https://inlang.com) is an open project file format for localization. An \`.inlang\` project is canonically a portable snapshot backed by [Lix](https://lix.dev). It packages localization data and project files into one file that tools can share.
 
-For Git repositories, that binary file can be unpacked into a directory of plain files. The packed file is the canonical format; this directory is the Git-friendly representation.
+For Git repositories, that packed file can be unpacked into a directory of plain files. The packed file is the canonical format; this directory is the Git-friendly representation.
 
 Use inlang when multiple tools, teams, automations, or agents need to use the same localization data. The \`@inlang/sdk\` is the reference implementation for reading and writing \`.inlang\` projects.
 

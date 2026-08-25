@@ -6,7 +6,7 @@ Store translations in your repo as a vendor-neutral file format, so developers, 
 
 Use inlang when localization data needs to be shared across tools, teams, automations, or coding agents. If you only need an app runtime with a couple of translation files, your current i18n setup may already be enough.
 
-An `.inlang` project is canonically a single binary file: a SQLite database with version control via [lix](https://lix.dev). Inlang defines the localization format and TMS surface. Lix provides the underlying versioning, history, review, change proposals, and rollback infrastructure.
+An `.inlang` project is canonically a portable snapshot backed by [Lix](https://lix.dev). Inlang defines the localization format and TMS surface. Lix provides the underlying storage, versioning, history, review, change proposals, and rollback infrastructure.
 
 For Git repositories, the file can be unpacked into a directory of plain files. The packed file is the canonical format; the unpacked directory is the Git-friendly representation.
 
