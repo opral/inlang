@@ -3,6 +3,7 @@ import { importFiles } from "./importFiles.js";
 import {
 	Declaration,
 	type Bundle,
+	type Match,
 	type Message,
 	type Pattern,
 	type Variant,
@@ -355,6 +356,93 @@ test("it handles detecting and adding selectors and declarations for complex mes
 			pattern: [{ type: "text", value: "The person has to download the app." }],
 		} satisfies Partial<Variant>)
 	);
+});
+
+test("it preserves three selector names across export and reimport", async () => {
+	const imported = await runImportFiles({
+		journal_write: [
+			{
+				declarations: ["input duration", "input every", "input type"],
+				selectors: ["duration", "every", "type"],
+				match: {
+					"duration=1,every=week,type=custom": "Write a custom entry",
+					"duration=*,every=*,type=*": "Write an entry",
+				},
+			},
+		],
+	});
+
+	const exported = await runExportFilesParsed(imported);
+	expect(exported.journal_write[0].match).toHaveProperty(
+		"duration=1, every=week, type=custom",
+		"Write a custom entry"
+	);
+
+	const reimported = await runImportFiles(exported);
+	expect(reimported.bundles[0]?.declarations).toStrictEqual([
+		{ type: "input-variable", name: "duration" },
+		{ type: "input-variable", name: "every" },
+		{ type: "input-variable", name: "type" },
+	] satisfies Declaration[]);
+	expect(reimported.messages[0]?.selectors).toStrictEqual([
+		{ type: "variable-reference", name: "duration" },
+		{ type: "variable-reference", name: "every" },
+		{ type: "variable-reference", name: "type" },
+	] satisfies Message["selectors"]);
+	expect(reimported.variants[0]?.matches).toStrictEqual([
+		{ type: "literal-match", key: "duration", value: "1" },
+		{ type: "literal-match", key: "every", value: "week" },
+		{ type: "literal-match", key: "type", value: "custom" },
+	] satisfies Match[]);
+});
+
+test("it trims whitespace around every selector name and match value", async () => {
+	const imported = await runImportFiles({
+		journal_write: [
+			{
+				match: {
+					" duration = 1 , every = week , type = custom ": "Write an entry",
+					" duration = * , every = * , type = * ": "Write anything",
+				},
+			},
+		],
+	});
+
+	expect(imported.messages[0]?.selectors).toStrictEqual([
+		{ type: "variable-reference", name: "duration" },
+		{ type: "variable-reference", name: "every" },
+		{ type: "variable-reference", name: "type" },
+	] satisfies Message["selectors"]);
+	expect(imported.variants[0]?.matches).toStrictEqual([
+		{ type: "literal-match", key: "duration", value: "1" },
+		{ type: "literal-match", key: "every", value: "week" },
+		{ type: "literal-match", key: "type", value: "custom" },
+	] satisfies Match[]);
+	expect(imported.variants[1]?.matches).toStrictEqual([
+		{ type: "catchall-match", key: "duration" },
+		{ type: "catchall-match", key: "every" },
+		{ type: "catchall-match", key: "type" },
+	] satisfies Match[]);
+});
+
+test("it detects later placeholders after an already declared input", async () => {
+	const imported = await runImportFiles({
+		complex_message: [
+			{
+				declarations: ["input known"],
+				match: {
+					"kind=yes": "{known} {newInput} {anotherInput}",
+				},
+			},
+		],
+	});
+
+	expect(imported.bundles[0]?.declarations).toStrictEqual([
+		{ type: "input-variable", name: "known" },
+		{ type: "input-variable", name: "newInput" },
+		{ type: "input-variable", name: "anotherInput" },
+		{ type: "input-variable", name: "kind" },
+	] satisfies Declaration[]);
 });
 
 test("variants with a plural function are parsed correctly", async () => {

@@ -98,19 +98,20 @@ function serializeVariants(
 
 	const entries = [];
 	for (const variant of variants) {
-		if (variant.matches.length === 0) {
+		const matches = [...variant.matches];
+		if (matches.length === 0) {
 			for (const part of variant.pattern) {
 				if (
 					part.type === "expression" &&
 					part.arg.type === "variable-reference"
 				) {
-					variant.matches.push({ key: part.arg.name, type: "catchall-match" });
+					matches.push({ key: part.arg.name, type: "catchall-match" });
 				}
 			}
 		}
 
 		const pattern = serializePattern(variant.pattern);
-		const match = serializeMatcher(variant.matches);
+		const match = serializeMatcher(matches);
 		entries.push([match, pattern]);
 	}
 
@@ -118,10 +119,15 @@ function serializeVariants(
 		{
 			// naively adding all declarations, even if unused in the variants
 			// can be optimized later.
-			declarations: bundle.declarations
-				.sort((a, b) => a.name.localeCompare(b.name))
-				.map(serializeDeclaration)
-				.sort(),
+			declarations: [
+				...bundle.declarations
+					.filter((declaration) => declaration.type === "input-variable")
+					.map(serializeDeclaration)
+					.sort(),
+				...bundle.declarations
+					.filter((declaration) => declaration.type === "local-variable")
+					.map(serializeDeclaration),
+			],
 			selectors: message.selectors.map((s) => s.name).sort(),
 			match: Object.fromEntries(entries),
 		},
@@ -186,7 +192,9 @@ function serializeMarkup(
 	options:
 		| Array<{
 				name: string;
-				value: { type: "literal"; value: string } | { type: "variable-reference"; name: string };
+				value:
+					| { type: "literal"; value: string }
+					| { type: "variable-reference"; name: string };
 		  }>
 		| undefined,
 	attributes:
@@ -222,13 +230,16 @@ function serializeMarkup(
 }
 
 function escapeMarkupLiteral(value: string): string {
-	return value.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/}/g, "\\}");
+	return value
+		.replace(/\\/g, "\\\\")
+		.replace(/\|/g, "\\|")
+		.replace(/}/g, "\\}");
 }
 
 // input: { platform: "android", userGender: "male" }
 // output: `platform=android,userGender=male`
 function serializeMatcher(matches: Match[]): string {
-	const parts = matches
+	const parts = [...matches]
 		.sort((a, b) => a.key.localeCompare(b.key))
 		.map((match) =>
 			match.type === "literal-match"
