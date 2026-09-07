@@ -118,7 +118,9 @@ class LixConnection implements DatabaseConnection {
 		);
 		encodeIdentityParameters(parameters, prepared.identityParameterPositions);
 		const result = await executor.execute(
-			this.#transaction ? transactionReadSql(prepared.sql) : prepared.sql,
+			this.#transaction
+				? transactionReadSql(prepared.sql, compiledQuery.query)
+				: prepared.sql,
 			parameters as SqlParam[]
 		);
 		return {
@@ -137,8 +139,13 @@ class LixConnection implements DatabaseConnection {
  * Keep these predicates in the SQL evaluator until the engine fixes its overlay.
  * Kysely parameterizes values, so only compiled column references are rewritten.
  */
-function transactionReadSql(sql: string): string {
-	if (!/^select\s/i.test(sql)) return sql;
+function transactionReadSql(
+	sql: string,
+	query: CompiledQuery["query"]
+): string {
+	// Kysely represents WITH-prefixed reads as SelectQueryNode too. Using the
+	// query kind avoids treating WITH-prefixed mutations as read statements.
+	if (query.kind !== "SelectQueryNode" && !/^select\s/i.test(sql)) return sql;
 	return sql.replace(
 		/((?:"[^"]+"\.)?"(?:bundle_id|message_id|locale)")(?=\s*(?:=|in\s*\())/gi,
 		"($1 || '')"

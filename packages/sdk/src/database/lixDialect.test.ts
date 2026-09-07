@@ -124,8 +124,50 @@ test("preserves encoded identities and locales in direct and nested reads", asyn
 		const nested = await selectBundleNested(db)
 			.where("bundle.id", "=", bundleId)
 			.executeTakeFirstOrThrow();
+		expect(nested.id).toBe(bundleId);
 		expect(nested.messages[0]).toMatchObject({ id: messageId, locale });
 		expect(nested.messages[0]?.variants[0]?.id).toBe(variantId);
+	} finally {
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("CTE transaction reads find newly written messages and variants", async () => {
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	const db = initDb({ lix });
+	try {
+		await db.transaction().execute(async (trx) => {
+			await trx.insertInto("bundle").values({ id: "bundle" }).execute();
+			await trx
+				.insertInto("message")
+				.values({ id: "message", bundleId: "bundle", locale: "en" })
+				.execute();
+			await trx
+				.insertInto("variant")
+				.values({ id: "variant", messageId: "message" })
+				.execute();
+			const query = trx
+				.with("matching_messages", (qb) =>
+					qb.selectFrom("message").select("id").where("locale", "=", "en")
+				)
+				.with("matching_variants", (qb) =>
+					qb
+						.selectFrom("variant")
+						.select("id")
+						.where("messageId", "=", "message")
+				)
+				.selectFrom("matching_messages")
+				.crossJoin("matching_variants")
+				.select([
+					"matching_messages.id as foundMessage",
+					"matching_variants.id as foundVariant",
+				]);
+			expect(await query.execute()).toEqual([
+				{ foundMessage: "message", foundVariant: "variant" },
+			]);
+		});
 	} finally {
 		await db.destroy();
 		await lix.close();
