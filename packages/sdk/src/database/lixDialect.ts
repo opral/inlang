@@ -118,9 +118,7 @@ class LixConnection implements DatabaseConnection {
 		);
 		encodeIdentityParameters(parameters, prepared.identityParameterPositions);
 		const result = await executor.execute(
-			this.#transaction
-				? transactionReadSql(prepared.sql, compiledQuery.query)
-				: prepared.sql,
+			prepared.sql,
 			parameters as SqlParam[]
 		);
 		return {
@@ -132,24 +130,6 @@ class LixConnection implements DatabaseConnection {
 	async *streamQuery<R>(compiledQuery: CompiledQuery) {
 		yield await this.executeQuery<R>(compiledQuery);
 	}
-}
-
-/**
- * Lix 0.15's secondary text equality pushdown misses transaction-local rows.
- * Keep these predicates in the SQL evaluator until the engine fixes its overlay.
- * Kysely parameterizes values, so only compiled column references are rewritten.
- */
-function transactionReadSql(
-	sql: string,
-	query: CompiledQuery["query"]
-): string {
-	// Kysely represents WITH-prefixed reads as SelectQueryNode too. Using the
-	// query kind avoids treating WITH-prefixed mutations as read statements.
-	if (query.kind !== "SelectQueryNode" && !/^select\s/i.test(sql)) return sql;
-	return sql.replace(
-		/((?:"[^"]+"\.)?"(?:bundle_id|message_id|locale)")(?=\s*(?:=|in\s*\())/gi,
-		"($1 || '')"
-	);
 }
 
 type PreparedLixQuery = {
