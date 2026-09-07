@@ -1,4 +1,4 @@
-import type { Lix, LixBatchStatement } from "@lix-js/sdk";
+import type { Lix, LixBatchStatement, ExecuteResult } from "@lix-js/sdk";
 import { initDb } from "../database/initDb.js";
 import type {
 	Bundle,
@@ -35,29 +35,31 @@ type LegacySnapshot = {
 
 export async function projectToBlob(lix: Lix): Promise<Blob> {
 	const db = initDb({ lix });
-	let lixIdResult: Awaited<ReturnType<Lix["execute"]>>;
-	let files: Awaited<ReturnType<Lix["execute"]>>;
+	let lixIdResult: ExecuteResult;
+	let files: ExecuteResult<{ path: string; content: Uint8Array | null }>;
 	let bundles: BundleNested[];
 	try {
 		[lixIdResult, files, bundles] = await Promise.all([
 			lix.execute("SELECT value FROM lix_key_value WHERE key = 'lix_id'"),
-			lix.execute("SELECT path, content FROM lix_file ORDER BY path"),
+			lix.execute<{ path: string; content: Uint8Array | null }>(
+				"SELECT path, content FROM lix_file ORDER BY path"
+			),
 			selectBundleNested(db).execute(),
 		]);
 	} finally {
 		await db.destroy();
 	}
-	const lixId = lixIdResult.rows[0]?.value("value").toJS();
+	const lixId = lixIdResult.rows[0]?.value;
 	if (typeof lixId !== "string") throw new Error("Missing Lix id");
 
 	const snapshot: Snapshot = {
 		format: FORMAT,
 		lixId,
 		files: files.rows
-			.filter((row) => row.get("path") !== "/project_id")
+			.filter((row) => row.path !== "/project_id")
 			.map((row) => ({
-				path: row.get("path") as string,
-				data: bytesToBase64(row.value("content").asBytes() ?? new Uint8Array()),
+				path: row.path,
+				data: bytesToBase64(row.content ?? new Uint8Array()),
 			})),
 		bundles,
 	};
