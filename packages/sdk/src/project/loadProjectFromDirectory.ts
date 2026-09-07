@@ -328,8 +328,8 @@ async function syncLixFsFiles(args: {
 		const filesInLix = (
 			await args.lix.execute("SELECT path, content FROM lix_file")
 		).rows.map((row) => ({
-			path: row.get("path") as string,
-			content: row.value("content").asBytes()!,
+			path: row.path as string,
+			content: row.content as Uint8Array,
 		}));
 
 		for (const fileInLix of filesInLix) {
@@ -340,7 +340,7 @@ async function syncLixFsFiles(args: {
 			// NOTE we could start with comparing the mdate and skip file read completely...
 			if (!currentStateOfFileInLix) {
 				currentLixState[fileInLix.path] = {
-				content: new Uint8Array(fileInLix.content).buffer,
+					content: new Uint8Array(fileInLix.content).buffer,
 					state: "unknown",
 				};
 			} else {

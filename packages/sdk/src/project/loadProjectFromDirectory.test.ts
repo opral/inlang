@@ -31,8 +31,8 @@ async function selectLixFiles(
 		params
 	);
 	return result.rows.map((row) => ({
-		path: row.get("path") as string,
-		content: row.value("content").asBytes() ?? new Uint8Array(),
+		path: row.path as string,
+		content: (row.content as Uint8Array | null) ?? new Uint8Array(),
 	}));
 }
 
@@ -40,7 +40,7 @@ async function selectLixId(lix: Lix) {
 	const result = await lix.execute(
 		"SELECT value FROM lix_key_value WHERE key = 'lix_id'"
 	);
-	return result.rows[0]?.value("value").toJS();
+	return result.rows[0]?.value;
 }
 
 async function selectLixFile(lix: Lix, path: string) {

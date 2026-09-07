@@ -122,7 +122,7 @@ class LixConnection implements DatabaseConnection {
 			parameters as SqlParam[]
 		);
 		return {
-			rows: result.rows.map((row) => publicRow(row.toObject())) as R[],
+			rows: result.rows.map((row) => publicRow(row)) as R[],
 			numAffectedRows: BigInt(result.rowsAffected),
 		};
 	}
@@ -246,7 +246,10 @@ function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 					: column === "message_id"
 						? "messageId"
 						: column,
-				isIdentityColumn(column) && typeof value === "string"
+				(isIdentityColumn(column) ||
+					column === "messageLocale" ||
+					column === "variantId") &&
+				typeof value === "string"
 					? decodeIdentity(value)
 					: value,
 			])
@@ -254,7 +257,12 @@ function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 function isIdentityColumn(column: string): boolean {
-	return column === "id" || column === "bundle_id" || column === "message_id";
+	return (
+		column === "id" ||
+		column === "bundle_id" ||
+		column === "message_id" ||
+		column === "locale"
+	);
 }
 
 const encodedIdentityPrefix = "lixid1:";
@@ -301,7 +309,7 @@ function encodeIdentityParameters(
 
 function findIdentityParameterPositions(sql: string): number[] {
 	const positions = new Set<number>();
-	const identityColumns = "(?:id|bundle_id|message_id)";
+	const identityColumns = "(?:id|bundle_id|message_id|locale)";
 	for (const match of sql.matchAll(
 		new RegExp(`"${identityColumns}"\\s*=\\s*\\$(\\d+)`, "gi")
 	)) {

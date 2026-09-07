@@ -20,7 +20,7 @@ test("opens a project on a caller-owned Lix", async () => {
 	);
 	expect(
 		registeredSchemas.rows
-			.map((row) => row.value("schema_key").toJS())
+			.map((row) => row.schema_key)
 			.filter((key) => typeof key === "string" && key.startsWith("inlang_"))
 			.sort()
 	).toEqual(["inlang_bundle", "inlang_message", "inlang_variant"]);

@@ -1,4 +1,6 @@
-import type { Lix, LixBatchStatement } from "@lix-js/sdk";
+import type { Lix, LixBatchStatement, ExecuteResult } from "@lix-js/sdk";
+import { compileBundleNestedBatch } from "../query-utilities/compileBundleNestedBatch.js";
+import { compileLixQuery } from "../database/lixDialect.js";
 import { initDb } from "../database/initDb.js";
 import type {
 	Bundle,
@@ -35,29 +37,31 @@ type LegacySnapshot = {
 
 export async function projectToBlob(lix: Lix): Promise<Blob> {
 	const db = initDb({ lix });
-	let lixIdResult: Awaited<ReturnType<Lix["execute"]>>;
-	let files: Awaited<ReturnType<Lix["execute"]>>;
+	let lixIdResult: ExecuteResult;
+	let files: ExecuteResult<{ path: string; content: Uint8Array | null }>;
 	let bundles: BundleNested[];
 	try {
 		[lixIdResult, files, bundles] = await Promise.all([
 			lix.execute("SELECT value FROM lix_key_value WHERE key = 'lix_id'"),
-			lix.execute("SELECT path, content FROM lix_file ORDER BY path"),
+			lix.execute<{ path: string; content: Uint8Array | null }>(
+				"SELECT path, content FROM lix_file ORDER BY path"
+			),
 			selectBundleNested(db).execute(),
 		]);
 	} finally {
 		await db.destroy();
 	}
-	const lixId = lixIdResult.rows[0]?.value("value").toJS();
+	const lixId = lixIdResult.rows[0]?.value;
 	if (typeof lixId !== "string") throw new Error("Missing Lix id");
 
 	const snapshot: Snapshot = {
 		format: FORMAT,
 		lixId,
 		files: files.rows
-			.filter((row) => row.get("path") !== "/project_id")
+			.filter((row) => row.path !== "/project_id")
 			.map((row) => ({
-				path: row.get("path") as string,
-				data: bytesToBase64(row.value("content").asBytes() ?? new Uint8Array()),
+				path: row.path,
+				data: bytesToBase64(row.content ?? new Uint8Array()),
 			})),
 		bundles,
 	};
@@ -109,24 +113,18 @@ export async function restoreProjectBlob(lix: Lix, blob: Blob): Promise<void> {
 		snapshot.format === LEGACY_FORMAT
 			? nestLegacyBundles(snapshot)
 			: snapshot.bundles;
-	for (const bundle of bundles) {
-		statements.push({
-			sql: "INSERT INTO inlang_bundle (id, declarations) VALUES ($1, $2)",
-			params: [bundle.id, bundle.declarations],
-		});
-		for (const message of bundle.messages) {
-			statements.push({
-				sql: "INSERT INTO inlang_message (id, bundle_id, locale, selectors) VALUES ($1, $2, $3, $4)",
-				params: [message.id, bundle.id, message.locale, message.selectors],
-			});
-			for (const variant of message.variants) {
-				statements.push({
-					sql: "INSERT INTO inlang_variant (id, message_id, matches, pattern) VALUES ($1, $2, $3, $4)",
-					params: [variant.id, message.id, variant.matches, variant.pattern],
-				});
-			}
+	const db = initDb({ lix });
+	try {
+		// Use the same compilation and text encoding as ordinary nested writes.
+		for (const bundle of bundles) {
+			statements.push(
+				...compileBundleNestedBatch(db, bundle, "insert").map(compileLixQuery)
+			);
 		}
+	} finally {
+		await db.destroy();
 	}
+
 	if (statements.length > 0) await lix.executeBatch(statements);
 }
 

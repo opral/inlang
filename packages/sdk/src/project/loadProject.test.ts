@@ -117,7 +117,7 @@ test("uses the active account owned by Lix", async () => {
 		"SELECT id, kind, status FROM lix_account WHERE id = $1",
 		[activeAccountId]
 	);
-	const activeAccount = result.rows[0]?.toObject();
+	const activeAccount = result.rows[0];
 
 	expect(activeAccount).toMatchObject({
 		id: activeAccountId,

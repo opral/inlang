@@ -149,3 +149,63 @@ test("serializes bundles with nested messages and variants", async () => {
 	).toBe("welcome_en_admin");
 	await reopenedLegacy.close();
 });
+
+test.each([
+	{ locale: "en\0US", encodedIds: false },
+	{ locale: "lixid1:en", encodedIds: false },
+	{ locale: "en\0US", encodedIds: true },
+	{ locale: "lixid1:en", encodedIds: true },
+])(
+	"snapshot roundtrip preserves locales and identities: $locale, encodedIds=$encodedIds",
+	async ({ locale, encodedIds }) => {
+		const project = await loadProjectInMemory({ blob: await newProject() });
+		let blob: Blob;
+		const bundleId = encodedIds ? "bundle\0id" : "bundle";
+		const messageId = encodedIds ? "lixid1:message" : "message";
+		const variantId = encodedIds ? "variant\0id" : "variant";
+		try {
+			await insertBundleNested(project.db, {
+				id: bundleId,
+				messages: [
+					{
+						id: messageId,
+						bundleId,
+						locale,
+						variants: [{ id: variantId, messageId, matches: [], pattern: [] }],
+					},
+				],
+			});
+			blob = await project.toBlob();
+			const snapshot = JSON.parse(await blob.text());
+			expect(snapshot.bundles[0]).toMatchObject({
+				id: bundleId,
+				messages: [{ id: messageId, locale, variants: [{ id: variantId }] }],
+			});
+		} finally {
+			await project.close();
+		}
+		const reopened = await loadProjectInMemory({ blob });
+		try {
+			expect(
+				await reopened.db
+					.selectFrom("message")
+					.selectAll()
+					.where("locale", "=", locale)
+					.executeTakeFirstOrThrow()
+			).toMatchObject({ id: messageId, bundleId, locale });
+			const nested = await selectBundleNested(reopened.db)
+				.where("bundle.id", "=", bundleId)
+				.executeTakeFirstOrThrow();
+			expect(nested.messages[0]).toMatchObject({
+				id: messageId,
+				locale,
+				variants: [{ id: variantId, messageId }],
+			});
+			expect(
+				JSON.parse(await (await reopened.toBlob()).text()).bundles
+			).toEqual(JSON.parse(await blob.text()).bundles);
+		} finally {
+			await reopened.close();
+		}
+	}
+);
