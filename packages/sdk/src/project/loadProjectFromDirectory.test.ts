@@ -422,13 +422,14 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		const files = await selectLixFiles(project.lix);
 
-		expect(files.length).toBe(6);
+		expect(files.length).toBe(7);
 
 		const filesByPath = files.reduce((acc, file) => {
 			acc[file.path] = new TextDecoder().decode(file.content);
 			return acc;
 		}, {} as any);
 
+		expect(filesByPath["/.lix/README.md"]).toEqual(expect.any(String));
 		expect(filesByPath["/cache/plugin/29j49j2"]).toBe("cache value");
 		expect(filesByPath["/.gitignore"]).toBe("git value");
 		expect(filesByPath["/.meta.json"]).toBe(
@@ -483,13 +484,14 @@ describe("it should keep files between the inlang directory and lix in sync", as
 
 		const files = await selectLixFiles(project.lix);
 
-		expect(files.length).toBe(6);
+		expect(files.length).toBe(7);
 
 		const filesByPath = files.reduce((acc, file) => {
 			acc[file.path] = new TextDecoder().decode(file.content);
 			return acc;
 		}, {} as any);
 
+		expect(filesByPath["/.lix/README.md"]).toEqual(expect.any(String));
 		expect(filesByPath["/cache/plugin/29j49j2"]).toBe("cache value");
 		expect(filesByPath["/.gitignore"]).toBe("git value");
 		expect(filesByPath["/.meta.json"]).toBe(
@@ -501,7 +503,11 @@ describe("it should keep files between the inlang directory and lix in sync", as
 	});
 
 	test("does not rewrite unchanged files when nodePath.relative returns Windows separators", async () => {
-		const fs = Volume.fromJSON(mockDirectory);
+		const fs = Volume.fromJSON({
+			...mockDirectory,
+			// Lix initializes this file; include it so every synced file already exists.
+			"/project.inlang/.lix/README.md": "existing Lix readme",
+		});
 		const originalRelative = nodePath.relative.bind(nodePath);
 		const relativeSpy = vi
 			.spyOn(nodePath, "relative")
