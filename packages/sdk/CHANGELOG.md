@@ -1,5 +1,14 @@
 # @inlang/sdk
 
+## 3.0.5
+
+### Patch Changes
+
+- c73ed13: Upgrade Lix to 0.16.1 to fix importing alphabetically sorted messages when a transaction exceeds 512 tracked-state rows.
+- 59715d2: Preserve the original error when a Lix transaction commit fails. Serialize Kysely connection leases so unrelated queries cannot join another caller's transaction and concurrent transactions execute independently. Beginning, committing, or rolling back a controlled transaction now releases its connection if it fails. Consumed transactions reject further queries instead of executing outside the transaction.
+
+  Restoring an in-memory project snapshot replaces file content at snapshot-owned paths, including files initialized by Lix, while preserving unrelated destination files.
+
 ## 3.0.4
 
 ### Patch Changes
