@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { openLix } from "@lix-js/sdk";
 import { initDb } from "./initDb.js";
 import { registerInlangSchemas } from "./registerSchemas.js";
@@ -169,6 +169,252 @@ test("CTE transaction reads find newly written messages and variants", async () 
 			]);
 		});
 	} finally {
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("preserves a consumed commit failure and permits a subsequent transaction", async () => {
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	const db = initDb({ lix });
+	const commitError = new Error("durable commit failed");
+	const begin = lix.beginTransaction.bind(lix);
+	const beginSpy = vi
+		.spyOn(lix, "beginTransaction")
+		.mockImplementationOnce(async () => {
+			const transaction = await begin();
+			vi.spyOn(transaction, "commit").mockImplementationOnce(async () => {
+				// Match the Lix contract: a failed terminal call consumes its handle.
+				await transaction.rollback();
+				throw commitError;
+			});
+			return transaction;
+		});
+	try {
+		await expect(
+			db.transaction().execute(async (trx) => {
+				await trx.insertInto("bundle").values({ id: "failed" }).execute();
+			})
+		).rejects.toBe(commitError);
+		expect(await db.selectFrom("bundle").selectAll().execute()).toEqual([]);
+		await db.transaction().execute(async (trx) => {
+			await trx.insertInto("bundle").values({ id: "next" }).execute();
+		});
+		expect(await db.selectFrom("bundle").select("id").execute()).toEqual([
+			{ id: "next" },
+		]);
+	} finally {
+		beginSpy.mockRestore();
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("unrelated queries wait for the transaction lease and survive its rollback", async () => {
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	const db = initDb({ lix });
+	const callbackError = new Error("abort transaction");
+	let entered!: () => void;
+	const transactionEntered = new Promise<void>((resolve) => {
+		entered = resolve;
+	});
+	let abort!: () => void;
+	const mayAbort = new Promise<void>((resolve) => {
+		abort = resolve;
+	});
+	try {
+		const transaction = db.transaction().execute(async (trx) => {
+			await trx.insertInto("bundle").values({ id: "rolled-back" }).execute();
+			entered();
+			await mayAbort;
+			throw callbackError;
+		});
+		const rejected = expect(transaction).rejects.toBe(callbackError);
+		await transactionEntered;
+		// Queue a write outside the transaction before releasing its lease.
+		const independent = db
+			.insertInto("bundle")
+			.values({ id: "independent" })
+			.execute();
+		abort();
+		await rejected;
+		await independent;
+		expect(await db.selectFrom("bundle").select("id").execute()).toEqual([
+			{ id: "independent" },
+		]);
+	} finally {
+		abort?.();
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("serializes concurrent transactions without rejecting or mixing their writes", async () => {
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	const db = initDb({ lix });
+	try {
+		const results = await Promise.allSettled(
+			["first", "second"].map((id) =>
+				db.transaction().execute(async (trx) => {
+					await trx.insertInto("bundle").values({ id }).execute();
+				})
+			)
+		);
+		expect(
+			await db.selectFrom("bundle").select("id").orderBy("id").execute()
+		).toEqual([{ id: "first" }, { id: "second" }]);
+		expect(results.map((result) => result.status)).toEqual([
+			"fulfilled",
+			"fulfilled",
+		]);
+	} finally {
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("releases the connection lease when beginning a transaction fails", async () => {
+	const lix = await openLix();
+	const db = initDb({ lix });
+	const beginError = new Error("cannot begin transaction");
+	const beginSpy = vi
+		.spyOn(lix, "beginTransaction")
+		.mockRejectedValueOnce(beginError);
+	try {
+		await expect(db.transaction().execute(async () => {})).rejects.toBe(
+			beginError
+		);
+		await db.transaction().execute(async () => {});
+	} finally {
+		beginSpy.mockRestore();
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("surfaces a rollback failure and releases the consumed transaction", async () => {
+	const lix = await openLix();
+	const db = initDb({ lix });
+	const rollbackError = new Error("rollback failed");
+	const begin = lix.beginTransaction.bind(lix);
+	const beginSpy = vi
+		.spyOn(lix, "beginTransaction")
+		.mockImplementationOnce(async () => {
+			const transaction = await begin();
+			const rollback = transaction.rollback.bind(transaction);
+			vi.spyOn(transaction, "rollback").mockImplementationOnce(async () => {
+				await rollback();
+				throw rollbackError;
+			});
+			return transaction;
+		});
+	try {
+		await expect(
+			db.transaction().execute(async () => {
+				throw new Error("abort");
+			})
+		).rejects.toBe(rollbackError);
+		await db.transaction().execute(async () => {});
+	} finally {
+		beginSpy.mockRestore();
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test("controlled begin failure releases its lease", async () => {
+	const lix = await openLix();
+	const db = initDb({ lix });
+	const failure = new Error("begin failed");
+	const begin = vi
+		.spyOn(lix, "beginTransaction")
+		.mockRejectedValueOnce(failure);
+	try {
+		await expect(db.startTransaction().execute()).rejects.toBe(failure);
+		const next = await db.startTransaction().execute();
+		await next.rollback().execute();
+	} finally {
+		begin.mockRestore();
+		await db.destroy();
+		await lix.close();
+	}
+});
+
+test.each(["commit", "rollback"] as const)(
+	"controlled %s failure consumes the connection and releases its lease",
+	async (kind) => {
+		const lix = await openLix();
+		await registerInlangSchemas(lix);
+		const db = initDb({ lix });
+		const failure = new Error(`${kind} failed`);
+		const begin = lix.beginTransaction.bind(lix);
+		const beginSpy = vi
+			.spyOn(lix, "beginTransaction")
+			.mockImplementationOnce(async () => {
+				const transaction = await begin();
+				const rollback = transaction.rollback.bind(transaction);
+				vi.spyOn(transaction, kind).mockImplementationOnce(async () => {
+					await rollback();
+					throw failure;
+				});
+				return transaction;
+			});
+		try {
+			const transaction = await db.startTransaction().execute();
+			await transaction
+				.insertInto("bundle")
+				.values({ id: "discarded" })
+				.execute();
+			await expect(transaction[kind]().execute()).rejects.toBe(failure);
+			await expect(
+				transaction.insertInto("bundle").values({ id: "escaped" }).execute()
+			).rejects.toThrow("connection is closed");
+			await db.transaction().execute(async (next) => {
+				await next.insertInto("bundle").values({ id: "next" }).execute();
+			});
+			expect(await db.selectFrom("bundle").select("id").execute()).toEqual([
+				{ id: "next" },
+			]);
+		} finally {
+			beginSpy.mockRestore();
+			await db.destroy();
+			await lix.close();
+		}
+	}
+);
+
+test("cleanup of a failed controlled commit cannot release a later caller's lease", async () => {
+	const lix = await openLix();
+	const db = initDb({ lix });
+	const failure = new Error("commit failed");
+	const begin = lix.beginTransaction.bind(lix);
+	const beginSpy = vi
+		.spyOn(lix, "beginTransaction")
+		.mockImplementationOnce(async () => {
+			const transaction = await begin();
+			vi.spyOn(transaction, "commit").mockImplementationOnce(async () => {
+				await transaction.rollback();
+				throw failure;
+			});
+			return transaction;
+		});
+	try {
+		const first = await db.startTransaction().execute();
+		await expect(first.commit().execute()).rejects.toBe(failure);
+		const second = await db.startTransaction().execute();
+		const third = db.startTransaction().execute();
+		await first.rollback().execute();
+		// Drain the event loop while the second caller still owns the lease.
+		await new Promise<void>((resolve) => setImmediate(resolve));
+		expect(beginSpy).toHaveBeenCalledTimes(2);
+		await second.rollback().execute();
+		await (await third).rollback().execute();
+		expect(beginSpy).toHaveBeenCalledTimes(3);
+	} finally {
+		beginSpy.mockRestore();
 		await db.destroy();
 		await lix.close();
 	}
