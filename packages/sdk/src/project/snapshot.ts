@@ -105,7 +105,7 @@ export async function restoreProjectBlob(lix: Lix, blob: Blob): Promise<void> {
 	for (const file of snapshot.files) {
 		if (file.path === "/project_id") continue;
 		statements.push({
-			sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2)",
+			sql: "INSERT INTO lix_file (path, content) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET content = excluded.content",
 			params: [file.path, base64ToBytes(file.data)],
 		});
 	}
