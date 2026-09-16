@@ -1,5 +1,11 @@
 # @inlang/sdk
 
+## 3.0.6
+
+### Patch Changes
+
+- 924dd7e: Upgrade Lix to v0.17.0.
+
 ## 3.0.5
 
 ### Patch Changes
