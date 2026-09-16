@@ -28,6 +28,17 @@ test("executeLixBatch publishes atomically and rolls back on a later failure", a
 			.execute()
 	).resolves.toEqual([]);
 
+	const results = await executeLixBatch(db, [
+		insert,
+		db.selectFrom("bundle").select("id").compile(),
+	]);
+	expect(results).toHaveLength(2);
+	expect(results[1]?.rows).toEqual([{ id: "batch-atomicity" }]);
+	expect(results[1]?.statementIndex).toBe(1);
+	await expect(db.selectFrom("bundle").select("id").execute()).resolves.toEqual(
+		[{ id: "batch-atomicity" }]
+	);
+
 	await db.destroy();
 	await lix.close();
 });
