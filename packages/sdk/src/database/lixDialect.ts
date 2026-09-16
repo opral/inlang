@@ -164,8 +164,6 @@ class LixConnection implements DatabaseConnection {
 			throw new Error(
 				"The Lix connection is closed or completing a transaction"
 			);
-		const executor =
-			this.#state.kind === "active" ? this.#state.transaction : this.lix;
 		let prepared = this.preparedQueries.get(compiledQuery.sql);
 		if (!prepared) {
 			const nextPrepared = prepareLixQuery(compiledQuery.sql);
@@ -176,10 +174,13 @@ class LixConnection implements DatabaseConnection {
 			(position) => compiledQuery.parameters[position - 1]
 		);
 		encodeIdentityParameters(parameters, prepared.identityParameterPositions);
-		const result = await executor.execute(
-			prepared.sql,
-			parameters as SqlParam[]
-		);
+		const result =
+			this.#state.kind === "active"
+				? await this.#state.transaction.execute(
+						prepared.sql,
+						parameters as SqlParam[]
+					)
+				: await this.lix.execute(prepared.sql, parameters as SqlParam[]);
 		return {
 			rows: result.rows.map((row) => publicRow(row)) as R[],
 			numAffectedRows: BigInt(result.rowsAffected),
