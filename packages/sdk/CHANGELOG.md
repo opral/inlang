@@ -1,5 +1,32 @@
 # @inlang/sdk
 
+## 3.0.6
+
+### Patch Changes
+
+- 924dd7e: Upgrade Lix to v0.17.0.
+
+## 3.0.5
+
+### Patch Changes
+
+- c73ed13: Upgrade Lix to 0.16.1 to fix importing alphabetically sorted messages when a transaction exceeds 512 tracked-state rows.
+- 59715d2: Preserve the original error when a Lix transaction commit fails. Serialize Kysely connection leases so unrelated queries cannot join another caller's transaction and concurrent transactions execute independently. Beginning, committing, or rolling back a controlled transaction now releases its connection if it fails. Consumed transactions reject further queries instead of executing outside the transaction.
+
+  Restoring an in-memory project snapshot replaces file content at snapshot-owned paths, including files initialized by Lix, while preserving unrelated destination files.
+
+## 3.0.4
+
+### Patch Changes
+
+- c81ef61: Upgrade to Lix SDK 0.15.1 and migrate query results to plain JavaScript rows. Use the engine fix for transaction-local message and variant lookups, including CTE reads, without rewriting their SQL predicates. Safely encode locales containing NUL characters or the reserved identity prefix during writes and snapshot restoration.
+
+## 3.0.3
+
+### Patch Changes
+
+- 3c1fbc6: Remove the obsolete SQLite WASM dependency, public schema initializer, and special handling for unsupported legacy database artifacts. The SDK database API uses Lix through Kysely's PostgreSQL query compiler.
+
 ## 3.0.2
 
 ### Patch Changes

@@ -42,16 +42,26 @@ export class LixDialect implements Dialect {
 }
 
 class LixDriver implements Driver {
-	readonly #connection: LixConnection;
+	readonly #lix: Lix;
+	readonly #preparedQueries = new Map<string, PreparedLixQuery>();
+	#lease: Promise<void> = Promise.resolve();
 
 	constructor(lix: Lix) {
-		this.#connection = new LixConnection(lix);
+		this.#lix = lix;
 	}
 
 	async init(): Promise<void> {}
 
 	async acquireConnection(): Promise<DatabaseConnection> {
-		return this.#connection;
+		// Every caller owns its own lease. Terminal failures can release it even
+		// when Kysely's controlled API skips cleanup; later cleanup is idempotent.
+		const previousLease = this.#lease;
+		let release!: () => void;
+		this.#lease = new Promise<void>((resolve) => {
+			release = resolve;
+		});
+		await previousLease;
+		return new LixConnection(this.#lix, this.#preparedQueries, release);
 	}
 
 	async beginTransaction(connection: DatabaseConnection): Promise<void> {
@@ -66,63 +76,113 @@ class LixDriver implements Driver {
 		await (connection as LixConnection).rollbackTransaction();
 	}
 
-	async releaseConnection(): Promise<void> {}
-	async destroy(): Promise<void> {
-		await this.#connection.destroy();
-	}
-}
-
-class LixConnection implements DatabaseConnection {
-	readonly #lix: Lix;
-	readonly #preparedQueries = new Map<string, PreparedLixQuery>();
-	#transaction: LixTransaction | undefined;
-
-	constructor(lix: Lix) {
-		this.#lix = lix;
-	}
-
-	async beginTransaction(): Promise<void> {
-		if (this.#transaction)
-			throw new Error("A Lix transaction is already active");
-		this.#transaction = await this.#lix.beginTransaction();
+	async releaseConnection(connection: DatabaseConnection): Promise<void> {
+		(connection as LixConnection).release();
 	}
 
 	async destroy(): Promise<void> {
 		this.#preparedQueries.clear();
 	}
+}
+
+type TransactionState =
+	| { kind: "idle" | "starting" | "finishing" | "commit-failed" | "closed" }
+	| { kind: "active"; transaction: LixTransaction };
+
+class LixConnection implements DatabaseConnection {
+	#state: TransactionState = { kind: "idle" };
+	#released = false;
+
+	constructor(
+		private readonly lix: Lix,
+		private readonly preparedQueries: Map<string, PreparedLixQuery>,
+		readonly releaseLease: () => void
+	) {}
+
+	release(): void {
+		if (this.#released) return;
+		this.#released = true;
+		this.releaseLease();
+	}
+
+	async beginTransaction(): Promise<void> {
+		if (this.#released || this.#state.kind !== "idle")
+			throw new Error("The Lix connection cannot begin a transaction");
+		this.#state = { kind: "starting" };
+		try {
+			this.#state = {
+				kind: "active",
+				transaction: await this.lix.beginTransaction(),
+			};
+		} catch (error) {
+			this.#state = { kind: "closed" };
+			this.release();
+			throw error;
+		}
+	}
 
 	async commitTransaction(): Promise<void> {
-		const transaction = this.#transaction;
-		if (!transaction) throw new Error("No Lix transaction is active");
-		this.#transaction = undefined;
-		await transaction.commit();
+		if (this.#state.kind !== "active")
+			throw new Error("No Lix transaction is active");
+		const { transaction } = this.#state;
+		this.#state = { kind: "finishing" };
+		try {
+			await transaction.commit();
+			this.#state = { kind: "closed" };
+		} catch (error) {
+			// Lix consumes failed commits. Kysely's subsequent rollback only
+			// acknowledges cleanup, preserving the original commit error.
+			this.#state = { kind: "commit-failed" };
+			throw error;
+		} finally {
+			this.release();
+		}
 	}
 
 	async rollbackTransaction(): Promise<void> {
-		const transaction = this.#transaction;
-		if (!transaction) throw new Error("No Lix transaction is active");
-		this.#transaction = undefined;
-		await transaction.rollback();
+		if (this.#state.kind === "commit-failed") {
+			this.#state = { kind: "closed" };
+			return;
+		}
+		if (this.#state.kind !== "active")
+			throw new Error("No Lix transaction is active");
+		const { transaction } = this.#state;
+		this.#state = { kind: "finishing" };
+		try {
+			await transaction.rollback();
+		} finally {
+			this.#state = { kind: "closed" };
+			this.release();
+		}
 	}
 
 	async executeQuery<R>(compiledQuery: CompiledQuery): Promise<QueryResult<R>> {
-		const executor = this.#transaction ?? this.#lix;
-		let prepared = this.#preparedQueries.get(compiledQuery.sql);
+		if (
+			this.#released ||
+			(this.#state.kind !== "idle" && this.#state.kind !== "active")
+		)
+			throw new Error(
+				"The Lix connection is closed or completing a transaction"
+			);
+		let prepared = this.preparedQueries.get(compiledQuery.sql);
 		if (!prepared) {
 			const nextPrepared = prepareLixQuery(compiledQuery.sql);
 			prepared = nextPrepared;
-			this.#preparedQueries.set(compiledQuery.sql, prepared);
+			this.preparedQueries.set(compiledQuery.sql, prepared);
 		}
 		const parameters = prepared.parameterPositions.map(
 			(position) => compiledQuery.parameters[position - 1]
 		);
 		encodeIdentityParameters(parameters, prepared.identityParameterPositions);
-		const result = await executor.execute(
-			prepared.sql,
-			parameters as SqlParam[]
-		);
+		const result =
+			this.#state.kind === "active"
+				? await this.#state.transaction.execute(
+						prepared.sql,
+						parameters as SqlParam[]
+					)
+				: await this.lix.execute(prepared.sql, parameters as SqlParam[]);
 		return {
-			rows: result.rows.map((row) => publicRow(row.toObject())) as R[],
+			rows: result.rows.map((row) => publicRow(row)) as R[],
 			numAffectedRows: BigInt(result.rowsAffected),
 		};
 	}
@@ -246,7 +306,10 @@ function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 					: column === "message_id"
 						? "messageId"
 						: column,
-				isIdentityColumn(column) && typeof value === "string"
+				(isIdentityColumn(column) ||
+					column === "messageLocale" ||
+					column === "variantId") &&
+				typeof value === "string"
 					? decodeIdentity(value)
 					: value,
 			])
@@ -254,7 +317,12 @@ function publicRow(row: Record<string, unknown>): Record<string, unknown> {
 }
 
 function isIdentityColumn(column: string): boolean {
-	return column === "id" || column === "bundle_id" || column === "message_id";
+	return (
+		column === "id" ||
+		column === "bundle_id" ||
+		column === "message_id" ||
+		column === "locale"
+	);
 }
 
 const encodedIdentityPrefix = "lixid1:";
@@ -301,7 +369,7 @@ function encodeIdentityParameters(
 
 function findIdentityParameterPositions(sql: string): number[] {
 	const positions = new Set<number>();
-	const identityColumns = "(?:id|bundle_id|message_id)";
+	const identityColumns = "(?:id|bundle_id|message_id|locale)";
 	for (const match of sql.matchAll(
 		new RegExp(`"${identityColumns}"\\s*=\\s*\\$(\\d+)`, "gi")
 	)) {

@@ -26,7 +26,7 @@ test("it should be network-first", async () => {
 	expect(cachedPlugins.length).toBe(1);
 
 	const parsed = new TextDecoder().decode(
-		cachedPlugins[0]!.value("content").asBytes()
+		cachedPlugins[0]!.content as Uint8Array
 	);
 
 	expect(parsed).toBe("module content 1");
@@ -45,7 +45,7 @@ test("it should be network-first", async () => {
 	expect(cachedPlugins2.length).toBe(1);
 
 	const parsed2 = new TextDecoder().decode(
-		cachedPlugins2[0]!.value("content").asBytes()
+		cachedPlugins2[0]!.content as Uint8Array
 	);
 
 	expect(parsed2).toBe("module content 2");

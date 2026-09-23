@@ -93,8 +93,8 @@ export async function saveProjectToDirectory(args: {
 	const files = (
 		await args.project.lix.execute("SELECT path, content FROM lix_file")
 	).rows.map((row) => ({
-		path: row.get("path") as string,
-		content: row.value("content").asBytes()!,
+		path: row.path as string,
+		content: row.content as Uint8Array,
 	}));
 
 	const gitignoreContent = new TextEncoder().encode(

@@ -35,7 +35,7 @@ test("it should have the lix id as project id", async () => {
 	const lixIdResult = await project.lix.execute(
 		"SELECT value FROM lix_key_value WHERE key = 'lix_id'"
 	);
-	const lixId = lixIdResult.rows[0]?.value("value").toJS();
+	const lixId = lixIdResult.rows[0]?.value;
 
 	const projectId = await project.id.get();
 	expect(projectId).toBeDefined();

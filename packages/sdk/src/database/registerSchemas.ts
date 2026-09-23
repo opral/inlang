@@ -17,7 +17,7 @@ export async function registerInlangSchemas(lix: Lix): Promise<void> {
 	);
 	const registeredKeys = new Set(
 		registered.rows
-			.map((row) => row.value("schema_key").toJS())
+			.map((row) => row.schema_key)
 			.filter((key): key is string => typeof key === "string")
 	);
 

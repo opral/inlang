@@ -1,11 +1,15 @@
 import type { CompiledQuery, Kysely } from "kysely";
-import type { ExecuteResult, Lix, LixBatchStatement } from "@lix-js/sdk";
+import type {
+	ExecuteBatchStatementResult,
+	Lix,
+	LixBatchStatement,
+} from "@lix-js/sdk";
 import type { InlangDatabaseSchema } from "./schema.js";
 import { compileLixQuery } from "./lixDialect.js";
 
 type BatchExecutor = (
 	queries: readonly CompiledQuery[]
-) => Promise<readonly ExecuteResult[]>;
+) => Promise<readonly ExecuteBatchStatementResult[]>;
 
 const batchExecutors = new WeakMap<object, BatchExecutor>();
 
@@ -21,7 +25,7 @@ export function attachLixBatchExecutor(
 ): void {
 	batchExecutors.set(db, async (queries) => {
 		const statements: LixBatchStatement[] = queries.map(compileLixQuery);
-		return lix.executeBatch(statements);
+		return (await lix.executeBatch(statements)).results;
 	});
 }
 
@@ -33,7 +37,7 @@ export function attachLixBatchExecutor(
 export async function executeLixBatch(
 	db: Kysely<InlangDatabaseSchema>,
 	queries: readonly CompiledQuery[]
-): Promise<readonly ExecuteResult[]> {
+): Promise<readonly ExecuteBatchStatementResult[]> {
 	if (queries.length === 0) {
 		throw new Error("executeLixBatch requires at least one query");
 	}
