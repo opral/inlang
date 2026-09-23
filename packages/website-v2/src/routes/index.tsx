@@ -18,7 +18,7 @@ const ogImage =
   "https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/website/public/opengraph/inlang-social-image.jpg";
 
 const siteDescription =
-  "Inlang is the open-format TMS for software teams. Store translations in your repo as a vendor-neutral file format.";
+  "Run software localization through Git, CI, and pull requests. Keep translation files in your repo and connect tools through inlang's open project format.";
 
 const loadLandingContent = createServerFn({ method: "GET" }).handler(
   async () => {
@@ -160,12 +160,12 @@ function LandingPage() {
       <section className="mx-auto grid max-w-[1200px] grid-cols-1 items-center gap-12 px-4 py-14 sm:px-6 md:py-[68px] lg:grid-cols-[1fr_520px] lg:gap-14 lg:px-8">
         <div className="flex flex-col gap-5">
           <h1 className="max-w-2xl text-[40px] font-semibold leading-[1.14] tracking-[-0.025em] text-balance sm:text-5xl">
-            The open format TMS for software products.
+            Run localization through Git, CI, and pull requests.
           </h1>
           <p className="max-w-xl text-[17px] leading-[1.7] text-slate-600 text-pretty">
-            Store translations in your repo as a vendor-neutral file format, so
-            developers, translators, CI, translation tools, and AI agents can
-            read and update the same localization source of truth.
+            Keep translation files in Git. Inlang gives editors, agents, and
+            automation a shared way to work with them, without making a hosted
+            TMS the source of truth.
           </p>
           <div className="flex flex-wrap gap-3 pt-1">
             <Link
