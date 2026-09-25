@@ -39,6 +39,7 @@
     "dev": "node ./build.js",
     "build": "cross-env NODE_ENV=production node ./build.js && tsc --noEmit",
     "test": "tsc --noEmit && vitest run --coverage --test-timeout=10000",
+    "test:package": "node ./scripts/test-packed-wasm-fallback.mjs",
     "test:watch": "vitest",
     "format": "prettier ./src --write",
     "clean": "rm -rf ./dist ./node_modules"
