@@ -1,5 +1,11 @@
 # @inlang/cli
 
+## 3.3.8
+
+### Patch Changes
+
+- 8a3538c: Fix CLI validation on Linux systems where Lix uses its WebAssembly fallback.
+
 ## 3.3.7
 
 ### Patch Changes
