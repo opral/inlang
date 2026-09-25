@@ -36,7 +36,9 @@ const __dirname = pathPolyfill123.dirname(__filename)
       PUBLIC_POSTHOG_TOKEN: process.env.PUBLIC_POSTHOG_TOKEN,
     }),
   },
-  external: ["esbuild-wasm"],
+  // @inlang/sdk owns Lix's native and WASM assets. Keep its module URLs
+  // relative to the installed SDK instead of rebasing them into dist/main.js.
+  external: ["esbuild-wasm", "@inlang/sdk"],
 });
 
 if (isProduction === false) {
