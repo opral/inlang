@@ -1,6 +1,6 @@
 {
 	"name": "@inlang/plugin-next-intl",
-	"version": "2.2.0",
+	"version": "2.2.1",
 	"type": "module",
 	"types": "./dist/index.d.ts",
 	"exports": {

@@ -1,5 +1,11 @@
 # @inlang/sdk
 
+## 3.0.7
+
+### Patch Changes
+
+- 68eefaf: Allow `paraglide.config.js`, `.mjs`, `.ts`, and `.cjs` in the generated project `.gitignore` so Paraglide compiler options can be committed and shared across clones and CI. Existing projects receive the updated ignore rules when the SDK upgrade regenerates project metadata. Fixes https://github.com/opral/paraglide-js/issues/775.
+
 ## 3.0.6
 
 ### Patch Changes
