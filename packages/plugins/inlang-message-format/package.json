@@ -4,8 +4,14 @@
 	"type": "module",
 	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./dist/index.js",
-		"./file-schema": "./src/fileSchema.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./file-schema": {
+			"types": "./dist/fileSchema.d.ts",
+			"default": "./dist/fileSchema.js"
+		}
 	},
 	"files": [
 		"./dist",
@@ -28,9 +34,7 @@
 		"clean": "rm -rf ./dist ./node_modules"
 	},
 	"devDependencies": {
-		"@inlang/sdk": "workspace:*",
 		"@inlang/tsconfig": "workspace:*",
-		"@sinclair/typebox": "^0.31.17",
 		"esbuild": "^0.24.2",
 		"memfs": "4.6.0",
 		"prettier": "^3.3.3",
@@ -38,6 +42,15 @@
 		"vitest": "^3.2.4"
 	},
 	"dependencies": {
-		"flat": "^6.0.1"
+		"flat": "^6.0.1",
+		"@inlang/sdk": "workspace:*",
+		"@sinclair/typebox": "^0.31.17"
+	},
+	"typesVersions": {
+		"*": {
+			"file-schema": [
+				"dist/fileSchema.d.ts"
+			]
+		}
 	}
 }

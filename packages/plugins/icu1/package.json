@@ -13,7 +13,10 @@
   "type": "module",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./dist/index.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": [
     "./dist"
@@ -26,15 +29,15 @@
     "clean": "rm -rf ./dist ./node_modules"
   },
   "devDependencies": {
-    "@inlang/sdk": "workspace:*",
     "@inlang/tsconfig": "workspace:*",
-    "@sinclair/typebox": "^0.31.17",
     "esbuild": "^0.25.9",
     "prettier": "3.3.3",
     "typescript": "^5.5.2",
     "vitest": "^4.0.6"
   },
   "dependencies": {
-    "@messageformat/parser": "^5.1.1"
+    "@messageformat/parser": "^5.1.1",
+    "@inlang/sdk": "workspace:*",
+    "@sinclair/typebox": "^0.31.17"
   }
 }

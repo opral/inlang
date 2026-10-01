@@ -1,10 +1,11 @@
 import { context } from "esbuild";
+import { execFileSync } from "node:child_process";
 
 // eslint-disable-next-line no-undef
 const isProduction = process.env.NODE_ENV === "production";
 
 const ctx = await context({
-	entryPoints: ["./src/index.ts"],
+	entryPoints: ["./src/index.ts", "./src/fileSchema.ts"],
 	outdir: "./dist",
 	// improve debugging by not minifying
 	minify: false,
@@ -31,4 +32,20 @@ if (isProduction === false) {
 } else {
 	await ctx.rebuild();
 	await ctx.dispose();
+	execFileSync(
+		"tsc",
+		[
+			"-p",
+			"tsconfig.build.json",
+			"--emitDeclarationOnly",
+			"--declaration",
+			"--declarationMap",
+			"false",
+			"--outDir",
+			"dist",
+			"--noEmit",
+			"false",
+		],
+		{ stdio: "inherit" }
+	);
 }

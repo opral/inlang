@@ -5,6 +5,7 @@
   "scripts": {
     "build": "pnpm exec nx run-many --nx-bail --target=build --parallel",
     "test": "pnpm exec nx run-many --target=test --parallel",
+    "test:plugin-packages": "node scripts/test-plugin-packages.mjs",
     "lint": "pnpm exec nx run-many --target=lint --parallel",
     "format": "pnpm exec nx run-many --target=format --parallel",
     "clean": "pnpm recursive run clean && rm -rf ./.env ./node_modules",

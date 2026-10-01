@@ -43,5 +43,8 @@ jobs:
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_CI_ENV_TOKEN }}
 
+      - name: Verify published plugin packages
+        run: pnpm test:plugin-packages
+
       - name: Verify packaged CLI WASM fallback
         run: pnpm --filter @inlang/cli test:package

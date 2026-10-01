@@ -31,6 +31,8 @@ if (isProduction === false) {
 	execFileSync(
 		"tsc",
 		[
+			"-p",
+			"tsconfig.build.json",
 			"--emitDeclarationOnly",
 			"--declaration",
 			"--declarationMap",

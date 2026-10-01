@@ -4,7 +4,10 @@
 	"type": "module",
 	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./dist/index.js"
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		}
 	},
 	"files": [
 		"./dist",
@@ -27,7 +30,8 @@
 	},
 	"dependencies": {
 		"@inlang/detect-json-formatting": "1.0.0",
-		"@sinclair/typebox": "0.31.28"
+		"@sinclair/typebox": "0.31.28",
+		"@inlang/sdk": "workspace:*"
 	},
 	"devDependencies": {
 		"@inlang/plugin": "2.4.14",
@@ -35,7 +39,6 @@
 		"@inlang/tsconfig": "workspace:*",
 		"@types/flat": "^5.0.2",
 		"@types/lodash.merge": "^4.6.7",
-		"@inlang/sdk": "workspace:*",
 		"@types/parsimmon": "1.10.6",
 		"esbuild": "^0.24.2",
 		"flat": "^5.0.2",
