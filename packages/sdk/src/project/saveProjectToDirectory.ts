@@ -98,7 +98,7 @@ export async function saveProjectToDirectory(args: {
 	}));
 
 	const gitignoreContent = new TextEncoder().encode(
-		"# IF GIT SHOWED THAT THIS FILE CHANGED\n#\n# 1. RUN THE FOLLOWING COMMAND\n#\n# ---\n# git rm --cached '**/*.inlang/.gitignore'\n# ---\n#\n# 2. COMMIT THE CHANGE\n#\n# ---\n# git commit -m \"fix: remove tracked .gitignore from inlang project\"\n# ---\n#\n# Inlang handles the gitignore itself starting with version ^2.5.\n#\n# everything is ignored except settings.json\n*\n!settings.json"
+		"# IF GIT SHOWED THAT THIS FILE CHANGED\n#\n# 1. RUN THE FOLLOWING COMMAND\n#\n# ---\n# git rm --cached '**/*.inlang/.gitignore'\n# ---\n#\n# 2. COMMIT THE CHANGE\n#\n# ---\n# git commit -m \"fix: remove tracked .gitignore from inlang project\"\n# ---\n#\n# Inlang handles the gitignore itself starting with version ^2.5.\n#\n# everything is ignored except settings.json and Paraglide configuration\n*\n!settings.json\n!paraglide.config.js\n!paraglide.config.mjs\n!paraglide.config.ts\n!paraglide.config.cjs"
 	);
 
 	const existingMeta = await readProjectMeta({

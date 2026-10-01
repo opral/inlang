@@ -10,6 +10,53 @@ import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
 import type { MessageV1 } from "../json-schema/old-v1-message/schemaV1.js";
 import { ENV_VARIABLES } from "../services/env-variables/index.js";
+import * as nodeFs from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+// https://github.com/opral/paraglide-js/issues/775
+test("generated ignore rules keep Paraglide configs visible to Git across saves", async () => {
+	const directory = await nodeFs.mkdtemp(join(tmpdir(), "inlang-gitignore-"));
+	const project = await loadProjectInMemory({ blob: await newProject({}) });
+	try {
+		execFileSync("git", ["init", "--quiet", directory]);
+		const projectPath = join(directory, "project.inlang");
+		const configNames = [
+			"paraglide.config.js",
+			"paraglide.config.mjs",
+			"paraglide.config.ts",
+			"paraglide.config.cjs",
+		];
+		await nodeFs.mkdir(join(projectPath, "cache"), { recursive: true });
+		for (const name of [
+			...configNames,
+			"cache/plugin.js",
+			"paraglide.config.js.bak",
+		]) {
+			await nodeFs.writeFile(join(projectPath, name), "{}");
+		}
+		for (let attempt = 0; attempt < 2; attempt++) {
+			await saveProjectToDirectory({ fs: nodeFs, project, path: projectPath });
+			const visible = execFileSync(
+				"git",
+				["ls-files", "--others", "--exclude-standard"],
+				{ cwd: directory, encoding: "utf8" }
+			)
+				.trim()
+				.split("\n")
+				.sort();
+			expect(visible).toEqual(
+				[...configNames, "settings.json"]
+					.map((name) => `project.inlang/${name}`)
+					.sort()
+			);
+		}
+	} finally {
+		await project.close();
+		await nodeFs.rm(directory, { recursive: true, force: true });
+	}
+});
 
 test("it should throw if the path doesn't end with .inlang", async () => {
 	await expect(() =>
@@ -877,7 +924,9 @@ test("README.md is gitignored", async () => {
 		"/foo/bar.inlang/.gitignore",
 		"utf-8"
 	);
-	expect(gitignore).toContain("# everything is ignored except settings.json");
+	expect(gitignore).toContain(
+		"# everything is ignored except settings.json and Paraglide configuration"
+	);
 	expect(gitignore).toContain("*");
 	expect(gitignore).toContain("!settings.json");
 	expect(gitignore).not.toContain("!README.md");

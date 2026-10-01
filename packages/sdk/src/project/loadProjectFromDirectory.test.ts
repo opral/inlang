@@ -373,6 +373,9 @@ describe("it should keep files between the inlang directory and lix in sync", as
 		expect(readme).not.toContain("custom readme");
 		expect(gitignore).toContain("*");
 		expect(gitignore).toContain("!settings.json");
+		for (const extension of ["js", "mjs", "ts", "cjs"]) {
+			expect(gitignore).toContain(`!paraglide.config.${extension}`);
+		}
 	});
 
 	test("recreates README.md and .gitignore when meta version is higher but files are missing", async () => {
