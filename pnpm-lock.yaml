@@ -610,15 +610,15 @@ importers:
 
   packages/plugins/icu1:
     dependencies:
-      '@sinclair/typebox':
-        specifier: ^0.31.17
-        version: 0.31.28
       '@inlang/sdk':
         specifier: workspace:*
         version: link:../../sdk
       '@messageformat/parser':
         specifier: ^5.1.1
         version: 5.1.1
+      '@sinclair/typebox':
+        specifier: ^0.31.17
+        version: 0.31.28
     devDependencies:
       '@inlang/tsconfig':
         specifier: workspace:*
@@ -638,12 +638,12 @@ importers:
 
   packages/plugins/inlang-message-format:
     dependencies:
-      '@sinclair/typebox':
-        specifier: ^0.31.17
-        version: 0.31.28
       '@inlang/sdk':
         specifier: workspace:*
         version: link:../../sdk
+      '@sinclair/typebox':
+        specifier: ^0.31.17
+        version: 0.31.28
       flat:
         specifier: ^6.0.1
         version: 6.0.1
@@ -669,15 +669,15 @@ importers:
 
   packages/plugins/json:
     dependencies:
-      '@inlang/sdk':
-        specifier: workspace:*
-        version: link:../../sdk
       '@inlang/detect-json-formatting':
         specifier: 1.0.0
         version: 1.0.0
       '@inlang/plugin':
         specifier: 2.4.14
         version: 2.4.14(@sinclair/typebox@0.31.28)
+      '@inlang/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
       '@lix-js/fs':
         specifier: 2.2.0
         version: 2.2.0
@@ -737,12 +737,12 @@ importers:
 
   packages/plugins/next-intl:
     dependencies:
-      '@inlang/sdk':
-        specifier: workspace:*
-        version: link:../../sdk
       '@inlang/detect-json-formatting':
         specifier: 1.0.0
         version: 1.0.0
+      '@inlang/sdk':
+        specifier: workspace:*
+        version: link:../../sdk
       '@sinclair/typebox':
         specifier: 0.31.28
         version: 0.31.28
