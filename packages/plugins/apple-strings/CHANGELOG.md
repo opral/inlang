@@ -1,5 +1,13 @@
 # @inlang/plugin-apple-strings
 
+## 0.2.7
+
+### Patch Changes
+
+- 3502588: Publish TypeScript declarations and explicit type exports for all official plugins. Keep declaration dependencies available to consumers and exclude test declarations from production builds. Fix the message-format `file-schema` export to reference published JavaScript and declarations.
+- Updated dependencies [68eefaf]
+  - @inlang/sdk@3.0.7
+
 ## 0.2.6
 
 ### Patch Changes
