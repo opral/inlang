@@ -16,7 +16,7 @@ jobs:
   ci:
     strategy:
       matrix:
-        os: [blacksmith-8vcpu-ubuntu-2404]
+        os: [ubuntu-24.04]
         version: [22]
     runs-on: ${{ matrix.os }}
     environment: staging
