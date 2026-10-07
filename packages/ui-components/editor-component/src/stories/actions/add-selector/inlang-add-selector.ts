@@ -1,5 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { selectorMatches } from "../../../helper/selectorMatches.js";
 import { createChangeEvent } from "../../../helper/event.js";
 import { baseStyling } from "../../../styling/base.js";
 import {
@@ -200,20 +201,17 @@ export default class InlangAddSelector extends LitElement {
   @state()
   private _oldDeclarations: Declaration[] | undefined;
 
+  @state() private _matchError = "";
+
   private _getPluralCategories = (): string[] | undefined => {
-    return this.message?.locale
-      ? [
-          ...new Intl.PluralRules(this.message.locale).resolvedOptions()
-            .pluralCategories,
-          "*",
-        ]
-      : undefined;
+    if (!this._variable || !this.message) return;
+    return selectorMatches(this._variable.name, this.bundle.declarations, this.message.locale, this.variants).allowed;
   };
 
   private _getAvailablevariables = () => {
     const variables: Declaration[] = [];
     for (const declaration of this.bundle.declarations) {
-      if (!variables.some((d) => d.name === declaration.name)) {
+      if (!variables.some((d) => d.name === declaration.name) && !this.message?.selectors.some(selector => selector.name === declaration.name)) {
         variables.push(declaration);
       }
     }
@@ -222,6 +220,13 @@ export default class InlangAddSelector extends LitElement {
 
   private _handleAddSelector = (newMatchers: string[]) => {
     if (this._variable && this.message) {
+      if (this.message.selectors.some(selector => selector.name === this._variable!.name)) return;
+      const allowed = this._getPluralCategories();
+      if (allowed && newMatchers.some(value => !allowed.includes(value))) {
+        this._matchError = `Choose ${allowed.join(", ")}.`;
+        return;
+      }
+      this._matchError = "";
       // get variant matcher
       const message = structuredClone(this.message);
       const variants = structuredClone(this.variants);
@@ -346,8 +351,11 @@ export default class InlangAddSelector extends LitElement {
       this._oldDeclarations = this.bundle.declarations;
       this._variable = this._getAvailablevariables()?.[0];
     }
-    if (changedProperties.has("message")) {
-      //check if message has changed
+    if (changedProperties.has("message") && this.message?.selectors.some(selector => selector.name === this._variable?.name)) {
+      this._variable = this._getAvailablevariables()[0];
+    }
+    if (changedProperties.has("message") || changedProperties.has("_variable")) {
+      this._matchError = "";
       this._matchers = this._getPluralCategories() || ["*"];
     }
   }
@@ -360,7 +368,7 @@ export default class InlangAddSelector extends LitElement {
 
   override render() {
     return html`
-			<div class="dropdown-container">
+			<div class="dropdown-container">${this._matchError ? html`<p role="alert" style="color: var(--sl-color-danger-600)">${this._matchError}</p>` : undefined}
 				${
           this._variable && this._variable.name.length > 0
             ? html`<div class="dropdown-item">
@@ -410,10 +418,10 @@ export default class InlangAddSelector extends LitElement {
               </div>`
         }
 					${
-            this._variable && this._variable.type === "local-variable"
+            this._variable
               ? html`<div class="options-container">
                     <div class="dropdown-header">
-                      <p class="dropdown-title">Match</p>
+                      <p class="dropdown-title">Match · ${selectorMatches(this._variable.name, this.bundle.declarations, this.message.locale, this.variants).label}</p>
                       <sl-tooltip content="Add a match to this selector">
                         <sl-button
                           class="add-input"
@@ -506,11 +514,7 @@ export default class InlangAddSelector extends LitElement {
 						<sl-button
 							@click=${() => {
                 if (this._matchers) {
-                  if (this._variable?.type === "local-variable") {
-                    this._handleAddSelector(this._matchers);
-                  } else {
-                    this._handleAddSelector(["*"]);
-                  }
+                  this._handleAddSelector(this._matchers);
                 } else {
                   console.info("No matchers present");
                 }

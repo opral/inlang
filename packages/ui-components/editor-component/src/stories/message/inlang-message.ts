@@ -1,8 +1,9 @@
-import type { Message, ProjectSettings, Variant } from "@inlang/sdk";
+import type { Message, ProjectSettings, Variant, Declaration } from "@inlang/sdk";
 import { LitElement, css, html } from "lit";
 import { v7 as uuidV7 } from "uuid";
 import { customElement, property } from "lit/decorators.js";
 import { baseStyling } from "../../styling/base.js";
+import { selectorMatches } from "../../helper/selectorMatches.js";
 import { createChangeEvent } from "../../helper/event.js";
 
 import SlTag from "@shoelace-style/shoelace/dist/components/tag/tag.component.js";
@@ -69,12 +70,15 @@ export default class InlangMessage extends LitElement {
 				min-height: 44px;
 				display: flex;
 			}
+			.selector-type { font-size: 10px; font-weight: 400; color: var(--sl-color-neutral-500); }
 			.selector {
 				height: 44px;
 				width: 120px;
 				display: flex;
-				align-items: center;
-				padding: 12px;
+				align-items: flex-start;
+				justify-content: center;
+				flex-direction: column;
+				padding: 6px 12px;
 				border-right: 1px solid var(--sl-input-border-color);
 				font-weight: 500;
 				cursor: pointer;
@@ -180,6 +184,11 @@ export default class InlangMessage extends LitElement {
 		return this.settings?.baseLocale;
 	};
 
+	private _selectorType(name: string) {
+		const bundle = this.closest("inlang-bundle") as (HTMLElement & { bundle?: { declarations: Declaration[] } }) | null;
+		return selectorMatches(name, bundle?.bundle?.declarations ?? [], this.message?.locale ?? "", this.variants ?? []).label;
+	}
+
 	override render() {
 		return html`
 			<div class="language-container">
@@ -208,7 +217,8 @@ export default class InlangMessage extends LitElement {
 									(selector, index) =>
 										html`<sl-dropdown>
 											<div class="selector" part="selector" slot="trigger">
-												${selector.name}
+												<span>${selector.name}</span>
+												<span class="selector-type" title=${this._selectorType(selector.name)}>${this._selectorType(selector.name).split(" · ")[0]}</span>
 											</div>
 											<sl-menu>
 												<sl-menu-item
