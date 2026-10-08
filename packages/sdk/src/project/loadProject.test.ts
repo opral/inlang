@@ -8,24 +8,24 @@ test("it should persist changes of bundles, messages, and variants to lix ", asy
 	const file1 = await newProject();
 	const project1 = await loadProjectInMemory({ blob: file1 });
 	const bundle = await project1.db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.defaultValues()
 		.returning("id")
 		.executeTakeFirstOrThrow();
 
 	const message = await project1.db
-		.insertInto("message")
+		.insertInto("inlang_message")
 		.values({
-			bundleId: bundle.id,
+			bundle_id: bundle.id,
 			locale: "en",
 		})
 		.returning("id")
 		.executeTakeFirstOrThrow();
 
 	await project1.db
-		.insertInto("variant")
+		.insertInto("inlang_variant")
 		.values({
-			messageId: message.id,
+			message_id: message.id,
 		})
 		.execute();
 
@@ -33,13 +33,16 @@ test("it should persist changes of bundles, messages, and variants to lix ", asy
 	await project1.close();
 
 	const project2 = await loadProjectInMemory({ blob: file1AfterUpdates });
-	const bundles = await project2.db.selectFrom("bundle").select("id").execute();
+	const bundles = await project2.db
+		.selectFrom("inlang_bundle")
+		.select("id")
+		.execute();
 	const messages = await project2.db
-		.selectFrom("message")
+		.selectFrom("inlang_message")
 		.select("id")
 		.execute();
 	const variants = await project2.db
-		.selectFrom("variant")
+		.selectFrom("inlang_variant")
 		.select("id")
 		.execute();
 	expect(bundles.length).toBe(1);

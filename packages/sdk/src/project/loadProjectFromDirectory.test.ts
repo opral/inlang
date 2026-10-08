@@ -225,12 +225,12 @@ test("plugin.loadMessages and plugin.saveMessages should work for legacy purpose
 		messages: [
 			{
 				id: "mock-message",
-				bundleId: "mock-bundle",
+				bundle_id: "mock-bundle",
 				locale: "en",
 				selectors: [],
 				variants: [
 					{
-						messageId: "mock-message",
+						message_id: "mock-message",
 						pattern: [
 							{
 								type: "text",
@@ -1025,7 +1025,7 @@ test("plugin calls that use fs should be intercepted to use an absolute path", a
 	expect(fsReadFileSpy).toHaveBeenCalledWith("/messages/en.json", undefined);
 
 	// todo test that saveMessages works too.
-	// await project.db.insertInto("bundle").defaultValues().execute();
+	// await project.db.insertInto("inlang_bundle").defaultValues().execute();
 
 	// const translationFile = await fs.readFile("/messages/en.json", "utf-8");
 

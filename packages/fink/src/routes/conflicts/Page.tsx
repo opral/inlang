@@ -12,7 +12,7 @@ import {
 	InlangPatternEditor,
 	InlangVariant,
 } from "../../components/SingleDiffBundle.tsx";
-import { resolveConflictBySelecting, Variant } from "@inlang/sdk";
+import { resolveConflictBySelecting, VariantRow } from "@inlang/sdk";
 import { useEffect } from "react";
 
 export default function Page() {
@@ -75,7 +75,7 @@ export default function Page() {
 										<div className="flex-1 flex gap-2 items-center justify-between pr-4 py-3 rounded h-[46px]">
 											<div className="flex gap-2 items-center">
 												<p className="text-zinc-950 text-sm! font-semibold">
-													Variant changed
+													VariantRow changed
 												</p>
 												<p className="text-sm! text-zinc-600">{`bundle_id: ${bundleId}`}</p>
 											</div>
@@ -91,14 +91,14 @@ export default function Page() {
 												)}`}</p>
 												<div className="relative border border-zinc-300 rounded-lg overflow-hidden">
 													<InlangVariant
-														variant={change.value as Variant}
+														variant={change.value as VariantRow}
 														className="pointer-events-none conflict-variant"
 														// @ts-expect-error - noHistory is not a valid prop
 														noHistory={true}
 													>
 														<InlangPatternEditor
 															slot="pattern-editor"
-															variant={change.value as Variant}
+															variant={change.value as VariantRow}
 															className={"conflict-pattern"}
 														></InlangPatternEditor>
 													</InlangVariant>
@@ -139,14 +139,14 @@ export default function Page() {
 												)}`}</p>
 												<div className="relative border border-zinc-300 rounded-lg overflow-hidden">
 													<InlangVariant
-														variant={conflictingChange.value as Variant}
+														variant={conflictingChange.value as VariantRow}
 														className={"pointer-events-none conflict-variant"}
 														// @ts-expect-error - noHistory is not a valid prop
 														noHistory={true}
 													>
 														<InlangPatternEditor
 															slot="pattern-editor"
-															variant={conflictingChange.value as Variant}
+															variant={conflictingChange.value as VariantRow}
 															className={"conflict-pattern"}
 														></InlangPatternEditor>
 													</InlangVariant>

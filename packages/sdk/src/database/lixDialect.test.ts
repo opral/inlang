@@ -9,12 +9,12 @@ test("compiles Kysely parameters with PostgreSQL placeholders", async () => {
 	const db = initDb({ lix });
 
 	const compiled = db
-		.selectFrom("bundle")
+		.selectFrom("inlang_bundle")
 		.select("id")
 		.where("id", "=", "example")
 		.compile();
 
-	expect(compiled.sql).toBe('select "id" from "bundle" where "id" = $1');
+	expect(compiled.sql).toBe('select "id" from "inlang_bundle" where "id" = $1');
 	expect(compiled.parameters).toEqual(["example"]);
 
 	await db.destroy();
@@ -27,7 +27,7 @@ test("executes Kysely reads, writes, defaults, and transactions on Lix", async (
 	const db = initDb({ lix });
 
 	const bundle = await db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.defaultValues()
 		.returningAll()
 		.executeTakeFirstOrThrow();
@@ -36,15 +36,22 @@ test("executes Kysely reads, writes, defaults, and transactions on Lix", async (
 
 	await db.transaction().execute(async (trx) => {
 		const message = await trx
-			.insertInto("message")
-			.values({ bundleId: bundle.id, locale: "en" })
+			.insertInto("inlang_message")
+			.values({ bundle_id: bundle.id, locale: "en" })
 			.returningAll()
 			.executeTakeFirstOrThrow();
-		await trx.insertInto("variant").values({ messageId: message.id }).execute();
+		await trx
+			.insertInto("inlang_variant")
+			.values({ message_id: message.id })
+			.execute();
 	});
 
-	expect(await db.selectFrom("message").selectAll().execute()).toHaveLength(1);
-	expect(await db.selectFrom("variant").selectAll().execute()).toHaveLength(1);
+	expect(
+		await db.selectFrom("inlang_message").selectAll().execute()
+	).toHaveLength(1);
+	expect(
+		await db.selectFrom("inlang_variant").selectAll().execute()
+	).toHaveLength(1);
 	const nested = await selectBundleNested(db).executeTakeFirstOrThrow();
 	expect(nested.messages[0]?.variants).toHaveLength(1);
 
@@ -58,33 +65,33 @@ test("transaction reads find newly written messages and variants by text columns
 	const db = initDb({ lix });
 	try {
 		await db.transaction().execute(async (trx) => {
-			await trx.insertInto("bundle").values({ id: "bundle" }).execute();
+			await trx.insertInto("inlang_bundle").values({ id: "bundle" }).execute();
 			await trx
-				.insertInto("message")
-				.values({ id: "message", bundleId: "bundle", locale: "en" })
+				.insertInto("inlang_message")
+				.values({ id: "message", bundle_id: "bundle", locale: "en" })
 				.execute();
 			await trx
-				.insertInto("variant")
-				.values({ id: "variant", messageId: "message" })
+				.insertInto("inlang_variant")
+				.values({ id: "variant", message_id: "message" })
 				.execute();
 			expect(
 				await trx
-					.selectFrom("message")
+					.selectFrom("inlang_message")
 					.select("id")
-					.where("bundleId", "=", "bundle")
+					.where("bundle_id", "=", "bundle")
 					.where("locale", "=", "en")
 					.execute()
 			).toEqual([{ id: "message" }]);
 			expect(
 				await trx
-					.selectFrom("variant")
+					.selectFrom("inlang_variant")
 					.select("id")
-					.where("messageId", "in", ["message"])
+					.where("message_id", "in", ["message"])
 					.execute()
 			).toEqual([{ id: "variant" }]);
 			expect(
 				await trx
-					.selectFrom("message")
+					.selectFrom("inlang_message")
 					.select("id")
 					.where("locale", "=", "de")
 					.execute()
@@ -105,24 +112,24 @@ test("preserves encoded identities and locales in direct and nested reads", asyn
 		const messageId = "lixid1:message";
 		const variantId = "variant\0id";
 		const locale = "en\0US";
-		await db.insertInto("bundle").values({ id: bundleId }).execute();
+		await db.insertInto("inlang_bundle").values({ id: bundleId }).execute();
 		await db
-			.insertInto("message")
-			.values({ id: messageId, bundleId, locale })
+			.insertInto("inlang_message")
+			.values({ id: messageId, bundle_id: bundleId, locale })
 			.execute();
 		await db
-			.insertInto("variant")
-			.values({ id: variantId, messageId })
+			.insertInto("inlang_variant")
+			.values({ id: variantId, message_id: messageId })
 			.execute();
 		expect(
 			await db
-				.selectFrom("message")
+				.selectFrom("inlang_message")
 				.selectAll()
 				.where("locale", "=", locale)
 				.executeTakeFirstOrThrow()
-		).toMatchObject({ id: messageId, bundleId, locale });
+		).toMatchObject({ id: messageId, bundle_id: bundleId, locale });
 		const nested = await selectBundleNested(db)
-			.where("bundle.id", "=", bundleId)
+			.where("inlang_bundle.id", "=", bundleId)
 			.executeTakeFirstOrThrow();
 		expect(nested.id).toBe(bundleId);
 		expect(nested.messages[0]).toMatchObject({ id: messageId, locale });
@@ -139,24 +146,27 @@ test("CTE transaction reads find newly written messages and variants", async () 
 	const db = initDb({ lix });
 	try {
 		await db.transaction().execute(async (trx) => {
-			await trx.insertInto("bundle").values({ id: "bundle" }).execute();
+			await trx.insertInto("inlang_bundle").values({ id: "bundle" }).execute();
 			await trx
-				.insertInto("message")
-				.values({ id: "message", bundleId: "bundle", locale: "en" })
+				.insertInto("inlang_message")
+				.values({ id: "message", bundle_id: "bundle", locale: "en" })
 				.execute();
 			await trx
-				.insertInto("variant")
-				.values({ id: "variant", messageId: "message" })
+				.insertInto("inlang_variant")
+				.values({ id: "variant", message_id: "message" })
 				.execute();
 			const query = trx
 				.with("matching_messages", (qb) =>
-					qb.selectFrom("message").select("id").where("locale", "=", "en")
+					qb
+						.selectFrom("inlang_message")
+						.select("id")
+						.where("locale", "=", "en")
 				)
 				.with("matching_variants", (qb) =>
 					qb
-						.selectFrom("variant")
+						.selectFrom("inlang_variant")
 						.select("id")
-						.where("messageId", "=", "message")
+						.where("message_id", "=", "message")
 				)
 				.selectFrom("matching_messages")
 				.crossJoin("matching_variants")
@@ -194,16 +204,21 @@ test("preserves a consumed commit failure and permits a subsequent transaction",
 	try {
 		await expect(
 			db.transaction().execute(async (trx) => {
-				await trx.insertInto("bundle").values({ id: "failed" }).execute();
+				await trx
+					.insertInto("inlang_bundle")
+					.values({ id: "failed" })
+					.execute();
 			})
 		).rejects.toBe(commitError);
-		expect(await db.selectFrom("bundle").selectAll().execute()).toEqual([]);
+		expect(await db.selectFrom("inlang_bundle").selectAll().execute()).toEqual(
+			[]
+		);
 		await db.transaction().execute(async (trx) => {
-			await trx.insertInto("bundle").values({ id: "next" }).execute();
+			await trx.insertInto("inlang_bundle").values({ id: "next" }).execute();
 		});
-		expect(await db.selectFrom("bundle").select("id").execute()).toEqual([
-			{ id: "next" },
-		]);
+		expect(await db.selectFrom("inlang_bundle").select("id").execute()).toEqual(
+			[{ id: "next" }]
+		);
 	} finally {
 		beginSpy.mockRestore();
 		await db.destroy();
@@ -226,7 +241,10 @@ test("unrelated queries wait for the transaction lease and survive its rollback"
 	});
 	try {
 		const transaction = db.transaction().execute(async (trx) => {
-			await trx.insertInto("bundle").values({ id: "rolled-back" }).execute();
+			await trx
+				.insertInto("inlang_bundle")
+				.values({ id: "rolled-back" })
+				.execute();
 			entered();
 			await mayAbort;
 			throw callbackError;
@@ -235,15 +253,15 @@ test("unrelated queries wait for the transaction lease and survive its rollback"
 		await transactionEntered;
 		// Queue a write outside the transaction before releasing its lease.
 		const independent = db
-			.insertInto("bundle")
+			.insertInto("inlang_bundle")
 			.values({ id: "independent" })
 			.execute();
 		abort();
 		await rejected;
 		await independent;
-		expect(await db.selectFrom("bundle").select("id").execute()).toEqual([
-			{ id: "independent" },
-		]);
+		expect(await db.selectFrom("inlang_bundle").select("id").execute()).toEqual(
+			[{ id: "independent" }]
+		);
 	} finally {
 		abort?.();
 		await db.destroy();
@@ -259,12 +277,12 @@ test("serializes concurrent transactions without rejecting or mixing their write
 		const results = await Promise.allSettled(
 			["first", "second"].map((id) =>
 				db.transaction().execute(async (trx) => {
-					await trx.insertInto("bundle").values({ id }).execute();
+					await trx.insertInto("inlang_bundle").values({ id }).execute();
 				})
 			)
 		);
 		expect(
-			await db.selectFrom("bundle").select("id").orderBy("id").execute()
+			await db.selectFrom("inlang_bundle").select("id").orderBy("id").execute()
 		).toEqual([{ id: "first" }, { id: "second" }]);
 		expect(results.map((result) => result.status)).toEqual([
 			"fulfilled",
@@ -365,19 +383,22 @@ test.each(["commit", "rollback"] as const)(
 		try {
 			const transaction = await db.startTransaction().execute();
 			await transaction
-				.insertInto("bundle")
+				.insertInto("inlang_bundle")
 				.values({ id: "discarded" })
 				.execute();
 			await expect(transaction[kind]().execute()).rejects.toBe(failure);
 			await expect(
-				transaction.insertInto("bundle").values({ id: "escaped" }).execute()
+				transaction
+					.insertInto("inlang_bundle")
+					.values({ id: "escaped" })
+					.execute()
 			).rejects.toThrow("connection is closed");
 			await db.transaction().execute(async (next) => {
-				await next.insertInto("bundle").values({ id: "next" }).execute();
+				await next.insertInto("inlang_bundle").values({ id: "next" }).execute();
 			});
-			expect(await db.selectFrom("bundle").select("id").execute()).toEqual([
-				{ id: "next" },
-			]);
+			expect(
+				await db.selectFrom("inlang_bundle").select("id").execute()
+			).toEqual([{ id: "next" }]);
 		} finally {
 			beginSpy.mockRestore();
 			await db.destroy();
@@ -417,5 +438,23 @@ test("cleanup of a failed controlled commit cannot release a later caller's leas
 		beginSpy.mockRestore();
 		await db.destroy();
 		await lix.close();
+	}
+});
+
+test("returns the Lix columns of entity rows", async () => {
+	const lix = await openLix();
+	await registerInlangSchemas(lix);
+	const db = initDb({ lix });
+	try {
+		await db.insertInto("inlang_bundle").values({ id: "greeting" }).execute();
+		const row = await db
+			.selectFrom("inlang_bundle")
+			.selectAll()
+			.executeTakeFirstOrThrow();
+		expect(row).toMatchObject({ id: "greeting", lixcol_global: false });
+		expect(typeof row.lixcol_change_id).toBe("string");
+		expect(typeof row.lixcol_commit_id).toBe("string");
+	} finally {
+		await db.destroy();
 	}
 });

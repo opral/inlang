@@ -2,7 +2,7 @@
 import { useAtom } from "jotai";
 import { projectAtom } from "../state.ts";
 import { useEffect, useState } from "react";
-import type { Pattern, Variant } from "@inlang/sdk";
+import type { Pattern, VariantRow } from "@inlang/sdk";
 import { SlButton } from "@shoelace-style/shoelace/dist/react";
 import timeAgo from "../helper/timeAgo.ts";
 import { isInSimulatedCurrentBranch } from "@inlang/sdk";
@@ -34,13 +34,13 @@ const VariantHistoryList = (props: {
 		setChanges(result);
 	};
 
-	const handleRollback = async (revertedVariant: Variant, zoned_date_time: string) => {
+	const handleRollback = async (revertedVariant: VariantRow, zoned_date_time: string) => {
 		if (project) {
 			setLoading(zoned_date_time);
 			await project.db
-				.updateTable("variant")
+				.updateTable("inlang_variant")
 				.set(revertedVariant)
-				.where("variant.id", "=", revertedVariant.id)
+				.where("inlang_variant.id", "=", revertedVariant.id)
 				.execute();
 
 			setTimeout(() => {

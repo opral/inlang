@@ -14,7 +14,7 @@ const project = await loadProjectFromDirectory({
 });
 
 // project.db is a Kysely instance
-const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
 ```
 
 > **Saving changes:** CRUD operations update the in-memory `.inlang` database. To save a packed `.inlang` file, call `project.toBlob()`. To save an unpacked `project.inlang/` directory, `saveProjectToDirectory()` needs an import/export plugin; without one, bundles, messages, and variants have no file path to export to.
@@ -27,7 +27,7 @@ If the project uses plugins, check `await project.errors.get()` after loading. C
 
 ```typescript
 await project.db
-  .insertInto("bundle")
+  .insertInto("inlang_bundle")
   .values({
     id: "greeting",
     declarations: [],
@@ -39,10 +39,10 @@ await project.db
 
 ```typescript
 const message = await project.db
-  .insertInto("message")
+  .insertInto("inlang_message")
   .values({
     id: crypto.randomUUID(),
-    bundleId: "greeting",
+    bundle_id: "greeting",
     locale: "en",
     selectors: [],
   })
@@ -54,10 +54,10 @@ const message = await project.db
 
 ```typescript
 await project.db
-  .insertInto("variant")
+  .insertInto("inlang_variant")
   .values({
     id: crypto.randomUUID(),
-    messageId: message.id,
+    message_id: message.id,
     matches: [],
     pattern: [{ type: "text", value: "Hello world!" }],
   })
@@ -77,13 +77,13 @@ await insertBundleNested(project.db, {
   messages: [
     {
       id: messageId,
-      bundleId: "greeting",
+      bundle_id: "greeting",
       locale: "en",
       selectors: [],
       variants: [
         {
           id: crypto.randomUUID(),
-          messageId,
+          message_id: messageId,
           matches: [],
           pattern: [{ type: "text", value: "Hello!" }],
         },
@@ -98,14 +98,14 @@ await insertBundleNested(project.db, {
 ### Get all bundles
 
 ```typescript
-const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
 ```
 
 ### Get bundle by ID
 
 ```typescript
 const bundle = await project.db
-  .selectFrom("bundle")
+  .selectFrom("inlang_bundle")
   .selectAll()
   .where("id", "=", "greeting")
   .executeTakeFirst();
@@ -115,7 +115,7 @@ const bundle = await project.db
 
 ```typescript
 const messages = await project.db
-  .selectFrom("message")
+  .selectFrom("inlang_message")
   .selectAll()
   .where("locale", "=", "en")
   .execute();
@@ -125,9 +125,9 @@ const messages = await project.db
 
 ```typescript
 const messages = await project.db
-  .selectFrom("message")
+  .selectFrom("inlang_message")
   .selectAll()
-  .where("bundleId", "=", "greeting")
+  .where("bundle_id", "=", "greeting")
   .execute();
 ```
 
@@ -135,9 +135,9 @@ const messages = await project.db
 
 ```typescript
 const variants = await project.db
-  .selectFrom("variant")
+  .selectFrom("inlang_variant")
   .selectAll()
-  .where("messageId", "=", messageId)
+  .where("message_id", "=", messageId)
   .execute();
 ```
 
@@ -147,7 +147,7 @@ const variants = await project.db
 import { selectBundleNested } from "@inlang/sdk";
 
 const bundle = await selectBundleNested(project.db)
-  .where("bundle.id", "=", "greeting")
+  .where("inlang_bundle.id", "=", "greeting")
   .executeTakeFirst();
 
 // Returns:
@@ -168,8 +168,8 @@ const bundle = await selectBundleNested(project.db)
 
 ```typescript
 const results = await project.db
-  .selectFrom("bundle")
-  .leftJoin("message", "message.bundleId", "bundle.id")
+  .selectFrom("inlang_bundle")
+  .leftJoin("inlang_message", "inlang_message.bundle_id", "inlang_bundle.id")
   .selectAll()
   .execute();
 ```
@@ -177,15 +177,15 @@ const results = await project.db
 ### Find missing translations
 
 ```typescript
-const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
 const germanMessages = await project.db
-  .selectFrom("message")
-  .select("bundleId")
+  .selectFrom("inlang_message")
+  .select("bundle_id")
   .where("locale", "=", "de")
   .execute();
 
 const translatedBundleIds = new Set(
-  germanMessages.map((message) => message.bundleId),
+  germanMessages.map((message) => message.bundle_id),
 );
 const missingGerman = bundles.filter(
   (bundle) => translatedBundleIds.has(bundle.id) === false,
@@ -198,7 +198,7 @@ const missingGerman = bundles.filter(
 
 ```typescript
 await project.db
-  .updateTable("bundle")
+  .updateTable("inlang_bundle")
   .set({
     declarations: [{ type: "input-variable", name: "count" }],
   })
@@ -210,7 +210,7 @@ await project.db
 
 ```typescript
 await project.db
-  .updateTable("variant")
+  .updateTable("inlang_variant")
   .set({
     pattern: [{ type: "text", value: "Updated text" }],
   })
@@ -248,7 +248,7 @@ await updateBundleNested(project.db, {
 ### Delete a bundle
 
 ```typescript
-await project.db.deleteFrom("bundle").where("id", "=", "greeting").execute();
+await project.db.deleteFrom("inlang_bundle").where("id", "=", "greeting").execute();
 
 // Cascades: all messages and variants are deleted
 ```
@@ -256,7 +256,7 @@ await project.db.deleteFrom("bundle").where("id", "=", "greeting").execute();
 ### Delete a message
 
 ```typescript
-await project.db.deleteFrom("message").where("id", "=", messageId).execute();
+await project.db.deleteFrom("inlang_message").where("id", "=", messageId).execute();
 
 // Cascades: all variants are deleted
 ```
@@ -264,7 +264,7 @@ await project.db.deleteFrom("message").where("id", "=", messageId).execute();
 ### Delete a variant
 
 ```typescript
-await project.db.deleteFrom("variant").where("id", "=", variantId).execute();
+await project.db.deleteFrom("inlang_variant").where("id", "=", variantId).execute();
 ```
 
 ## Upsert
@@ -275,7 +275,7 @@ Insert or update based on whether the record exists.
 
 ```typescript
 await project.db
-  .insertInto("bundle")
+  .insertInto("inlang_bundle")
   .values({
     id: "greeting",
     declarations: [],

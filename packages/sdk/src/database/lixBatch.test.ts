@@ -11,7 +11,7 @@ test("executeLixBatch publishes atomically and rolls back on a later failure", a
 	const db = initDb({ lix });
 
 	const insert = db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({ id: "batch-atomicity" })
 		.compile();
 	const invalid =
@@ -22,7 +22,7 @@ test("executeLixBatch publishes atomically and rolls back on a later failure", a
 	await expect(executeLixBatch(db, [insert, invalid])).rejects.toThrow();
 	await expect(
 		db
-			.selectFrom("bundle")
+			.selectFrom("inlang_bundle")
 			.select("id")
 			.where("id", "=", "batch-atomicity")
 			.execute()
@@ -30,14 +30,14 @@ test("executeLixBatch publishes atomically and rolls back on a later failure", a
 
 	const results = await executeLixBatch(db, [
 		insert,
-		db.selectFrom("bundle").select("id").compile(),
+		db.selectFrom("inlang_bundle").select("id").compile(),
 	]);
 	expect(results).toHaveLength(2);
 	expect(results[1]?.rows).toEqual([{ id: "batch-atomicity" }]);
 	expect(results[1]?.statementIndex).toBe(1);
-	await expect(db.selectFrom("bundle").select("id").execute()).resolves.toEqual(
-		[{ id: "batch-atomicity" }]
-	);
+	await expect(
+		db.selectFrom("inlang_bundle").select("id").execute()
+	).resolves.toEqual([{ id: "batch-atomicity" }]);
 
 	await db.destroy();
 	await lix.close();

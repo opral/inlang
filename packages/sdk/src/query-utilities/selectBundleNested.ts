@@ -2,8 +2,8 @@ import type { Kysely } from "kysely";
 import type {
 	BundleNested,
 	InlangDatabaseSchema,
+	VariantRow,
 	MessageNested,
-	Variant,
 } from "../database/schema.js";
 
 /**
@@ -16,9 +16,11 @@ export const selectBundleNested = (db: Kysely<InlangDatabaseSchema>) => {
 	let bundleId: string | undefined;
 
 	const query = {
-		where(column: "bundle.id", operator: "=", value: string) {
-			if (column !== "bundle.id" || operator !== "=") {
-				throw new Error("selectBundleNested only supports bundle.id equality");
+		where(column: "inlang_bundle.id", operator: "=", value: string) {
+			if (column !== "inlang_bundle.id" || operator !== "=") {
+				throw new Error(
+					"selectBundleNested only supports inlang_bundle.id equality"
+				);
 			}
 			bundleId = value;
 			return query;
@@ -28,59 +30,67 @@ export const selectBundleNested = (db: Kysely<InlangDatabaseSchema>) => {
 		},
 		async execute(): Promise<BundleNested[]> {
 			let flatQuery = db
-				.selectFrom("bundle")
-				.leftJoin("message", "message.bundleId", "bundle.id")
-				.leftJoin("variant", "variant.messageId", "message.id")
+				.selectFrom("inlang_bundle")
+				.leftJoin(
+					"inlang_message",
+					"inlang_message.bundle_id",
+					"inlang_bundle.id"
+				)
+				.leftJoin(
+					"inlang_variant",
+					"inlang_variant.message_id",
+					"inlang_message.id"
+				)
 				.select([
-					"bundle.id as bundleId",
-					"bundle.declarations as bundleDeclarations",
-					"message.id as messageId",
-					"message.locale as messageLocale",
-					"message.selectors as messageSelectors",
-					"variant.id as variantId",
-					"variant.matches as variantMatches",
-					"variant.pattern as variantPattern",
+					"inlang_bundle.id as bundle_id",
+					"inlang_bundle.declarations as bundle_declarations",
+					"inlang_message.id as message_id",
+					"inlang_message.locale as message_locale",
+					"inlang_message.selectors as message_selectors",
+					"inlang_variant.id as variant_id",
+					"inlang_variant.matches as variant_matches",
+					"inlang_variant.pattern as variant_pattern",
 				])
-				.orderBy("bundle.id")
-				.orderBy("message.id")
-				.orderBy("variant.id");
+				.orderBy("inlang_bundle.id")
+				.orderBy("inlang_message.id")
+				.orderBy("inlang_variant.id");
 			if (bundleId !== undefined) {
-				flatQuery = flatQuery.where("bundle.id", "=", bundleId);
+				flatQuery = flatQuery.where("inlang_bundle.id", "=", bundleId);
 			}
 			const rows = await flatQuery.execute();
 			const bundles = new Map<string, BundleNested>();
 			const messages = new Map<string, MessageNested>();
 
 			for (const row of rows) {
-				let bundle = bundles.get(row.bundleId);
+				let bundle = bundles.get(row.bundle_id);
 				if (!bundle) {
 					bundle = {
-						id: row.bundleId,
-						declarations: row.bundleDeclarations,
+						id: row.bundle_id,
+						declarations: row.bundle_declarations,
 						messages: [],
 					};
-					bundles.set(row.bundleId, bundle);
+					bundles.set(row.bundle_id, bundle);
 				}
-				if (row.messageId === null) continue;
-				let message = messages.get(row.messageId);
+				if (row.message_id === null) continue;
+				let message = messages.get(row.message_id);
 				if (!message) {
 					message = {
-						id: row.messageId,
-						bundleId: row.bundleId,
-						locale: row.messageLocale!,
-						selectors: row.messageSelectors!,
+						id: row.message_id,
+						bundle_id: row.bundle_id,
+						locale: row.message_locale!,
+						selectors: row.message_selectors!,
 						variants: [],
 					};
-					messages.set(row.messageId, message);
+					messages.set(row.message_id, message);
 					bundle.messages.push(message);
 				}
-				if (row.variantId !== null) {
+				if (row.variant_id !== null) {
 					message.variants.push({
-						id: row.variantId,
-						messageId: row.messageId,
-						matches: row.variantMatches!,
-						pattern: row.variantPattern!,
-					} satisfies Variant);
+						id: row.variant_id,
+						message_id: row.message_id,
+						matches: row.variant_matches!,
+						pattern: row.variant_pattern!,
+					} satisfies VariantRow);
 				}
 			}
 			return [...bundles.values()];

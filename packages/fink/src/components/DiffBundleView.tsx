@@ -7,7 +7,7 @@ import {
 	updateBundleNested,
 	selectBundleNested,
 	Change,
-	Bundle,
+	BundleRow,
 } from "@inlang/sdk";
 import SingleDiffBundle from "./SingleDiffBundle.tsx";
 import { SlButton, SlDetails, SlTooltip } from "@shoelace-style/shoelace/dist/react";
@@ -150,7 +150,7 @@ const queryNewBundle = async (
 	setOldBundle: (bundle: BundleNested) => void
 ) => {
 	const bundle = await selectBundleNested(project.db)
-		.where("bundle.id", "=", props.bundleId)
+		.where("inlang_bundle.id", "=", props.bundleId)
 		.executeTakeFirst();
 
 	if (bundle) {

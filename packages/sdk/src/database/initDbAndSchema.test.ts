@@ -14,7 +14,7 @@ test("bundle default values", async () => {
 	const db = await createDb();
 
 	const bundle = await db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.defaultValues()
 		.returningAll()
 		.executeTakeFirstOrThrow();
@@ -27,15 +27,15 @@ test("message default values", async () => {
 	const db = await createDb();
 
 	const bundle = await db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.defaultValues()
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
 	const message = await db
-		.insertInto("message")
+		.insertInto("inlang_message")
 		.values({
-			bundleId: bundle.id,
+			bundle_id: bundle.id,
 			locale: "en",
 		})
 		.returningAll()
@@ -49,24 +49,24 @@ test("variant default values", async () => {
 	const db = await createDb();
 
 	const bundle = await db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.defaultValues()
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
 	const message = await db
-		.insertInto("message")
+		.insertInto("inlang_message")
 		.values({
-			bundleId: bundle.id,
+			bundle_id: bundle.id,
 			locale: "en",
 		})
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
 	const variant = await db
-		.insertInto("variant")
+		.insertInto("inlang_variant")
 		.values({
-			messageId: message.id,
+			message_id: message.id,
 		})
 		.returningAll()
 		.executeTakeFirstOrThrow();
@@ -80,7 +80,7 @@ test("it should handle json serialization and parsing for bundles", async () => 
 	const db = await createDb();
 
 	const bundle = await db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({
 			declarations: [
 				{
@@ -105,24 +105,24 @@ test("it should preserve json-like text in variant patterns", async () => {
 	const db = await createDb();
 
 	const bundle = await db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({ id: "json_array" })
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
 	const message = await db
-		.insertInto("message")
+		.insertInto("inlang_message")
 		.values({
-			bundleId: bundle.id,
+			bundle_id: bundle.id,
 			locale: "en",
 		})
 		.returningAll()
 		.executeTakeFirstOrThrow();
 
 	await db
-		.insertInto("variant")
+		.insertInto("inlang_variant")
 		.values({
-			messageId: message.id,
+			message_id: message.id,
 			pattern: [
 				{
 					type: "text",
@@ -133,7 +133,7 @@ test("it should preserve json-like text in variant patterns", async () => {
 		.execute();
 
 	const variant = await db
-		.selectFrom("variant")
+		.selectFrom("inlang_variant")
 		.selectAll()
 		.executeTakeFirstOrThrow();
 
@@ -151,9 +151,9 @@ test.todo("it should enable foreign key constraints", async () => {
 
 	expect(() =>
 		db
-			.insertInto("message")
+			.insertInto("inlang_message")
 			.values({
-				bundleId: "non-existent",
+				bundle_id: "non-existent",
 				locale: "en",
 			})
 			.execute()

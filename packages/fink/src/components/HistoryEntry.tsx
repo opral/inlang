@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Change, isInSimulatedCurrentBranch, Variant } from "@inlang/sdk";
+import { Change, isInSimulatedCurrentBranch, VariantRow } from "@inlang/sdk";
 import { useAtom } from "jotai";
 import { useEffect, useState } from "react";
 import { projectAtom } from "../state.ts";
@@ -120,14 +120,14 @@ const HistoryEntry = ({ commit }: { commit: any }) => {
 											{previous && previous.value && (
 												<InlangVariant
 													slot="variant"
-													variant={previous.value as Variant}
+													variant={previous.value as VariantRow}
 													className="pointer-events-none"
 													// @ts-expect-error - noHistory is not a valid prop
 													noHistory={true}
 												>
 													<InlangPatternEditor
 														slot="pattern-editor"
-														variant={previous.value as Variant}
+														variant={previous.value as VariantRow}
 														className={"inlang-pattern-editor-old"}
 													></InlangPatternEditor>
 												</InlangVariant>
@@ -143,14 +143,14 @@ const HistoryEntry = ({ commit }: { commit: any }) => {
 											{current && current.value && (
 												<InlangVariant
 													slot="variant"
-													variant={current.value as Variant}
+													variant={current.value as VariantRow}
 													className="pointer-events-none"
 													// @ts-expect-error - noHistory is not a valid prop
 													noHistory={true}
 												>
 													<InlangPatternEditor
 														slot="pattern-editor"
-														variant={current.value as Variant}
+														variant={current.value as VariantRow}
 														className={"inlang-pattern-editor-neu"}
 													></InlangPatternEditor>
 												</InlangVariant>

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { Declaration, Variant } from "@inlang/sdk";
+import type { Declaration, VariantRow } from "@inlang/sdk";
 import { selectorMatches } from "./selectorMatches.js";
 const plural = (options: { name: string; value: { type: "literal"; value: string } }[] = []): Declaration[] => [
   { type: "input-variable", name: "count" },
@@ -27,7 +27,7 @@ it("follows aliases while handling cycles without recursion errors", () => {
   ], "en", []).allowed).toBeUndefined();
 });
 it("does not infer plural types from names or constrain arbitrary text", () => {
-  const variants = [{ id: "a", messageId: "m", pattern: [], matches: [{ type: "literal-match", key: "countPlural", value: "custom" }] }] as Variant[];
+  const variants = [{ id: "a", message_id: "m", pattern: [], matches: [{ type: "literal-match", key: "countPlural", value: "custom" }] }] as VariantRow[];
   const result = selectorMatches("countPlural", [{ type: "input-variable", name: "countPlural" }], "en", variants);
   expect(result.allowed).toBeUndefined();
   expect(result.suggestions.map(s => s.value)).toEqual(["custom", "*"]);
@@ -38,7 +38,7 @@ it("does not silently use English rules for unsupported or invalid locales", () 
 });
 it("keeps runtime plural options open rather than pretending the type is known", () => {
   const declarations = plural();
-  const declaration = declarations[1];
+  const declaration = declarations[1]!;
   if (declaration.type === "local-variable") declaration.value.annotation!.options.push({ name: "type", value: { type: "variable-reference", name: "type" } });
   expect(selectorMatches("amount", declarations, "en", []).allowed).toBeUndefined();
 });

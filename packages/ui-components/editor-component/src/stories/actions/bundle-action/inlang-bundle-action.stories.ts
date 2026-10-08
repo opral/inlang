@@ -29,7 +29,7 @@ export const Example: StoryObj = {
 };
 
 const bundle = examplePlural.bundles[0];
-const messages = examplePlural.messages.filter((m) => m.bundleId === bundle.id);
+const messages = examplePlural.messages.filter((m) => m.bundle_id === bundle.id);
 
 export const ActionInBundle: StoryObj = {
   render: () => {

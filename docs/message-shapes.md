@@ -2,7 +2,7 @@
 
 This page shows the concrete JSON shapes used by bundles, messages, variants, declarations, selectors, matches, and patterns.
 
-Use these shapes when inserting data through `project.db`, `insertBundleNested()`, or a plugin's `importFiles()` return value.
+Use these shapes when inserting data through `project.db` or `insertBundleNested()`. A plugin's `importFiles()` returns the same shapes with camelCase `bundleId` and `messageId` in place of `bundle_id` and `message_id`. The SDK maps them to the database columns.
 
 ## Minimal Message
 
@@ -16,13 +16,13 @@ await insertBundleNested(project.db, {
   messages: [
     {
       id: messageId,
-      bundleId: "greeting",
+      bundle_id: "greeting",
       locale: "en",
       selectors: [],
       variants: [
         {
           id: variantId,
-          messageId,
+          message_id: messageId,
           matches: [],
           pattern: [{ type: "text", value: "Hello world!" }],
         },
@@ -56,13 +56,13 @@ const variantId = crypto.randomUUID();
   messages: [
     {
       id: messageId,
-      bundleId: "greeting",
+      bundle_id: "greeting",
       locale: "en",
       selectors: [],
       variants: [
         {
           id: variantId,
-          messageId,
+          message_id: messageId,
           matches: [],
           pattern: [
             { type: "text", value: "Hello " },
@@ -202,19 +202,19 @@ const otherVariantId = crypto.randomUUID();
   messages: [
     {
       id: messageId,
-      bundleId: "items_count",
+      bundle_id: "items_count",
       locale: "en",
       selectors: [{ type: "variable-reference", name: "countPlural" }],
       variants: [
         {
           id: oneVariantId,
-          messageId,
+          message_id: messageId,
           matches: [{ type: "literal-match", key: "countPlural", value: "one" }],
           pattern: [{ type: "text", value: "One item" }],
         },
         {
           id: otherVariantId,
-          messageId,
+          message_id: messageId,
           matches: [
             { type: "literal-match", key: "countPlural", value: "other" },
           ],
@@ -234,14 +234,14 @@ const otherVariantId = crypto.randomUUID();
 
 ## Variant Linkage: CRUD Versus Plugin Import
 
-Use `messageId` when you already have a concrete message row id. This is the normal shape for direct CRUD writes and `insertBundleNested()`.
+Use `message_id` when you already have a concrete message row id. This is the normal shape for direct CRUD writes and `insertBundleNested()`.
 
 ```typescript
 const messageId = crypto.randomUUID();
 
 {
   id: "variant_1",
-  messageId,
+  message_id: messageId,
   matches: [],
   pattern: [{ type: "text", value: "Hello" }],
 }
@@ -262,9 +262,9 @@ The SDK resolves `messageBundleId` plus `messageLocale` to the matching message 
 
 Rule of thumb:
 
-- Direct database writes: use `messageId`.
-- `insertBundleNested()`: use `messageId`, and reuse the same id from the message object.
-- Plugin `importFiles()`: use `messageBundleId` plus `messageLocale`, unless your plugin deliberately manages stable message ids itself.
+- Direct database writes: use `message_id`.
+- `insertBundleNested()`: use `message_id`, and reuse the same id from the message object.
+- Plugin `importFiles()`: use `messageBundleId` plus `messageLocale`, unless your plugin deliberately manages stable message ids itself. Then use `messageId`.
 
 ## Next Steps
 

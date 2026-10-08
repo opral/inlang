@@ -15,15 +15,15 @@ export const upsertBundleNestedMatchByProperties = async (
 
 	await db.transaction().execute(async (trx) => {
 		const insertedBundle = await trx
-			.insertInto("bundle")
+			.insertInto("inlang_bundle")
 			.values(bundleToInsert)
 			.onConflict((oc) => oc.column("id").doUpdateSet(bundleToInsert))
 			.returning("id")
 			.executeTakeFirstOrThrow();
 
 		const existingMessages = await trx
-			.selectFrom("message")
-			.where("bundleId", "=", insertedBundle.id)
+			.selectFrom("inlang_message")
+			.where("bundle_id", "=", insertedBundle.id)
 			.selectAll()
 			.execute();
 
@@ -36,19 +36,19 @@ export const upsertBundleNestedMatchByProperties = async (
 			const messageToInsert = {
 				...message,
 				id: existingMessage?.id,
-				bundleId: insertedBundle.id,
+				bundle_id: insertedBundle.id,
 				variants: undefined,
 			};
 			const insertedMessage = await trx
-				.insertInto("message")
+				.insertInto("inlang_message")
 				.values(messageToInsert)
 				.onConflict((oc) => oc.column("id").doUpdateSet(messageToInsert))
 				.returning("id")
 				.executeTakeFirstOrThrow();
 
 			const existingVariants = await trx
-				.selectFrom("variant")
-				.where("messageId", "=", insertedMessage.id)
+				.selectFrom("inlang_variant")
+				.where("message_id", "=", insertedMessage.id)
 				.selectAll()
 				.execute();
 
@@ -61,10 +61,10 @@ export const upsertBundleNestedMatchByProperties = async (
 				const variantToInsert = {
 					...variant,
 					id: existingVariant?.id,
-					messageId: insertedMessage.id,
+					message_id: insertedMessage.id,
 				};
 				await trx
-					.insertInto("variant")
+					.insertInto("inlang_variant")
 					.values(variantToInsert)
 					.onConflict((oc) => oc.column("id").doUpdateSet(variantToInsert))
 					.execute();

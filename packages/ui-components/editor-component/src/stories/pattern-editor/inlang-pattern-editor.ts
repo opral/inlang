@@ -1,4 +1,4 @@
-import type { Pattern, Variant } from "@inlang/sdk";
+import type { Pattern, VariantRow } from "@inlang/sdk";
 import { LitElement, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { ref, createRef, type Ref } from "lit/directives/ref.js";
@@ -49,7 +49,7 @@ export default class InlangPatternEditor extends LitElement {
 
 	// props
 	@property({ type: Object })
-	variant: Variant;
+	variant: VariantRow;
 
 	// state
 	@state()
@@ -235,7 +235,7 @@ export default class InlangPatternEditor extends LitElement {
 			createChangeEvent({
 				entityId: this.variant.id,
 				entity: "variant",
-				newData: { ...this.variant, pattern: this._patternState } as Variant,
+				newData: { ...this.variant, pattern: this._patternState } as VariantRow,
 			})
 		);
 	};

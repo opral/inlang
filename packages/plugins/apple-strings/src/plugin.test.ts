@@ -196,7 +196,7 @@ describe("Apple strings plugin", () => {
       expect(output).toContain('"typed/value" = "%2$lld / %1$.2f / %3$@";');
       expect(output).toContain('"Cancel" = "Cancel";');
       expect(
-        await project.db.selectFrom("message").selectAll().execute(),
+        await project.db.selectFrom("inlang_message").selectAll().execute(),
       ).toHaveLength(2);
     } finally {
       await project.close();

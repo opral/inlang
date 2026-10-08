@@ -58,7 +58,7 @@ const project = await loadProjectFromDirectory({
 });
 
 // Query translations
-const messages = await project.db.selectFrom("message").selectAll().execute();
+const messages = await project.db.selectFrom("inlang_message").selectAll().execute();
 ```
 
 Check plugin and resource-file errors after loading:

@@ -8,13 +8,13 @@ test("roundtrip should succeed", async () => {
 	const file1 = await newProject();
 	const project1 = await loadProjectInMemory({ blob: file1 });
 	const numBundles1 = (
-		await project1.db.selectFrom("bundle").select("id").execute()
+		await project1.db.selectFrom("inlang_bundle").select("id").execute()
 	).length;
 	expect(numBundles1).toBe(0);
 
 	// modify project
 	const insertedBundle = await project1.db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({
 			id: "mock245",
 		})
@@ -25,7 +25,10 @@ test("roundtrip should succeed", async () => {
 	await project1.close();
 
 	const project2 = await loadProjectInMemory({ blob: file1AfterUpdates });
-	const bundles = await project2.db.selectFrom("bundle").select("id").execute();
+	const bundles = await project2.db
+		.selectFrom("inlang_bundle")
+		.select("id")
+		.execute();
 	expect(bundles.length).toBe(1);
 	expect(bundles[0]?.id).toBe(insertedBundle.id);
 	await project2.close();
@@ -39,13 +42,13 @@ test("serializes bundles with nested messages and variants", async () => {
 		messages: [
 			{
 				id: "welcome_en",
-				bundleId: "welcome",
+				bundle_id: "welcome",
 				locale: "en",
 				selectors: [{ type: "variable-reference", name: "audience" }],
 				variants: [
 					{
 						id: "welcome_en_admin",
-						messageId: "welcome_en",
+						message_id: "welcome_en",
 						matches: [
 							{ type: "literal-match", key: "audience", value: "admin" },
 						],
@@ -123,21 +126,30 @@ test("serializes bundles with nested messages and variants", async () => {
 				(bundle: {
 					messages: Array<{
 						id: string;
-						bundleId: string;
+						bundle_id: string;
 						locale: string;
 						selectors: unknown[];
 					}>;
 				}) =>
 					bundle.messages.map((message) => ({
 						id: message.id,
-						bundleId: message.bundleId,
+						bundleId: message.bundle_id,
 						locale: message.locale,
 						selectors: message.selectors,
 					}))
 			),
 			variants: serialized.bundles.flatMap(
-				(bundle: { messages: Array<{ variants: unknown[] }> }) =>
-					bundle.messages.flatMap((message) => message.variants)
+				(bundle: {
+					messages: Array<{
+						variants: Array<{ message_id: string } & Record<string, unknown>>;
+					}>;
+				}) =>
+					bundle.messages.flatMap((message) =>
+						message.variants.map(({ message_id, ...variant }) => ({
+							...variant,
+							messageId: message_id,
+						}))
+					)
 			),
 		}),
 	]);
@@ -169,9 +181,16 @@ test.each([
 				messages: [
 					{
 						id: messageId,
-						bundleId,
+						bundle_id: bundleId,
 						locale,
-						variants: [{ id: variantId, messageId, matches: [], pattern: [] }],
+						variants: [
+							{
+								id: variantId,
+								message_id: messageId,
+								matches: [],
+								pattern: [],
+							},
+						],
 					},
 				],
 			});
@@ -188,18 +207,18 @@ test.each([
 		try {
 			expect(
 				await reopened.db
-					.selectFrom("message")
+					.selectFrom("inlang_message")
 					.selectAll()
 					.where("locale", "=", locale)
 					.executeTakeFirstOrThrow()
-			).toMatchObject({ id: messageId, bundleId, locale });
+			).toMatchObject({ id: messageId, bundle_id: bundleId, locale });
 			const nested = await selectBundleNested(reopened.db)
-				.where("bundle.id", "=", bundleId)
+				.where("inlang_bundle.id", "=", bundleId)
 				.executeTakeFirstOrThrow();
 			expect(nested.messages[0]).toMatchObject({
 				id: messageId,
 				locale,
-				variants: [{ id: variantId, messageId }],
+				variants: [{ id: variantId, message_id: messageId }],
 			});
 			expect(
 				JSON.parse(await (await reopened.toBlob()).text()).bundles

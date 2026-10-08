@@ -1,4 +1,4 @@
-import type { Declaration, FunctionReference, Variant } from "@inlang/sdk";
+import type { Declaration, FunctionReference, VariantRow } from "@inlang/sdk";
 
 export type MatchSuggestion = { value: string; description: string };
 export type SelectorMatches = {
@@ -12,7 +12,7 @@ const categories = ["zero", "one", "two", "few", "many", "other"];
 const fallback: MatchSuggestion = { value: "*", description: "Fallback · matches any remaining value" };
 
 /** Derive suggestions from declarations, never from a variable's spelling. */
-export function selectorMatches(name: string, declarations: Declaration[], locale: string, variants: Variant[]): SelectorMatches {
+export function selectorMatches(name: string, declarations: Declaration[], locale: string, variants: VariantRow[]): SelectorMatches {
   const seen = new Set<string>();
   function annotation(variable: string): FunctionReference | undefined {
     if (seen.has(variable)) return;

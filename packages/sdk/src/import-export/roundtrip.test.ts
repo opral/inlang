@@ -30,15 +30,15 @@ test("the file should be identical after a roundtrip if no modifications occured
 	});
 
 	const importedBundles = await project.db
-		.selectFrom("bundle")
+		.selectFrom("inlang_bundle")
 		.selectAll()
 		.execute();
 	const importedMessages = await project.db
-		.selectFrom("message")
+		.selectFrom("inlang_message")
 		.selectAll()
 		.execute();
 	const importedVariants = await project.db
-		.selectFrom("variant")
+		.selectFrom("inlang_variant")
 		.selectAll()
 		.execute();
 
@@ -46,8 +46,8 @@ test("the file should be identical after a roundtrip if no modifications occured
 	expect(importedMessages.length).toBe(1);
 	expect(importedVariants.length).toBe(1);
 	expect(importedBundles[0]?.id).toBe("hello_world");
-	expect(importedMessages[0]?.bundleId).toBe("hello_world");
-	expect(importedVariants[0]?.messageId).toBe(importedMessages[0]?.id);
+	expect(importedMessages[0]?.bundle_id).toBe("hello_world");
+	expect(importedVariants[0]?.message_id).toBe(importedMessages[0]?.id);
 
 	const exportedFiles = await exportFiles({
 		pluginKey: "mock",
@@ -116,9 +116,18 @@ test("a variant with an existing match should update the existing variant and no
 		db: project.db,
 	});
 
-	const bundles = await project.db.selectFrom("bundle").selectAll().execute();
-	const messages = await project.db.selectFrom("message").selectAll().execute();
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const bundles = await project.db
+		.selectFrom("inlang_bundle")
+		.selectAll()
+		.execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(bundles.length).toBe(1);
 	expect(messages.length).toBe(1);
@@ -163,8 +172,14 @@ test("if a message for the bundle id and locale already exists, update it. don't
 		db: project.db,
 	});
 
-	const bundles = await project.db.selectFrom("bundle").selectAll().execute();
-	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const bundles = await project.db
+		.selectFrom("inlang_bundle")
+		.selectAll()
+		.execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
 
 	expect(bundles.length).toBe(1);
 	expect(messages.length).toBe(1);
@@ -196,14 +211,17 @@ test("keys should be ordered alphabetically for .json to minimize git diffs", as
 		db: project.db,
 	});
 
-	await project.db.insertInto("bundle").values({ id: "c" }).execute();
+	await project.db.insertInto("inlang_bundle").values({ id: "c" }).execute();
 	await project.db
-		.insertInto("message")
-		.values({ id: "c-en", bundleId: "c", locale: "en" })
+		.insertInto("inlang_message")
+		.values({ id: "c-en", bundle_id: "c", locale: "en" })
 		.execute();
 	await project.db
-		.insertInto("variant")
-		.values({ messageId: "c-en", pattern: [{ type: "text", value: "value3" }] })
+		.insertInto("inlang_variant")
+		.values({
+			message_id: "c-en",
+			pattern: [{ type: "text", value: "value3" }],
+		})
 		.execute();
 
 	const exportedFiles = await exportFiles({

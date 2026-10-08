@@ -97,7 +97,7 @@ const unpackedProject = await loadProjectFromDirectory({
   path: "./project.inlang",
 });
 
-const messages = await packedProject.db.selectFrom("message").selectAll().execute();
+const messages = await packedProject.db.selectFrom("inlang_message").selectAll().execute();
 ```
 
 [Read the SDK docs →](https://inlang.com/docs)

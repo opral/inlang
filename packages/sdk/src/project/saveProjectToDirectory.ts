@@ -7,6 +7,7 @@ import { absolutePathFromProject, withAbsolutePaths } from "./path-helpers.js";
 import { detectJsonFormatting } from "../utilities/detectJsonFormatting.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import { README_CONTENT } from "./README_CONTENT.js";
+import { selectPluginRows } from "../import-export/pluginRows.js";
 import { ENV_VARIABLES } from "../services/env-variables/index.js";
 import { compareSemver, pickHighestVersion, readProjectMeta } from "./meta.js";
 
@@ -35,9 +36,21 @@ async function assertTranslationDataCanBeExported(project: InlangProject) {
 	}
 
 	const [bundle, message, variant] = await Promise.all([
-		project.db.selectFrom("bundle").select("id").limit(1).executeTakeFirst(),
-		project.db.selectFrom("message").select("id").limit(1).executeTakeFirst(),
-		project.db.selectFrom("variant").select("id").limit(1).executeTakeFirst(),
+		project.db
+			.selectFrom("inlang_bundle")
+			.select("id")
+			.limit(1)
+			.executeTakeFirst(),
+		project.db
+			.selectFrom("inlang_message")
+			.select("id")
+			.limit(1)
+			.executeTakeFirst(),
+		project.db
+			.selectFrom("inlang_variant")
+			.select("id")
+			.limit(1)
+			.executeTakeFirst(),
 	]);
 	if (bundle || message || variant) {
 		throw new Error(
@@ -164,18 +177,9 @@ export async function saveProjectToDirectory(args: {
 
 	for (const plugin of plugins) {
 		if (plugin.exportFiles) {
-			const bundles = await args.project.db
-				.selectFrom("bundle")
-				.selectAll()
-				.execute();
-			const messages = await args.project.db
-				.selectFrom("message")
-				.selectAll()
-				.execute();
-			const variants = await args.project.db
-				.selectFrom("variant")
-				.selectAll()
-				.execute();
+			const { bundles, messages, variants } = await selectPluginRows(
+				args.project.db
+			);
 			const files = await plugin.exportFiles({
 				bundles,
 				messages,

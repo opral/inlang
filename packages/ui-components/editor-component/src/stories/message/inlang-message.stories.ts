@@ -7,7 +7,7 @@ import type { Meta, StoryObj } from "@storybook/web-components";
 //@ts-ignore
 import { useArgs } from "@storybook/preview-api";
 import { html } from "lit";
-import { type Message, type Variant } from "@inlang/sdk";
+import { type MessageRow, type VariantRow } from "@inlang/sdk";
 import { mockSettings } from "../../mock/settings.ts";
 import { type ChangeEventDetail } from "../../helper/event.ts";
 import { updateEntities } from "../../mock/updateEntities.ts";
@@ -28,7 +28,7 @@ export const Example: StoryObj = {
 		entities: {
 			message: examplePlural.messages[1],
 			variants: examplePlural.variants.filter(
-				(v) => v.messageId === examplePlural.messages[1].id
+				(v) => v.message_id === examplePlural.messages[1].id
 			),
 		},
 		settings: mockSettings,
@@ -36,8 +36,8 @@ export const Example: StoryObj = {
 	render: () => {
 		const [{ entities, settings }, updateArgs] = useArgs();
 		const { message, variants } = entities as {
-			message: Message;
-			variants: Variant[];
+			message: MessageRow;
+			variants: VariantRow[];
 		};
 		const handleChange = (e) => {
 			const change = e.detail as ChangeEventDetail;
@@ -71,7 +71,7 @@ export const MessageInBundle: StoryObj = {
 		entities: {
 			message: examplePlural.messages[1],
 			variants: examplePlural.variants.filter(
-				(v) => v.messageId === examplePlural.messages[1].id
+				(v) => v.message_id === examplePlural.messages[1].id
 			),
 		},
 		settings: mockSettings,
@@ -79,8 +79,8 @@ export const MessageInBundle: StoryObj = {
 	render: () => {
 		const [{ entities, settings }, updateArgs] = useArgs();
 		const { message, variants } = entities as {
-			message: Message;
-			variants: Variant[];
+			message: MessageRow;
+			variants: VariantRow[];
 		};
 		const handleChange = (e) => {
 			const change = e.detail as ChangeEventDetail;

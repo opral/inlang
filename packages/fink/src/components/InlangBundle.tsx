@@ -19,7 +19,7 @@ import {
 	projectAtom,
 	settingsAtom,
 } from "../state.ts";
-import { BundleNested, Message, ProjectSettings, uuidv4, Variant } from "@inlang/sdk";
+import { BundleNested, MessageRow, ProjectSettings, uuidv4, VariantRow } from "@inlang/sdk";
 import {
 	SlDialog,
 	SlDropdown,
@@ -156,7 +156,7 @@ const InlangBundle = (props: {
 											const change = groupedPendingChanges.find(
 												// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 												// @ts-ignore
-												(change) => (change.value as Variant).id === variant.id
+												(change) => (change.value as VariantRow).id === variant.id
 											);
 
 											return (
@@ -236,7 +236,7 @@ const InlangBundle = (props: {
 																	<SlMenuItem
 																		onClick={() => {
 																			project?.db
-																				.deleteFrom("variant")
+																				.deleteFrom("inlang_variant")
 																				.where("id", "=", variant.id)
 																				.execute();
 																		}}
@@ -316,11 +316,11 @@ const InlangBundle = (props: {
 									</ReactInlangMessage>
 								);
 							} else {
-								const message: Message = {
+								const message: MessageRow = {
 									id: uuidv4(),
 									selectors: [],
 									locale,
-									bundleId: props.bundle.id,
+									bundle_id: props.bundle.id,
 								};
 								return (
 									<ReactInlangMessage
@@ -335,14 +335,14 @@ const InlangBundle = (props: {
 											onClick={async () => {
 												if (project) {
 													await project.db
-														.insertInto("message")
+														.insertInto("inlang_message")
 														.values(message)
 														.execute();
 
 													await project.db
-														.insertInto("variant")
+														.insertInto("inlang_variant")
 														.values({
-															messageId: message.id!,
+															message_id: message.id!,
 														})
 														.execute();
 												}

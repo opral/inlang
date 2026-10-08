@@ -37,7 +37,7 @@ const bundle: BundleNested = {
 	declarations: [],
 	messages: [
 		{
-			bundleId: "hello_world",
+			bundle_id: "hello_world",
 			id: "hello_world" + "_en",
 			locale: "en",
 			selectors: [],
@@ -45,7 +45,7 @@ const bundle: BundleNested = {
 				{
 					id: "hello_world" + "_en_1",
 					matches: [],
-					messageId: "hello_world" + "_en",
+					message_id: "hello_world" + "_en",
 					pattern: [
 						{
 							type: "text",
@@ -56,7 +56,7 @@ const bundle: BundleNested = {
 			],
 		},
 		{
-			bundleId: "hello_world",
+			bundle_id: "hello_world",
 			id: "hello_world" + "_de",
 			locale: "de",
 			selectors: [],
@@ -64,7 +64,7 @@ const bundle: BundleNested = {
 				{
 					id: "hello_world" + "_de_1",
 					matches: [],
-					messageId: "hello_world" + "_de",
+					message_id: "hello_world" + "_de",
 					pattern: [
 						{
 							type: "text",

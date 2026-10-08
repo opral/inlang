@@ -75,8 +75,8 @@ const greeting = { en: en.greeting, de: de.greeting };
 
 // Message-first: query what you need
 const messages = await project.db
-  .selectFrom('message')
-  .where('bundleId', '=', 'greeting')
+  .selectFrom('inlang_message')
+  .where('bundle_id', '=', 'greeting')
   .selectAll()
   .execute();
 ```

@@ -12,21 +12,21 @@ export const updateBundleNested = async (
 	}
 ): Promise<void> => {
 	await db
-		.updateTable("bundle")
+		.updateTable("inlang_bundle")
 		.set(bundle)
 		.where("id", "=", bundle.id)
 		.execute();
 
 	for (const message of bundle.messages) {
 		await db
-			.updateTable("message")
+			.updateTable("inlang_message")
 			.set(message)
 			.where("id", "=", message.id)
 			.execute();
 
 		for (const variant of message.variants) {
 			await db
-				.updateTable("variant")
+				.updateTable("inlang_variant")
 				.set(variant)
 				.where("id", "=", variant.id)
 				.execute();

@@ -1,4 +1,4 @@
-import { type Variant, type Declaration } from "@inlang/sdk";
+import { type VariantRow, type Declaration } from "@inlang/sdk";
 import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { baseStyling } from "../../styling/base.js";
@@ -124,19 +124,19 @@ export default class InlangVariant extends LitElement {
   ];
 
   @property()
-  variant: Variant;
+  variant: VariantRow;
 
   /** Optional context; nested consumers inherit it from their bundle/message. */
   @property({ attribute: false }) declarations?: Declaration[];
   @property() locale?: string;
-  @property({ attribute: false }) variants?: Variant[];
+  @property({ attribute: false }) variants?: VariantRow[];
   @state() private errors: Record<string, string> = {};
 
   private _options(name: string) {
     return selectorMatches(name,
       this.declarations ?? (this.closest("inlang-bundle") as (HTMLElement & { bundle?: { declarations: Declaration[] } }) | null)?.bundle?.declarations ?? [],
       this.locale ?? (this.closest("inlang-message") as (HTMLElement & { message?: { locale: string } }) | null)?.message?.locale ?? "",
-      this.variants ?? (this.closest("inlang-message") as (HTMLElement & { variants?: Variant[] }) | null)?.variants ?? []);
+      this.variants ?? (this.closest("inlang-message") as (HTMLElement & { variants?: VariantRow[] }) | null)?.variants ?? []);
   }
 
   private _updateMatch = (selectorName: string, value: string) => {
