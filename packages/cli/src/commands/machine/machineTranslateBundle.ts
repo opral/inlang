@@ -24,6 +24,11 @@ export type MachineTranslateResult = {
   error?: string;
   /** Set when `error` means the translation provider itself is unavailable. */
   unavailable?: boolean;
+  /**
+   * Number of translations skipped because the provider was unavailable. The
+   * rest of the bundle is still translated and returned in `data`.
+   */
+  unavailableCount?: number;
 };
 
 /**
@@ -49,6 +54,8 @@ export async function machineTranslateBundle(
 ): Promise<MachineTranslateResult> {
   try {
     const copy = structuredClone(args.bundle);
+    let unavailableError: string | undefined;
+    let unavailableCount = 0;
 
     const sourceMessage = copy.messages.find(
       (message) => message.locale === args.sourceLocale,
@@ -96,6 +103,14 @@ export async function machineTranslateBundle(
           sourceLocale: args.sourceLocale,
           targetLocale,
         });
+
+        if (!translation.ok && translation.unavailable) {
+          // Skip only this translation so one throttled or failed request
+          // doesn't discard every other translation in the run.
+          unavailableError = translation.error;
+          unavailableCount++;
+          continue;
+        }
 
         if (!translation.ok) {
           return {
@@ -145,6 +160,15 @@ export async function machineTranslateBundle(
           });
         }
       }
+    }
+
+    if (unavailableError) {
+      return {
+        data: copy,
+        error: unavailableError,
+        unavailable: true,
+        unavailableCount,
+      };
     }
 
     return { data: copy };
