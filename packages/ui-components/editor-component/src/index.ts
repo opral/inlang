@@ -11,16 +11,13 @@ export type {
 	SelectVariantEventDetail,
 	AddVariantEventDetail,
 } from "./stories/message-forms/inlang-message-forms.js";
-export {
-	default as InlangMessagePreview,
-	previewInputs,
-} from "./stories/message-preview/inlang-message-preview.js";
+export { default as InlangMessagePreview } from "./stories/message-preview/inlang-message-preview.js";
 export type {
-	PreviewInput,
-	PreviewInputKind,
 	ValuesChangeEventDetail,
 	VariantMatchEventDetail,
 } from "./stories/message-preview/inlang-message-preview.js";
+export { previewInputs } from "./helper/previewInputs.js";
+export type { PreviewInput, PreviewInputKind } from "./helper/previewInputs.js";
 
 //modals & actions
 export { default as InlangBundleAction } from "./stories/actions/bundle-action/inlang-bundle-action.js";
