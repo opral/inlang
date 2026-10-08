@@ -1,4 +1,4 @@
-import type { Declaration, Message, Pattern, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, Pattern, VariantRow } from "@inlang/sdk";
 
 /** Test fixtures shared by helper tests. */
 
@@ -30,10 +30,10 @@ export function variant(
 	matches: Record<string, string>,
 	pattern: Pattern,
 	messageId = "m"
-): Variant {
+): VariantRow {
 	return {
 		id: `v${++id}`,
-		messageId,
+		message_id: messageId,
 		matches: Object.entries(matches).map(([key, value]) =>
 			value === "*"
 				? { type: "catchall-match", key }
@@ -47,10 +47,10 @@ export function message(
 	locale: string,
 	selectors: string[],
 	id = "m"
-): Message {
+): MessageRow {
 	return {
 		id,
-		bundleId: "b",
+		bundle_id: "b",
 		locale,
 		selectors: selectors.map((name) => ({ type: "variable-reference", name })),
 	};

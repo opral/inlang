@@ -1,4 +1,4 @@
-import type { Declaration, Message, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import {
 	isNumericKey,
 	matchFor,
@@ -7,8 +7,8 @@ import {
 } from "./declarations.js";
 import { resolveValue } from "./resolveValue.js";
 
-export type SelectVariantArgs<V extends Pick<Variant, "matches"> = Variant> = {
-	message: Pick<Message, "selectors">;
+export type SelectVariantArgs<V extends Pick<VariantRow, "matches"> = VariantRow> = {
+	message: Pick<MessageRow, "selectors">;
 	variants: readonly V[];
 	declarations?: readonly Declaration[];
 	/** Values of input variables (or local variables to override), keyed by name. */
@@ -30,7 +30,7 @@ export type SelectVariantArgs<V extends Pick<Variant, "matches"> = Variant> = {
  * significant): preferred keys in order, catch-all last. Ties keep the
  * original order. Returns undefined when no variant applies.
  */
-export function selectVariant<V extends Pick<Variant, "matches">>(
+export function selectVariant<V extends Pick<VariantRow, "matches">>(
 	args: SelectVariantArgs<V>
 ): V | undefined {
 	const { message, variants, declarations, values = {}, locale } = args;

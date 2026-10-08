@@ -2,9 +2,9 @@ import type {
 	Declaration,
 	Expression,
 	FunctionReference,
-	Message,
+	MessageRow,
 	Pattern,
-	Variant,
+	VariantRow,
 } from "@inlang/sdk";
 import { resolveAnnotation } from "./declarations.js";
 import { resolveValue } from "./resolveValue.js";
@@ -55,8 +55,8 @@ export function formatPattern(args: FormatPatternArgs): FormattedPart[] {
 }
 
 export type FormatMessageArgs = {
-	message: Pick<Message, "selectors">;
-	variants: readonly Variant[];
+	message: Pick<MessageRow, "selectors">;
+	variants: readonly VariantRow[];
 	declarations?: readonly Declaration[];
 	values?: Record<string, unknown>;
 	locale: string;

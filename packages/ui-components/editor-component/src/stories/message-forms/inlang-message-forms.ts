@@ -1,4 +1,4 @@
-import type { Declaration, Message, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { tokens } from "../../styling/tokens.js";
@@ -243,10 +243,10 @@ export default class InlangMessageForms extends LitElement {
 
 	/** The message (selectors). A nested message's `variants` are used when `variants` is not set. */
 	@property({ type: Object })
-	message?: Message & { variants?: Variant[] };
+	message?: MessageRow & { variants?: VariantRow[] };
 
 	@property({ type: Array })
-	variants?: Variant[];
+	variants?: VariantRow[];
 
 	@property({ type: Array })
 	declarations: Declaration[] = [];
@@ -266,7 +266,7 @@ export default class InlangMessageForms extends LitElement {
 	@state()
 	private _active: Record<string, string> = {};
 
-	private get _variants(): Variant[] {
+	private get _variants(): VariantRow[] {
 		return this.variants ?? this.message?.variants ?? [];
 	}
 
@@ -308,7 +308,7 @@ export default class InlangMessageForms extends LitElement {
 		return { name, label, keys: [...used, "*"], examples: {} };
 	}
 
-	private _find(combination: Record<string, string>): Variant | undefined {
+	private _find(combination: Record<string, string>): VariantRow | undefined {
 		const names = Object.keys(combination);
 		return this._variants.find((variant) =>
 			names.every(

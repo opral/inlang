@@ -1,9 +1,9 @@
 import type {
 	Declaration,
 	FunctionReference,
-	Message,
+	MessageRow,
 	Pattern,
-	Variant,
+	VariantRow,
 } from "@inlang/sdk";
 
 /**
@@ -11,7 +11,7 @@ import type {
  * plural rules. Not part of the public API (subject to change).
  */
 
-export type Match = Variant["matches"][number];
+export type Match = VariantRow["matches"][number];
 
 /** CLDR order of plural categories. `Intl` returns them in engine order. */
 export const PLURAL_CATEGORY_ORDER = [
@@ -156,7 +156,7 @@ export function selectorPluralResolver(
 
 /** The match of a variant for a selector. A missing match counts as catch-all. */
 export function matchFor(
-	variant: Pick<Variant, "matches">,
+	variant: Pick<VariantRow, "matches">,
 	key: string
 ): Match {
 	return (
@@ -174,7 +174,7 @@ export function matchValue(match: Match): string {
 
 /** True when a variant has exactly the given match combination. */
 export function variantHasMatches(
-	variant: Pick<Variant, "matches">,
+	variant: Pick<VariantRow, "matches">,
 	matches: readonly Match[]
 ): boolean {
 	return matches.every(
@@ -185,7 +185,7 @@ export function variantHasMatches(
 /** Literal keys used for a selector across variants, in first-seen order. */
 export function literalKeys(
 	name: string,
-	variants: readonly Pick<Variant, "matches">[]
+	variants: readonly Pick<VariantRow, "matches">[]
 ): string[] {
 	const keys: string[] = [];
 	for (const variant of variants) {
@@ -211,7 +211,7 @@ export function isEmptyPattern(pattern: Pattern | undefined): boolean {
 }
 
 /** Selector names of a message (empty when there are none). */
-export function selectorNames(message: Pick<Message, "selectors"> | undefined) {
+export function selectorNames(message: Pick<MessageRow, "selectors"> | undefined) {
 	return (message?.selectors ?? []).map((selector) => selector.name);
 }
 

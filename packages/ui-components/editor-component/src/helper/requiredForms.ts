@@ -1,4 +1,4 @@
-import type { Declaration, Message, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import {
 	literalKeys,
 	selectorPluralResolver,
@@ -19,7 +19,7 @@ export function selectorKeys(
 	name: string,
 	declarations: readonly Declaration[] | undefined,
 	locale: string,
-	variants: readonly Pick<Variant, "matches">[]
+	variants: readonly Pick<VariantRow, "matches">[]
 ): { plural: boolean; keys: string[] } {
 	const resolver = selectorPluralResolver(name, declarations, locale);
 	// MF2 requires a catch-all, and it already covers CLDR's "other".
@@ -44,10 +44,10 @@ export function selectorKeys(
  * requiredForms(message, declarations, "ru").length // 3 × 4 = 12
  */
 export function requiredForms(
-	message: Pick<Message, "selectors"> & { variants?: Variant[] },
+	message: Pick<MessageRow, "selectors"> & { variants?: VariantRow[] },
 	declarations: readonly Declaration[] | undefined,
 	locale: string,
-	variants: readonly Pick<Variant, "matches">[] = message.variants ?? []
+	variants: readonly Pick<VariantRow, "matches">[] = message.variants ?? []
 ): Match[][] {
 	let combinations: Match[][] = [[]];
 	for (const selector of message.selectors ?? []) {

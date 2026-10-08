@@ -1,4 +1,4 @@
-import type { Declaration, Message, Pattern, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, Pattern, VariantRow } from "@inlang/sdk";
 import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { tokens, partStyles } from "../../styling/tokens.js";
@@ -16,7 +16,7 @@ import { renderParts, type RenderItem } from "../pattern-view/renderParts.js";
 export type ValuesChangeEventDetail = { values: Record<string, unknown> };
 export type VariantMatchEventDetail = { variantId: string | undefined };
 
-type MessageLike = Pick<Message, "selectors"> & { variants?: Variant[] };
+type MessageLike = Pick<MessageRow, "selectors"> & { variants?: VariantRow[] };
 
 function today(withTime: boolean): string {
 	const now = new Date();
@@ -161,10 +161,10 @@ export default class InlangMessagePreview extends LitElement {
 
 	/** The message to preview. A nested message's `variants` are used when `variants` is not set. */
 	@property({ type: Object })
-	message?: Message & { variants?: Variant[] };
+	message?: MessageRow & { variants?: VariantRow[] };
 
 	@property({ type: Array })
-	variants?: Variant[];
+	variants?: VariantRow[];
 
 	/** Defaults to `message.locale`. */
 	@property({ type: String })
@@ -176,7 +176,7 @@ export default class InlangMessagePreview extends LitElement {
 
 	/** Also show the reference language's output for the same values. */
 	@property({ type: Object })
-	reference?: { message: MessageLike; variants?: Variant[]; locale: string };
+	reference?: { message: MessageLike; variants?: VariantRow[]; locale: string };
 
 	/** Heading text; "" hides it. */
 	@property({ type: String })
@@ -187,7 +187,7 @@ export default class InlangMessagePreview extends LitElement {
 
 	private _lastVariantId: string | undefined | null = null;
 
-	private get _variants(): Variant[] {
+	private get _variants(): VariantRow[] {
 		return this.variants ?? this.message?.variants ?? [];
 	}
 
@@ -195,12 +195,12 @@ export default class InlangMessagePreview extends LitElement {
 		return this.locale ?? this.message?.locale ?? "en";
 	}
 
-	private get _referenceVariants(): Variant[] {
+	private get _referenceVariants(): VariantRow[] {
 		return this.reference?.variants ?? this.reference?.message.variants ?? [];
 	}
 
 	private _inputs(): PreviewInput[] {
-		const messages: Array<{ message: MessageLike; variants: Variant[] }> = [];
+		const messages: Array<{ message: MessageLike; variants: VariantRow[] }> = [];
 		if (this.message)
 			messages.push({ message: this.message, variants: this._variants });
 		if (this.reference)
@@ -335,7 +335,7 @@ export default class InlangMessagePreview extends LitElement {
 
 	private _output(
 		message: MessageLike,
-		variants: Variant[],
+		variants: VariantRow[],
 		locale: string,
 		values: Record<string, unknown>,
 		label?: string

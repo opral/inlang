@@ -1,4 +1,4 @@
-import type { Declaration, Message, Pattern, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, Pattern, VariantRow } from "@inlang/sdk";
 import {
 	literalKeys,
 	resolveAnnotation,
@@ -18,7 +18,7 @@ export type PreviewInput = {
 	options?: string[];
 };
 
-type MessageLike = Pick<Message, "selectors">;
+type MessageLike = Pick<MessageRow, "selectors">;
 
 const NUMBER_FUNCTIONS = ["plural", "number", "integer", "percent", "currency"];
 const DATE_FUNCTIONS = ["datetime", "date", "time"];
@@ -31,7 +31,7 @@ const DATE_FUNCTIONS = ["datetime", "date", "time"];
  */
 export function previewInputs(
 	declarations: readonly Declaration[],
-	messages: Array<{ message: MessageLike; variants: readonly Variant[] }>
+	messages: Array<{ message: MessageLike; variants: readonly VariantRow[] }>
 ): PreviewInput[] {
 	const inputs = declarations.filter((d) => d.type === "input-variable");
 	const patterns: Pattern[] = messages.flatMap(({ variants }) =>

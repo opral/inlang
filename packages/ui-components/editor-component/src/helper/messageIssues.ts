@@ -1,4 +1,4 @@
-import type { Declaration, Message, Pattern, Variant } from "@inlang/sdk";
+import type { Declaration, MessageRow, Pattern, VariantRow } from "@inlang/sdk";
 import {
 	isEmptyPattern,
 	isNumericKey,
@@ -17,8 +17,8 @@ export type MessageIssue =
 	| { type: "missing-form"; matches: Match[] };
 
 export type MessageWithVariants = {
-	message: Pick<Message, "selectors"> & Partial<Pick<Message, "id" | "locale">>;
-	variants: readonly Pick<Variant, "matches" | "pattern">[];
+	message: Pick<MessageRow, "selectors"> & Partial<Pick<MessageRow, "id" | "locale">>;
+	variants: readonly Pick<VariantRow, "matches" | "pattern">[];
 };
 
 /**
@@ -67,7 +67,7 @@ export function messageIssues(args: {
 	const referenceVariables = unique(referencePatterns.flatMap(variableNames));
 	const referenceMarkup = unique(referencePatterns.flatMap(markupNames));
 
-	const exempt = (variant: Pick<Variant, "matches">) =>
+	const exempt = (variant: Pick<VariantRow, "matches">) =>
 		variant.matches.some(
 			(match) =>
 				match.type === "literal-match" &&
@@ -103,7 +103,7 @@ export function messageIssues(args: {
 	}
 
 	// The catch-all is a plural's "other" form, so an explicit "other" variant covers it too.
-	const covers = (variant: Pick<Variant, "matches">, form: Match[]) =>
+	const covers = (variant: Pick<VariantRow, "matches">, form: Match[]) =>
 		form.every((match) => {
 			const actual = matchValue(matchFor(variant, match.key));
 			if (actual === matchValue(match)) return true;
