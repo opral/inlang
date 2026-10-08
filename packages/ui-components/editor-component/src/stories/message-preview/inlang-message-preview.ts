@@ -201,7 +201,7 @@ export default class InlangMessagePreview extends LitElement {
 							? today(true)
 							: input.kind === "select"
 								? input.options![0]
-								: input.name;
+								: sampleText(input.name);
 		}
 		return { ...defaults, ...(this.values ?? {}), ...this._edits };
 	}
@@ -395,4 +395,11 @@ declare global {
 		"values-change": CustomEvent<ValuesChangeEventDetail>;
 		"variant-match": CustomEvent<VariantMatchEventDetail>;
 	}
+}
+
+/** A readable sample for a text input: a name for name-like variables, else the variable name. */
+function sampleText(name: string): string {
+	if (/name|user|actor|author|sender|recipient|person|member|owner/i.test(name))
+		return "Alex";
+	return name;
 }

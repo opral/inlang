@@ -277,9 +277,6 @@ export default class InlangMessageForms extends LitElement {
 	private _selectorInfo(name: string): SelectorInfo {
 		const variants = this._variants;
 		const used = literalKeys(name, variants);
-		const hasCatchAll = variants.some(
-			(variant) => matchFor(variant, name).type === "catchall-match"
-		);
 		const plural = selectorPluralResolver(
 			name,
 			this.declarations,
@@ -297,11 +294,13 @@ export default class InlangMessageForms extends LitElement {
 				name,
 				label,
 				plural,
+				// The catch-all is the "other" form; an explicit "other" variant is shown if present.
 				keys: [
 					...numbers,
-					...plural.categories,
+					...plural.categories.filter((category) => category !== "other"),
+					...(used.includes("other") ? ["other"] : []),
 					...others,
-					...(hasCatchAll ? ["*"] : []),
+					"*",
 				],
 				examples: pluralExamples(this._locale, plural.type),
 			};
@@ -339,15 +338,14 @@ export default class InlangMessageForms extends LitElement {
 	}
 
 	private _keyLabel(info: SelectorInfo, key: string): string {
-		if (key === "*") return "any other";
+		if (key === "*") return info.plural ? "other" : "any other";
 		return key;
 	}
 
 	private _keyHint(info: SelectorInfo, key: string): string | undefined {
 		if (!info.plural) return undefined;
 		if (isNumericKey(key)) return "exactly";
-		if (key === "*") return undefined;
-		return info.examples[key];
+		return info.examples[key === "*" ? "other" : key];
 	}
 
 	private _emit(

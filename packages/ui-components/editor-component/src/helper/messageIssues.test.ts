@@ -75,11 +75,24 @@ it("does not count catch-all as covering a plural category the locale has", () =
 			type: "missing-form",
 			matches: [{ type: "literal-match", key: "countPlural", value: "many" }],
 		},
-		{
-			type: "missing-form",
-			matches: [{ type: "literal-match", key: "countPlural", value: "other" }],
-		},
 	]);
+});
+
+it("treats the catch-all as the plural's other form", () => {
+	const ru = {
+		message: message("ru", ["countPlural"]),
+		variants: ["one", "few", "many", "*"].map((c) =>
+			variant({ countPlural: c }, [text("Осталось "), v("count")])
+		),
+	};
+	expect(
+		messageIssues({
+			reference: en,
+			target: ru,
+			declarations: pluralDeclarations,
+			locale: "ru",
+		})
+	).toEqual([]);
 });
 
 it("reports missing and extra variables per target variant, ignoring selector-only variables", () => {
@@ -199,7 +212,7 @@ it("checks every gender × plural combination exactly", () => {
 			],
 		},
 	]);
-	// English has only one/other and the reference covers them with catch-alls
+	// English has one/other; the catch-all is "other", so only "one" is missing
 	expect(
 		messageIssues({
 			target: reference,
@@ -212,13 +225,6 @@ it("checks every gender × plural combination exactly", () => {
 			matches: [
 				{ type: "catchall-match", key: "actorGender" },
 				{ type: "literal-match", key: "countPlural", value: "one" },
-			],
-		},
-		{
-			type: "missing-form",
-			matches: [
-				{ type: "catchall-match", key: "actorGender" },
-				{ type: "literal-match", key: "countPlural", value: "other" },
 			],
 		},
 	]);

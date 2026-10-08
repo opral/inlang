@@ -2,8 +2,9 @@ import type { Declaration, Message, Pattern, Variant } from "@inlang/sdk";
 import {
 	isEmptyPattern,
 	isNumericKey,
+	matchFor,
+	matchValue,
 	selectorPluralResolver,
-	variantHasMatches,
 	type Match,
 } from "./declarations.js";
 import { requiredForms } from "./requiredForms.js";
@@ -38,7 +39,8 @@ export type MessageWithVariants = {
  *   reference is absent from at least one non-empty target variant.
  * - `missing-form`: a form from `requiredForms(target)` has no variant with
  *   exactly those matches. A catch-all variant does not count as covering a
- *   plural category the locale has.
+ *   plural category the locale has, but it is the plural's "other" form (an
+ *   explicit "other" variant covers the catch-all form as well).
  */
 export function messageIssues(args: {
 	reference?: MessageWithVariants;
@@ -100,13 +102,24 @@ export function messageIssues(args: {
 		}
 	}
 
+	// The catch-all is a plural's "other" form, so an explicit "other" variant covers it too.
+	const covers = (variant: Pick<Variant, "matches">, form: Match[]) =>
+		form.every((match) => {
+			const actual = matchValue(matchFor(variant, match.key));
+			if (actual === matchValue(match)) return true;
+			return (
+				match.type === "catchall-match" &&
+				actual === "other" &&
+				selectorPluralResolver(match.key, declarations, locale) !== undefined
+			);
+		});
 	for (const form of requiredForms(
 		target.message,
 		declarations,
 		locale,
 		target.variants
 	)) {
-		if (!target.variants.some((variant) => variantHasMatches(variant, form))) {
+		if (!target.variants.some((variant) => covers(variant, form))) {
 			issues.push({ type: "missing-form", matches: form });
 		}
 	}

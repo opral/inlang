@@ -23,11 +23,11 @@ it("uses the locale's plural categories in CLDR order", () => {
 		"one",
 		"few",
 		"many",
-		"other",
+		"*",
 	]);
 	expect(values(requiredForms(m, pluralDeclarations, "en"))).toEqual([
 		"one",
-		"other",
+		"*",
 	]);
 	expect(requiredForms(m, pluralDeclarations, "en")[0]).toEqual([
 		{ type: "literal-match", key: "countPlural", value: "one" },
@@ -46,10 +46,10 @@ it("builds the cartesian product with literal keys and a catch-all for other sel
 		"female · one",
 		"female · few",
 		"female · many",
-		"female · other",
+		"female · *",
 		"male · one",
 	]);
-	expect(values(forms).at(-1)).toBe("* · other");
+	expect(values(forms).at(-1)).toBe("* · *");
 	expect(forms.at(-1)![0]).toEqual({
 		type: "catchall-match",
 		key: "actorGender",
@@ -72,7 +72,7 @@ it("reads variants from a nested message and respects ordinal plurals", () => {
 				"en"
 			)
 		)
-	).toEqual(["one", "two", "few", "other"]);
+	).toEqual(["one", "two", "few", "*"]);
 });
 
 it("falls back to literal keys when plural rules are unknown", () => {

@@ -10,7 +10,8 @@ import {
  *
  * - plural selectors (a variable annotated with `plural`, type cardinal or
  *   ordinal, following aliases): the categories `Intl.PluralRules` reports
- *   for the locale, in CLDR order (zero, one, two, few, many, other).
+ *   for the locale in CLDR order (zero, one, two, few, many), with the
+ *   required catch-all "*" standing in for "other".
  * - every other selector (or a plural whose rules are unknown at design
  *   time): the literal keys used anywhere in the variants, plus "*".
  */
@@ -21,7 +22,15 @@ export function selectorKeys(
 	variants: readonly Pick<Variant, "matches">[]
 ): { plural: boolean; keys: string[] } {
 	const resolver = selectorPluralResolver(name, declarations, locale);
-	if (resolver) return { plural: true, keys: resolver.categories };
+	// MF2 requires a catch-all, and it already covers CLDR's "other".
+	if (resolver)
+		return {
+			plural: true,
+			keys: [
+				...resolver.categories.filter((category) => category !== "other"),
+				"*",
+			],
+		};
 	return { plural: false, keys: [...literalKeys(name, variants), "*"] };
 }
 
