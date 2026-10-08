@@ -548,6 +548,14 @@ export default class InlangPatternEditor extends LitElement {
 		return false;
 	}
 
+	/**
+	 * Accept the next `variant` even if it matches text this editor typed earlier, e.g. after the
+	 * host undoes an edit. The content is replaced in place and the caret kept, so focus stays.
+	 */
+	forgetEdits() {
+		this._emitted = [];
+	}
+
 	/** Focuses the editable area. */
 	override focus(options?: FocusOptions) {
 		this.contentEditableElementRef.value?.focus(options);
