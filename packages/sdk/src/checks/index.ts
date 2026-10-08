@@ -2,6 +2,11 @@ export { checkProject } from "./checkProject.js";
 export { applyFix } from "./applyFix.js";
 export { findUsages } from "./findUsages.js";
 export {
+	checkBundle,
+	type CheckBundleArgs,
+	type CheckableBundle,
+} from "./checkBundle.js";
+export {
 	checkTranslation,
 	requiredVariants,
 	selectorKeys,

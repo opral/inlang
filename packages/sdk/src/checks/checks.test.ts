@@ -45,6 +45,11 @@ async function setup(
 			.insertInto("inlang_variant")
 			.values([
 				{
+					id: "used-en-v",
+					message_id: "used-en",
+					pattern: [{ type: "text", value: "Used" }],
+				},
+				{
 					id: "old-en-v",
 					message_id: "old-en",
 					pattern: [{ type: "text", value: "Old" }],
@@ -182,7 +187,7 @@ test("applies deletion across all locales and variants; repeated fixes are skipp
 	).toEqual([{ id: "used-en" }]);
 	expect(
 		await project.db.selectFrom("inlang_variant").select("id").execute()
-	).toEqual([]);
+	).toEqual([{ id: "used-en-v" }]);
 	expect(
 		(
 			await applyFix({
@@ -335,7 +340,11 @@ test("a concurrent edit after revision validation conflicts and preserves all ro
 			.execute()
 	).toHaveLength(2);
 	expect(
-		await project.db.selectFrom("inlang_variant").select("id").execute()
+		await project.db
+			.selectFrom("inlang_variant")
+			.select("id")
+			.where("message_id", "in", ["old-en", "old-de"])
+			.execute()
 	).toHaveLength(2);
 });
 

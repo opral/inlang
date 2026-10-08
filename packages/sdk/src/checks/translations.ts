@@ -13,12 +13,12 @@ import type { Match } from "../database/schema.js";
  * them on unsaved input and `checkProject` can run them on stored rows.
  */
 
-type VariantLike = { id?: string; matches: Match[]; pattern: Pattern };
+type VariantLike = { id?: string; matches: readonly Match[]; pattern: Pattern };
 type MessageLike = {
 	id?: string;
 	locale: string;
-	selectors: VariableReference[];
-	variants: VariantLike[];
+	selectors: readonly VariableReference[];
+	variants: readonly VariantLike[];
 };
 
 /** A problem in one translation, relative to the reference. */

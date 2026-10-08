@@ -16,13 +16,13 @@ The translation checks compare every locale's message with the reference locale'
 
 | Check               | Reports                                                                                                                                                                                                                         | Extra fields                                    |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
-| `empty-translation` | A message whose every variant has no text, variables or markup. Applications usually treat it like a missing translation.                                                                                                       | `messageId`                                     |
+| `empty-translation` | A message whose every variant has no text, variables or markup, the reference locale's included. Applications usually treat it like a missing translation.                                                                      | `messageId`                                     |
 | `missing-variable`  | A variable the reference uses is absent from a non-empty variant. Variants matching an exact number on a plural selector (e.g. `0`) may spell the number out and are exempt. Variables used only as selectors are not required. | `messageId`, `variantId`, `name`                |
 | `unknown-variable`  | A variant uses a variable no reference pattern uses, e.g. a typo.                                                                                                                                                               | `messageId`, `variantId`, `name`, `suggestion?` |
 | `missing-markup`    | A markup tag the reference uses (`<link>`, `<b>`, `<br/>`) is absent from a non-empty variant.                                                                                                                                  | `messageId`, `variantId`, `name`                |
 | `missing-variant`   | A match combination the locale needs has no variant: a plural category of the locale (Russian needs one, few, many and the catch-all as other), or a literal key another variant of that selector uses.                         | `messageId`, `matches`                          |
 
-Selectors belong to each locale's message, so one locale can split by a plural while another uses one text; coverage is checked against the locale's own selectors. Plural rules come from `Intl.PluralRules` and follow local-variable aliases; plurals whose type or options are only known at runtime, and unsupported locales, require only the catch-all. The same comparison is exported as `checkTranslation()` for editors that check unsaved input, with `requiredVariants()`, `selectorKeys()` and `pluralCategories()`.
+Selectors belong to each locale's message, so one locale can split by a plural while another uses one text; coverage is checked against the locale's own selectors, the reference locale's included. The reference itself is only checked for emptiness and missing variants. Plural rules come from `Intl.PluralRules` and follow local-variable aliases; plurals whose type or options are only known at runtime, and unsupported locales, require only the catch-all. The same comparison is exported as `checkTranslation()` for editors that check unsaved input, with `requiredVariants()`, `selectorKeys()` and `pluralCategories()`.
 
 The translation checks read patterns. Select checks to skip them when only IDs matter:
 
@@ -45,6 +45,22 @@ const result = await checkProject({
 ```
 
 These exclusions also cover `empty-translation`. They are supplied by the caller; the SDK does not persist them or change fallback behavior.
+
+### Check bundles in memory
+
+Editors that keep bundles in memory can check one bundle synchronously, without a project or database round trip, whenever it changes:
+
+```ts
+import { checkBundle } from "@inlang/sdk";
+
+const diagnostics = checkBundle({
+	bundle, // nested rows or the camelCase shapes plugins use
+	locales: settings.locales,
+	referenceLocale: settings.baseLocale,
+});
+```
+
+`checkBundle` reports the same diagnostics as `checkProject` for that bundle, except `unused-message`, ordered by locale (reference first). It accepts `checks` and `ignoreMissingTranslations` (locales of this bundle). Keep the results per bundle and replace them when the bundle changes; a settings change requires checking every bundle again.
 
 ## Check application usage
 
