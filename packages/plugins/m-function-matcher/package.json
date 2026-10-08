@@ -35,6 +35,7 @@
 		"clean": "rm -rf ./dist ./node_modules"
 	},
 	"dependencies": {
+		"@babel/parser": "^7.28.5",
 		"@inlang/sdk": "workspace:*"
 	},
 	"devDependencies": {

@@ -41,3 +41,9 @@ The plugin recognizes these patterns:
 | Simple call    | `m.welcome()`                   |
 | With variables | `m.greeting({ name: "World" })` |
 | In JSX         | `{m.button_label()}`            |
+
+## Project checks
+
+The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript AST analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes.
+
+See the [SDK checks and fixes documentation](../../sdk/docs/checks.md) for source snapshot requirements, supported syntax, limits and programmatic usage. This capability is separate from the existing IDE reference matchers.

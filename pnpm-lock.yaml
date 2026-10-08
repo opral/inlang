@@ -709,6 +709,9 @@ importers:
 
   packages/plugins/m-function-matcher:
     dependencies:
+      '@babel/parser':
+        specifier: ^7.28.5
+        version: 7.28.5
       '@inlang/sdk':
         specifier: workspace:*
         version: link:../../sdk
