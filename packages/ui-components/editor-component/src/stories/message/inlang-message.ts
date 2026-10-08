@@ -215,7 +215,7 @@ export default class InlangMessage extends LitElement {
 							<div class="selector-container">
 								${this.message.selectors.map(
 									(selector, index) =>
-										html`<sl-dropdown>
+										html`<sl-dropdown hoist>
 											<div class="selector" part="selector" slot="trigger">
 												<span>${selector.name}</span>
 												<span class="selector-type" title=${this._selectorType(selector.name)}>${this._selectorType(selector.name).split(" · ")[0]}</span>
