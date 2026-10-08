@@ -280,7 +280,8 @@ export function selectorGroups(
 	options: SelectorOptions = {}
 ): SelectorGroup[] {
 	const variants = options.variants ?? message.variants ?? [];
-	const all = [...variants, ...(options.referenceVariants ?? [])];
+	// the reference's values first, so every locale lists a select's values in the same order
+	const all = [...(options.referenceVariants ?? []), ...variants];
 	const names = message.selectors.map((selector) => selector.name);
 	// exact-number selector -> the plural selector it belongs to
 	const exactOf = new Map<string, string>();
