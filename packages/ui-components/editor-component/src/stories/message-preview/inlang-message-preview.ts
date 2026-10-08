@@ -10,6 +10,7 @@ import {
 import { selectVariant } from "../../helper/selectVariant.js";
 import { formatPattern } from "../../helper/formatPattern.js";
 import { languageName } from "../../helper/languageName.js";
+import { pluralExamples } from "../../helper/pluralExamples.js";
 import { renderParts, type RenderItem } from "../pattern-view/renderParts.js";
 
 export type ValuesChangeEventDetail = { values: Record<string, unknown> };
@@ -66,6 +67,28 @@ export default class InlangMessagePreview extends LitElement {
 				grid-template-columns: repeat(auto-fill, minmax(min(140px, 100%), 1fr));
 				gap: 8px;
 				margin-bottom: 10px;
+			}
+			.chips {
+				display: flex;
+				flex-wrap: wrap;
+				gap: 4px;
+			}
+			.chips button {
+				height: 24px;
+				min-width: 28px;
+				padding: 0 8px;
+				border: 1px solid var(--_border-strong, #d4d4d8);
+				border-radius: 999px;
+				background: var(--_surface, #fff);
+				color: var(--_text);
+				font: inherit;
+				font-size: 12px;
+				cursor: pointer;
+			}
+			.chips button[aria-pressed="true"] {
+				background: var(--_text);
+				border-color: var(--_text);
+				color: var(--_surface, #fff);
 			}
 			label {
 				display: flex;
@@ -243,11 +266,29 @@ export default class InlangMessagePreview extends LitElement {
 		);
 	}
 
+	/** One example number per plural form of the locale, when `name` feeds a plural selector. */
+	private _numberChips(name: string): number[] {
+		const plural = (this.declarations ?? []).some(
+			(declaration) =>
+				declaration.type === "local-variable" &&
+				declaration.value.annotation?.name === "plural" &&
+				declaration.value.arg.type === "variable-reference" &&
+				declaration.value.arg.name === name
+		);
+		if (!plural) return [];
+		const numbers = Object.values(pluralExamples(this._locale)).map((example) => Number(/\d+(?:\.\d+)?/.exec(example)?.[0]));
+		return [...new Set(numbers.filter((value) => Number.isFinite(value)))];
+	}
+
 	private _input(input: PreviewInput, value: unknown) {
 		const name = input.name;
 		switch (input.kind) {
 			case "number":
-				return html`<input
+				return html`${this._numberChips(name).length
+					? html`<span class="chips" role="group" aria-label=${`Example values for ${name}`}>${this._numberChips(name).map(
+							(number) => html`<button type="button" part="chip" aria-pressed=${value === number} @click=${() => this._set(name, number)}>${number}</button>`
+						)}</span>`
+					: nothing}<input
 					type="number"
 					step="any"
 					inputmode="decimal"

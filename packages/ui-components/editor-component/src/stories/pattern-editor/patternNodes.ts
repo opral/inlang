@@ -355,3 +355,89 @@ function $leaves(): LexicalNode[] {
 	}
 	return leaves;
 }
+
+/** Markup tokens whose partner (start ↔ end) is gone, e.g. after Backspace removed one of them. */
+function $orphanMarkup(): PatternTokenNode[] {
+	const orphans: PatternTokenNode[] = [];
+	for (const block of $getRoot().getChildren()) {
+		if (!$isElementNode(block)) continue;
+		const open: PatternTokenNode[] = [];
+		for (const child of block.getChildren()) {
+			if (!$isPatternTokenNode(child)) continue;
+			const part = child.getPart();
+			if (part.type === "markup-start") open.push(child);
+			else if (part.type === "markup-end") {
+				const index = open.map((node) => (node.getPart() as MarkupStart).name).lastIndexOf(part.name);
+				if (index === -1) orphans.push(child);
+				else open.splice(index, 1);
+			}
+		}
+		orphans.push(...open);
+	}
+	return orphans;
+}
+
+/** True when a markup tag lost its partner. */
+export function $hasOrphanMarkup(): boolean {
+	return $orphanMarkup().length > 0;
+}
+
+/**
+ * Removes markup tags without a partner, so deleting one end of a link or
+ * bold removes the markup and keeps the words inside it.
+ */
+export function $removeOrphanMarkup() {
+	for (const node of $orphanMarkup()) node.remove();
+}
+
+/**
+ * Wraps the selected text in `start` and its closing tag, e.g. the reference's
+ * `<link>` with its options. Must run inside `editor.update`. Returns false
+ * when nothing is selected.
+ */
+export function $wrapSelection(start: MarkupStart): boolean {
+	const selection = $getSelection();
+	if (!$isRangeSelection(selection) || selection.isCollapsed()) return false;
+	const [first, last] = selection.isBackward()
+		? [selection.focus, selection.anchor]
+		: [selection.anchor, selection.focus];
+	const startPoint = { key: first.key, offset: first.offset, type: first.type };
+	const endPoint = { key: last.key, offset: last.offset, type: last.type };
+	const insertAt = (point: typeof startPoint, node: PatternTokenNode) => {
+		const caret = $createRangeSelection();
+		caret.anchor.set(point.key, point.offset, point.type);
+		caret.focus.set(point.key, point.offset, point.type);
+		$setSelection(caret);
+		caret.insertNodes([node]);
+	};
+	// Insert the end first so the start point stays valid.
+	const closing = $createPatternTokenNode({ type: "markup-end", name: start.name } satisfies MarkupEnd);
+	insertAt(endPoint, closing);
+	insertAt(startPoint, $createPatternTokenNode(structuredClone(start)));
+	closing.selectNext(0, 0);
+	$syncMarkupFormats();
+	return true;
+}
+
+/** The `{query` typed right before a collapsed caret in plain text, for variable suggestions. */
+export function $caretQuery(): { key: string; from: number; to: number; query: string } | undefined {
+	const selection = $getSelection();
+	if (!$isRangeSelection(selection) || !selection.isCollapsed()) return undefined;
+	const node = selection.anchor.getNode();
+	if (!$isTextNode(node) || $isPatternTokenNode(node)) return undefined;
+	const before = node.getTextContent().slice(0, selection.anchor.offset);
+	const match = /\{([A-Za-z_$][\w$.-]*)?$/.exec(before);
+	if (!match) return undefined;
+	return { key: node.getKey(), from: match.index, to: selection.anchor.offset, query: match[1] ?? "" };
+}
+
+/** Replaces `{query` with an expression token. Must run inside `editor.update`. */
+export function $insertVariableAt(target: { key: string; from: number; to: number }, name: string) {
+	const range = $createRangeSelection();
+	range.anchor.set(target.key, target.from, "text");
+	range.focus.set(target.key, target.to, "text");
+	$setSelection(range);
+	const token = $createPatternTokenNode({ type: "expression", arg: { type: "variable-reference", name } });
+	range.insertNodes([token]);
+	token.selectNext(0, 0);
+}

@@ -10,6 +10,10 @@ import {
 	type LexicalEditor,
 } from "lexical";
 import {
+	$caretQuery,
+	$insertVariableAt,
+	$removeOrphanMarkup,
+	$wrapSelection,
 	$getCaretOffset,
 	$isPatternTokenNode,
 	$keepCaretOutOfTokens,
@@ -164,4 +168,65 @@ it("describes tokens", () => {
 		})
 	).toBe("n · plural");
 	expect(tokenTitle({ type: "markup-start", name: "b" })).toBe("Start of bold");
+});
+
+const select = (from: number, to: number) => {
+	// Character offsets in the first text node.
+	const node = children()[0]!;
+	const selection = $createRangeSelection();
+	selection.anchor.set(node.getKey(), from, "text");
+	selection.focus.set(node.getKey(), to, "text");
+	$setSelection(selection);
+};
+
+it("wraps the selection in the reference's markup, keeping its options", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([{ type: "text", value: "Mehr in der Dokumentation." }]));
+	const link = { type: "markup-start" as const, name: "link", options: [{ name: "href", value: { type: "literal" as const, value: "/docs" } }] };
+	update(editor, () => {
+		select(12, 25);
+		expect($wrapSelection(link)).toBe(true);
+	});
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "Mehr in der " },
+		link,
+		{ type: "text", value: "Dokumentation" },
+		{ type: "markup-end", name: "link" },
+		{ type: "text", value: "." },
+	]);
+	update(editor, () => {
+		select(3, 3);
+		expect($wrapSelection(link)).toBe(false);
+	});
+});
+
+it("removes the partner of a deleted markup tag and keeps the words", () => {
+	const editor = setup();
+	update(editor, () => $setPattern(pattern));
+	update(editor, () => {
+		const start = children().find((node) => $isPatternTokenNode(node) && node.getPart().type === "markup-start")!;
+		start.remove();
+		$removeOrphanMarkup();
+	});
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "Welcome back, " },
+		pattern[2],
+		{ type: "text", value: "!\nSee you" },
+	]);
+});
+
+it("reads a {query before the caret and replaces it with a variable", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([{ type: "text", value: "von {to belegt" }]));
+	update(editor, () => select(7, 7));
+	const query = read(editor, $caretQuery);
+	expect(query).toMatchObject({ from: 4, to: 7, query: "to" });
+	update(editor, () => $insertVariableAt(query!, "total"));
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "von " },
+		{ type: "expression", arg: { type: "variable-reference", name: "total" } },
+		{ type: "text", value: " belegt" },
+	]);
+	update(editor, () => select(2, 2));
+	expect(read(editor, $caretQuery)).toBeUndefined();
 });

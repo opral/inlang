@@ -1,4 +1,4 @@
-import type { Declaration, Pattern, Variant } from "@inlang/sdk";
+import type { Declaration, MarkupStandalone, MarkupStart, Pattern, Variant } from "@inlang/sdk";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { ref, createRef, type Ref } from "lit/directives/ref.js";
@@ -20,8 +20,14 @@ import { registerPlainText } from "@lexical/plain-text";
 import { mergeRegister } from "@lexical/utils";
 import { createChangeEvent } from "../../helper/event.js";
 import {
+	$caretQuery,
 	$createPatternTokenNode,
 	$getCaretOffset,
+	$hasOrphanMarkup,
+	$insertVariableAt,
+	$removeOrphanMarkup,
+	$wrapSelection,
+	markupKind,
 	$isPatternTokenNode,
 	$keepCaretOutOfTokens,
 	$markupFormatsOutOfSync,
@@ -57,6 +63,13 @@ const theme = {
  * Rendered in light DOM (contenteditable selection does not work reliably
  * across shadow roots). All styles are scoped to `inlang-pattern-editor`.
  *
+ * Optional helpers for translators:
+ * - `markupOptions`: markup the selection can be wrapped in (usually the
+ *   reference's markup). Selecting text shows a small toolbar; ⌘K / ⌘B / ⌘I
+ *   wrap the selection in the matching link / bold / italic option.
+ * - `variables`: typing `{` suggests these; Enter or Tab inserts the token.
+ * - Deleting one tag of a markup pair removes its partner and keeps the words.
+ *
  * @fires change - `ChangeEventDetail` with the updated variant on every edit.
  * @fires pattern-editor-focus
  * @fires pattern-editor-blur
@@ -91,6 +104,23 @@ export default class InlangPatternEditor extends LitElement {
 	/** Accessible label of the text box (read from the `aria-label` attribute). */
 	@property({ attribute: "aria-label" })
 	accessibleLabel?: string;
+
+	/** Markup a selection can be wrapped in, with a button label such as `Link like “docs”`. */
+	@property({ type: Array })
+	markupOptions: Array<{ part: MarkupStart; label: string }> = [];
+
+	/** Variables suggested after typing `{`, in order (e.g. missing ones first). */
+	@property({ type: Array })
+	variables: Array<{ name: string; hint?: string }> = [];
+
+	@state()
+	private _toolbar?: { x: number; y: number };
+
+	@state()
+	private _suggest?: { items: Array<{ name: string; hint?: string }>; index: number; x: number; y: number; target: { key: string; from: number; to: number } };
+
+	/** Where the user dismissed suggestions with Escape, so they stay closed there. */
+	private _dismissed?: string;
 
 	// state
 	@state()
@@ -245,10 +275,21 @@ export default class InlangPatternEditor extends LitElement {
 			},
 			{ capture: true }
 		);
+		contentEditableElement.addEventListener(
+			"keydown",
+			(event: KeyboardEvent) => {
+				if (!this._onKey(event)) return;
+				event.preventDefault();
+				event.stopImmediatePropagation();
+			},
+			{ capture: true }
+		);
 		contentEditableElement.addEventListener("focus", () => {
 			this.dispatchEvent(new CustomEvent("pattern-editor-focus"));
 		});
 		contentEditableElement.addEventListener("blur", () => {
+			this._toolbar = undefined;
+			this._suggest = undefined;
 			this.dispatchEvent(new CustomEvent("pattern-editor-blur"));
 		});
 	}
@@ -263,6 +304,7 @@ export default class InlangPatternEditor extends LitElement {
 				SELECTION_CHANGE_COMMAND,
 				() => {
 					$keepCaretOutOfTokens();
+					queueMicrotask(() => this._updatePopups());
 					return false;
 				},
 				COMMAND_PRIORITY_LOW
@@ -273,6 +315,12 @@ export default class InlangPatternEditor extends LitElement {
 				}
 				this._refreshTitles();
 				if (tags.has(SET_PATTERN_TAG)) return;
+				// One tag of a pair was deleted: drop its partner before reporting the edit.
+				if (editorState.read($hasOrphanMarkup)) {
+					this.editor.update($removeOrphanMarkup);
+					return;
+				}
+				queueMicrotask(() => this._updatePopups());
 				const pattern = editorState.read($readPattern);
 				if (
 					JSON.stringify(pattern) === JSON.stringify(this._patternState ?? [])
@@ -326,6 +374,86 @@ export default class InlangPatternEditor extends LitElement {
 			{ discrete: true }
 		);
 		this.contentEditableElementRef.value?.focus();
+	}
+
+	/** Wraps the selected text in markup, e.g. the reference's link. Returns false without a selection. */
+	wrapSelection(start: MarkupStart): boolean {
+		let wrapped = false;
+		this.editor.update(() => { wrapped = $wrapSelection(start); }, { discrete: true });
+		this._toolbar = undefined;
+		this.contentEditableElementRef.value?.focus();
+		return wrapped;
+	}
+
+	/** Inserts a standalone markup tag (a line break, an icon) at the caret, or at the end. */
+	insertMarkup(part: MarkupStandalone) {
+		this.editor.update(
+			() => {
+				let selection = $getSelection();
+				if (!$isRangeSelection(selection)) {
+					$getRoot().selectEnd();
+					selection = $getSelection();
+				}
+				if (!$isRangeSelection(selection)) return;
+				const token = $createPatternTokenNode(structuredClone(part));
+				(selection as RangeSelection).insertNodes([token]);
+				token.selectNext(0, 0);
+			},
+			{ discrete: true }
+		);
+		this.contentEditableElementRef.value?.focus();
+	}
+
+	/** Position of the DOM selection relative to the editor, for the toolbar and suggestions. */
+	private _selectionBox(): DOMRect | undefined {
+		const selection = window.getSelection();
+		const wrapper = this.querySelector(".inlang-pattern-editor-wrapper");
+		if (!selection?.rangeCount || !wrapper || !this.contentEditableElementRef.value?.contains(selection.anchorNode)) return undefined;
+		const rect = selection.getRangeAt(0).getBoundingClientRect();
+		const base = wrapper.getBoundingClientRect();
+		return new DOMRect(rect.left - base.left, rect.top - base.top, rect.width, rect.height);
+	}
+
+	/** Shows the markup toolbar over a selection and variable suggestions after `{`. */
+	private _updatePopups() {
+		const focused = this.contentEditableElementRef.value?.contains(document.activeElement) ?? false;
+		const state = this.editor.getEditorState();
+		const ranged = state.read(() => { const selection = $getSelection(); return $isRangeSelection(selection) && !selection.isCollapsed(); });
+		const box = focused ? this._selectionBox() : undefined;
+		this._toolbar = focused && ranged && box && this.markupOptions.length ? { x: Math.max(0, box.x), y: box.y } : undefined;
+		const query = focused && this.variables.length ? state.read($caretQuery) : undefined;
+		const spot = query && `${query.key}:${query.from}`;
+		const items = query ? this.variables.filter((item) => item.name.toLowerCase().startsWith(query.query.toLowerCase())) : [];
+		if (!query || !box || !items.length || spot === this._dismissed) { this._suggest = undefined; return; }
+		const index = this._suggest && this._suggest.target.key === query.key && this._suggest.target.from === query.from ? Math.min(this._suggest.index, items.length - 1) : 0;
+		this._suggest = { items, index, x: box.x, y: box.y + box.height, target: query };
+	}
+
+	private _choose(name: string) {
+		const target = this._suggest?.target;
+		if (!target) return;
+		this._suggest = undefined;
+		this.editor.update(() => $insertVariableAt(target, name), { discrete: true });
+	}
+
+	/** Shortcut keys for markup and suggestion navigation; returns true when handled. */
+	private _onKey(event: KeyboardEvent): boolean {
+		const suggest = this._suggest;
+		if (suggest) {
+			if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+				const step = event.key === "ArrowDown" ? 1 : -1;
+				this._suggest = { ...suggest, index: (suggest.index + step + suggest.items.length) % suggest.items.length };
+				return true;
+			}
+			if (event.key === "Enter" || event.key === "Tab") { this._choose(suggest.items[suggest.index]!.name); return true; }
+			if (event.key === "Escape") { this._dismissed = `${suggest.target.key}:${suggest.target.from}`; this._suggest = undefined; return true; }
+		}
+		if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
+			const kind = { k: "underline", b: "bold", i: "italic" }[event.key.toLowerCase()];
+			const option = kind && this.markupOptions.find((value) => markupKind(value.part.name) === kind);
+			if (option) return this.wrapSelection(option.part) || true;
+		}
+		return false;
 	}
 
 	/** Focuses the editable area. */
@@ -443,6 +571,67 @@ export default class InlangPatternEditor extends LitElement {
 					margin: 0 1px;
 					vertical-align: 0.1em;
 				}
+				inlang-pattern-editor .inlang-pattern-editor-toolbar {
+					position: absolute;
+					z-index: 20;
+					transform: translateY(calc(-100% - 6px));
+					display: flex;
+					gap: 2px;
+					padding: 3px;
+					border-radius: 8px;
+					background: var(--inlang-toolbar-background, #18181b);
+					box-shadow: 0 10px 24px -8px rgb(24 24 27 / 0.5);
+				}
+				inlang-pattern-editor .inlang-pattern-editor-toolbar button {
+					border: 0;
+					background: transparent;
+					color: var(--inlang-toolbar-color, #fff);
+					font: inherit;
+					font-size: 13px;
+					line-height: 1.3;
+					padding: 5px 9px;
+					border-radius: 5px;
+					cursor: pointer;
+					white-space: nowrap;
+					box-shadow: none;
+					min-height: 0;
+				}
+				inlang-pattern-editor .inlang-pattern-editor-toolbar button:hover,
+				inlang-pattern-editor .inlang-pattern-editor-toolbar button:focus-visible {
+					background: rgb(255 255 255 / 0.16);
+				}
+				inlang-pattern-editor .inlang-pattern-editor-suggest {
+					position: absolute;
+					z-index: 20;
+					margin-top: 4px;
+					min-width: 220px;
+					padding: 4px;
+					border-radius: 10px;
+					background: var(--inlang-surface, #fff);
+					border: 1px solid var(--inlang-border, #e4e4e7);
+					box-shadow: 0 14px 36px -10px rgb(24 24 27 / 0.3);
+					font-size: 13px;
+				}
+				inlang-pattern-editor .inlang-pattern-editor-suggest [role="option"] {
+					display: flex;
+					align-items: center;
+					gap: 10px;
+					padding: 6px 8px;
+					border-radius: 6px;
+					cursor: pointer;
+				}
+				inlang-pattern-editor .inlang-pattern-editor-suggest [role="option"].on {
+					background: var(--inlang-hover, #f4f4f5);
+				}
+				inlang-pattern-editor .inlang-pattern-editor-suggest small {
+					margin-left: auto;
+					color: var(--inlang-text-muted, #71717a);
+				}
+				inlang-pattern-editor .inlang-pattern-editor-suggest p {
+					margin: 2px 8px 4px;
+					font-size: 11px;
+					color: var(--inlang-text-subtle, #71717a);
+				}
 			</style>
 			<div class="inlang-pattern-editor-wrapper">
 				<div
@@ -456,6 +645,17 @@ export default class InlangPatternEditor extends LitElement {
 					dir="auto"
 					${ref(this.contentEditableElementRef)}
 				></div>
+				${this._toolbar
+					? html`<div class="inlang-pattern-editor-toolbar" role="toolbar" aria-label="Format selection" style="left: ${this._toolbar.x}px; top: ${this._toolbar.y}px" @mousedown=${(event: Event) => event.preventDefault()}>
+							${this.markupOptions.map((option) => html`<button type="button" @click=${() => this.wrapSelection(option.part)}>${option.label}</button>`)}
+						</div>`
+					: ""}
+				${this._suggest
+					? html`<div class="inlang-pattern-editor-suggest" role="listbox" aria-label="Variables" style="left: ${this._suggest.x}px; top: ${this._suggest.y}px" @mousedown=${(event: Event) => event.preventDefault()}>
+							${this._suggest.items.map((item, index) => html`<div role="option" aria-selected=${index === this._suggest!.index} class=${index === this._suggest!.index ? "on" : ""} @click=${() => this._choose(item.name)}><span class="inlang-token inlang-token-variable">{${item.name}}</span>${item.hint ? html`<small>${item.hint}</small>` : ""}</div>`)}
+							<p>↵ insert · Esc type a plain {</p>
+						</div>`
+					: ""}
 				${this._isEmpty && this.placeholder
 					? html`<p
 							class="inlang-pattern-editor-placeholder"
