@@ -20,9 +20,27 @@ The translation checks compare every locale's message with the reference locale'
 | `missing-variable`  | A variable the reference uses is absent from a non-empty variant. Variants for one exact number on a plural selector (`0`, or a category that selects a single number such as German `one`) may spell the number out and are exempt. Variables used only as selectors are not required. | `messageId`, `variantId`, `name`                |
 | `unknown-variable`  | A variant uses a variable no reference pattern uses, e.g. a typo.                                                                                                                                                                                                                       | `messageId`, `variantId`, `name`, `suggestion?` |
 | `missing-markup`    | A markup tag the reference uses (`<link>`, `<b>`, `<br/>`) is absent from a non-empty variant.                                                                                                                                                                                          | `messageId`, `variantId`, `name`                |
-| `missing-variant`   | A match combination the locale needs has no variant: a plural category of the locale (Russian needs one, few, many and the catch-all as other), or a literal key another variant of that selector uses.                                                                                 | `messageId`, `matches`                          |
+| `missing-variant`   | A match combination the locale needs has no variant: a plural category of the locale (Russian needs one, few, many and the catch-all as other), or a select value or exact number (ICU `=0`) a variant of the locale or of the reference uses.                                          | `messageId`, `matches`                          |
 
-Selectors belong to each locale's message, so one locale can split by a plural while another uses one text; coverage is checked against the locale's own selectors, the reference locale's included. The reference itself is only checked for emptiness and missing variants. Plural rules come from `Intl.PluralRules` and follow local-variable aliases; plurals whose type or options are only known at runtime, and unsupported locales, require only the catch-all. The same comparison is exported as `checkTranslation()` for editors that check unsaved input, with `requiredVariants()`, `selectorKeys()` and `pluralCategories()`.
+Selectors belong to each locale's message, so one locale can split by a plural while another uses one text; coverage is checked against the locale's own selectors, the reference locale's included. The reference itself is only checked for emptiness and missing variants. Plural rules come from `Intl.PluralRules` and follow local-variable aliases; plurals whose type or options are only known at runtime, and unsupported locales, require only the catch-all. An exact number next to a plural of the same input — what `@inlang/plugin-icu1` imports for `{count, plural, =0 {…} one {…} other {…}}`: `.local $countPluralExact = {$count}` next to `.local $countPlural = {$count :plural}` — is one choice: the locale needs `0`, its categories and the catch-all, never "0 and one", and the `0` form may spell the number out. The same comparison is exported as `checkTranslation()` for editors that check unsaved input.
+
+### Selector rules for editors
+
+Editors that show a message's forms use the same rules as the checks, so an "add form" button and a `missing-variant` diagnostic never disagree:
+
+```ts
+import { selectorGroups, requiredVariants, missingVariants } from "@inlang/sdk";
+
+const options = { referenceVariants: referenceMessage.variants };
+selectorGroups(message, bundle.declarations, options);
+// [{ names: ["countPluralExact", "countPlural"], selector: "countPlural", exactSelector: "countPluralExact",
+//    input: "count", isPlural: true, plural: { type: "cardinal", categories: ["one", "other"] },
+//    keys: ["0", "one", "*"], requiredKeys: ["0", "one", "*"], values(key), keyOf(variant) }]
+requiredVariants(message, bundle.declarations, options); // every form the locale needs (Match[][])
+missingVariants(message, bundle.declarations, options); // the ones no variant covers = `missing-variant`
+```
+
+`selectorGroups` lists what a translator sees as one choice each: usually one selector, or an exact-number selector with its plural. `keys` are in display order (exact numbers, categories, other literal keys, `*` last), `requiredKeys` what the locale needs, `values(key)` the match value per selector and `keyOf(variant)` the key of a variant. Also exported: `variantCovers`, `pluralRules` (categories, single-number categories and `Intl.PluralRules` of a selector), `pluralCategories`, `isSingleNumberCategory`, `isPluralSelector`, `resolveAnnotation` and `resolveInputVariable` (both follow `.local` aliases), `matchValue`, `isNumericKey`.
 
 The translation checks read patterns. Select checks to skip them when only IDs matter:
 

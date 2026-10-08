@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import type { Declaration, Pattern } from "../json-schema/pattern.js";
 import type { Match } from "../database/schema.js";
-import { checkTranslation, requiredVariants } from "./translations.js";
+import { checkTranslation } from "./translations.js";
+import { requiredVariants } from "./selectors.js";
 
 const v = (name: string) => ({
 	type: "expression" as const,
@@ -205,5 +206,41 @@ test("a plural category of one number may spell it out, others need the variable
 	]);
 	expect(missing("fr", "Un fichier")).toEqual([
 		{ type: "missing-variable", name: "count", variantId: "fr-one" },
+	]);
+});
+
+test("a translation needs the forms the reference's select values ask for", () => {
+	const genders = (locale: string, forms: Record<string, Pattern>) => ({
+		id: `g-${locale}`,
+		locale,
+		selectors: [{ type: "variable-reference" as const, name: "gender" }],
+		variants: Object.entries(forms).map(([value, pattern]) => ({
+			id: `${locale}-${value}`,
+			matches: [
+				value === "*"
+					? ({ type: "catchall-match", key: "gender" } as const)
+					: ({ type: "literal-match", key: "gender", value } as const),
+			],
+			pattern,
+		})),
+	});
+	const genderDeclarations: Declaration[] = [
+		{ type: "input-variable", name: "gender" },
+	];
+	expect(
+		checkTranslation({
+			reference: genders("en", {
+				female: [t("She")],
+				male: [t("He")],
+				"*": [t("They")],
+			}),
+			target: genders("de", { female: [t("Sie")], "*": [t("Sie")] }),
+			declarations: genderDeclarations,
+		})
+	).toEqual([
+		{
+			type: "missing-variant",
+			matches: [{ type: "literal-match", key: "gender", value: "male" }],
+		},
 	]);
 });

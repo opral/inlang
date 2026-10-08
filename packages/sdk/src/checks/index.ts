@@ -8,14 +8,29 @@ export {
 } from "./checkBundle.js";
 export {
 	checkTranslation,
-	requiredVariants,
-	selectorKeys,
-	pluralCategories,
 	variableNames,
 	markupNames,
 	isEmptyPattern,
+	closestName,
 	type TranslationIssue,
 } from "./translations.js";
+export {
+	selectorGroups,
+	requiredVariants,
+	missingVariants,
+	variantCovers,
+	pluralRules,
+	pluralCategories,
+	isSingleNumberCategory,
+	isPluralSelector,
+	isNumericKey,
+	matchValue,
+	resolveAnnotation,
+	resolveInputVariable,
+	type SelectorGroup,
+	type SelectorOptions,
+	type PluralRules,
+} from "./selectors.js";
 export type {
 	SourceFile,
 	UsageAnalysis,
