@@ -6,7 +6,9 @@ Composable editor components for list-style translation UIs.
 
 New components: `<inlang-pattern-view>` (read-only pattern with variable tokens and real bold/italic/underline for markup), `<inlang-message-forms>` (list, grid or tabbed grid of a message's variants with plural example numbers and "+ Add form" buttons for missing required forms; `select-variant` / `add-variant` events) and `<inlang-message-preview>` (inputs derived from the bundle's input variables and the formatted output, optionally next to the reference language; `values-change` / `variant-match` events).
 
-New helpers: `pluralExamples`, `requiredForms`, `selectVariant`, `formatPattern` / `formatMessage`, `messageIssues`, `previewInputs`.
+New helpers: `pluralExamples`, `requiredForms`, `selectVariant`, `formatPattern` / `formatMessage`, `messageIssues`, `previewInputs`. The catch-all variant MF2 requires is treated as a plural's "other" form, so it is never reported as a separate missing form.
+
+`lit` is now a runtime dependency, and test files are no longer published.
 
 Breaking changes in `<inlang-pattern-editor>`:
 
