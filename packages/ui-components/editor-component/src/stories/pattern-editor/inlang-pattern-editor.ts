@@ -7,6 +7,7 @@ import {
 	$createRangeSelection,
 	$createRangeSelectionFromDom,
 	$getNearestNodeFromDOMNode,
+	$getNodeByKey,
 	$getSelection,
 	$isElementNode,
 	$setSelection,
@@ -41,6 +42,13 @@ import {
 	tokenTitle,
 } from "./patternNodes.js";
 
+/** "Remove link", "Remove bold", or the tag for other markup. */
+const removeLabel = (name: string) => {
+	const kind = markupKind(name);
+	if (["a", "link"].includes(name.toLowerCase())) return "Remove link";
+	return kind === "unknown" || kind === "underline" ? `Remove <${name}>` : `Remove ${kind}`;
+};
+
 /** Update tags: programmatic content changes never emit `change` events. */
 const SET_PATTERN_TAG = "inlang-set-pattern";
 const SYNC_FORMAT_TAG = "inlang-sync-format";
@@ -67,7 +75,8 @@ const theme = {
  * Optional helpers for translators:
  * - `markupOptions`: markup the selection can be wrapped in (usually the
  *   reference's markup). Selecting text shows a small toolbar; ⌘K / ⌘B / ⌘I
- *   wrap the selection in the matching link / bold / italic option.
+ *   wrap the selection in the matching link / bold / italic option. Inside
+ *   that markup the toolbar offers "Remove link" and the shortcut unwraps it.
  * - `variables`: typing `{` suggests these; Enter or Tab inserts the token.
  * - Deleting one tag of a markup pair removes its partner and keeps the words.
  *
@@ -115,7 +124,10 @@ export default class InlangPatternEditor extends LitElement {
 	variables: Array<{ name: string; hint?: string }> = [];
 
 	@state()
-	private _toolbar?: { x: number; y: number; below?: number };
+	private _toolbar?: { x: number; y: number; below?: number; ranged: boolean; active: string[] };
+
+	/** Markup pairs around the cursor, so the toolbar and shortcuts can remove them again. */
+	private _activePairs: { name: string; start: string; end: string }[] = [];
 
 	@state()
 	private _suggest?: { items: Array<{ name: string; hint?: string }>; index: number; x: number; y: number; target: { key: string; from: number; to: number } };
@@ -402,6 +414,19 @@ export default class InlangPatternEditor extends LitElement {
 		return wrapped;
 	}
 
+	/** Removes the markup `name` around the cursor and keeps its words, e.g. unlinks a link. Returns false if there is none. */
+	unwrapMarkup(name: string): boolean {
+		const pair = [...this._activePairs].reverse().find((value) => value.name === name);
+		if (!pair) return false;
+		this.editor.update(() => {
+			$getNodeByKey(pair.start)?.remove();
+			$getNodeByKey(pair.end)?.remove();
+		}, { discrete: true });
+		this._toolbar = undefined;
+		this.contentEditableElementRef.value?.focus();
+		return true;
+	}
+
 	/** Inserts a standalone markup tag (a line break, an icon) at the caret, or at the end. */
 	insertMarkup(part: MarkupStandalone) {
 		this.editor.update(
@@ -439,10 +464,12 @@ export default class InlangPatternEditor extends LitElement {
 		const box = focused ? this._selectionBox() : undefined;
 		this._markActiveMarkup(focused);
 		const width = this.querySelector(".inlang-pattern-editor-wrapper")?.clientWidth ?? 0;
+		// Offered markup the cursor is inside: the toolbar offers to remove it, also without a selection.
+		const active = this._activePairs.map((pair) => pair.name).filter((name) => this.markupOptions.some((option) => option.part.name === name));
 		// Above the selection, or below it when that would cover the content above the editor.
 		this._toolbar =
-			focused && ranged && box && this.markupOptions.length
-				? { x: Math.max(0, Math.min(box.x, width - 220)), y: box.y, below: box.y < 36 ? box.y + box.height + 6 : undefined }
+			focused && box && this.markupOptions.length && (ranged || active.length)
+				? { x: Math.max(0, Math.min(box.x, width - 220)), y: box.y, below: box.y < 36 ? box.y + box.height + 6 : undefined, ranged, active }
 				: undefined;
 		const query = focused && this.variables.length ? state.read($caretQuery) : undefined;
 		const spot = query && `${query.key}:${query.from}`;
@@ -458,6 +485,7 @@ export default class InlangPatternEditor extends LitElement {
 	 */
 	private _markActiveMarkup(focused: boolean) {
 		const active = new Set<string>();
+		const pairs: { name: string; start: string; end: string }[] = [];
 		if (focused)
 			this.editor.getEditorState().read(() => {
 				const selection = $getSelection();
@@ -477,10 +505,15 @@ export default class InlangPatternEditor extends LitElement {
 						if (start === -1) return;
 						const [opening] = open.splice(start, 1);
 						const from = children.indexOf(opening!);
-						if (at >= from && at <= index) { active.add(opening!.getKey()); active.add(child.getKey()); }
+						if (at >= from && at <= index) {
+							active.add(opening!.getKey());
+							active.add(child.getKey());
+							pairs.push({ name: part.name, start: opening!.getKey(), end: child.getKey() });
+						}
 					}
 				});
 			});
+		this._activePairs = pairs;
 		const elements = new Set([...active].map((key) => this.editor.getElementByKey(key)));
 		this.querySelectorAll<HTMLElement>(".inlang-token-markup").forEach((element) =>
 			element.classList.toggle("inlang-token-active", elements.has(element))
@@ -509,7 +542,8 @@ export default class InlangPatternEditor extends LitElement {
 		if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey) {
 			const kind = { k: "underline", b: "bold", i: "italic" }[event.key.toLowerCase()];
 			const option = kind && this.markupOptions.find((value) => markupKind(value.part.name) === kind);
-			if (option) return this.wrapSelection(option.part) || true;
+			// The same shortcut removes the markup when the cursor is already inside it.
+			if (option) return this.unwrapMarkup(option.part.name) || this.wrapSelection(option.part) || true;
 		}
 		return false;
 	}
@@ -719,7 +753,13 @@ export default class InlangPatternEditor extends LitElement {
 				></div>
 				${this._toolbar
 					? html`<div class=${this._toolbar.below === undefined ? "inlang-pattern-editor-toolbar" : "inlang-pattern-editor-toolbar below"} role="toolbar" aria-label="Format selection" style="left: ${this._toolbar.x}px; top: ${this._toolbar.below ?? this._toolbar.y}px" @mousedown=${(event: Event) => event.preventDefault()}>
-							${this.markupOptions.map((option) => html`<button type="button" @click=${() => this.wrapSelection(option.part)}>${option.label}</button>`)}
+							${this.markupOptions.map((option) =>
+								this._toolbar!.active.includes(option.part.name)
+									? html`<button type="button" @click=${() => this.unwrapMarkup(option.part.name)}>${removeLabel(option.part.name)}</button>`
+									: this._toolbar!.ranged
+										? html`<button type="button" @click=${() => this.wrapSelection(option.part)}>${option.label}</button>`
+										: ""
+							)}
 						</div>`
 					: ""}
 				${this._suggest
