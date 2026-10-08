@@ -35,6 +35,19 @@ export type {
 export { pluralExamples } from "./helper/pluralExamples.js";
 export { requiredForms, selectorKeys } from "./helper/requiredForms.js";
 export { selectVariant } from "./helper/selectVariant.js";
+export { selectorGroups } from "./helper/selectorGroups.js";
+export type { SelectorGroup } from "./helper/selectorGroups.js";
+export {
+	addSelector,
+	removeSelector,
+	selectableVariables,
+} from "./helper/addSelector.js";
+export type {
+	AddSelectorArgs,
+	RemoveSelectorOptions,
+	SelectorBundle,
+	SelectorKind,
+} from "./helper/addSelector.js";
 export type { SelectVariantArgs } from "./helper/selectVariant.js";
 export {
 	formatPattern,

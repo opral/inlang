@@ -4,6 +4,7 @@ import {
 	selectorPluralResolver,
 	type Match,
 } from "./declarations.js";
+import { selectorGroups } from "./selectorGroups.js";
 
 /**
  * The keys a selector is expected to cover in a locale.
@@ -36,8 +37,16 @@ export function selectorKeys(
 
 /**
  * Every match combination a message is expected to have in a locale: the
- * cartesian product of {@link selectorKeys} over the message's selectors (in
- * selector order). A message without selectors needs one form with no matches.
+ * cartesian product of the required keys of its selector groups (see
+ * {@link selectorGroups}) in selector order. A message without selectors needs
+ * one form with no matches.
+ *
+ * An exact number and a plural category of the same input (ICU
+ * `=0 {…} one {…} other {…}`, imported as two selectors) are one group, so the
+ * impossible form "0 and one" is never required.
+ *
+ * `referenceVariants` (optional): the variants of the reference language. Their
+ * literal keys count as used keys of select selectors (not of plurals).
  *
  * @example
  * // ru, selectors [gender (literal keys female, male), count (plural)]
@@ -47,28 +56,31 @@ export function requiredForms(
 	message: Pick<MessageRow, "selectors"> & { variants?: VariantRow[] },
 	declarations: readonly Declaration[] | undefined,
 	locale: string,
-	variants: readonly Pick<VariantRow, "matches">[] = message.variants ?? []
+	variants: readonly Pick<VariantRow, "matches">[] = message.variants ?? [],
+	referenceVariants: readonly Pick<VariantRow, "matches">[] = []
 ): Match[][] {
-	let combinations: Match[][] = [[]];
-	for (const selector of message.selectors ?? []) {
-		const { keys } = selectorKeys(
-			selector.name,
-			declarations,
-			locale,
-			variants
-		);
-		const next: Match[][] = [];
+	let combinations: Record<string, string>[] = [{}];
+	for (const group of selectorGroups(
+		message,
+		declarations,
+		locale,
+		variants,
+		referenceVariants
+	)) {
+		const next: Record<string, string>[] = [];
 		for (const combination of combinations) {
-			for (const key of keys) {
-				next.push([
-					...combination,
-					key === "*"
-						? { type: "catchall-match", key: selector.name }
-						: { type: "literal-match", key: selector.name, value: key },
-				]);
+			for (const key of group.requiredKeys) {
+				next.push({ ...combination, ...group.values(key) });
 			}
 		}
 		combinations = next;
 	}
-	return combinations;
+	return combinations.map((combination) =>
+		(message.selectors ?? []).map(({ name }): Match => {
+			const value = combination[name] ?? "*";
+			return value === "*"
+				? { type: "catchall-match", key: name }
+				: { type: "literal-match", key: name, value };
+		})
+	);
 }

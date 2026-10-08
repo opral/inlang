@@ -96,12 +96,15 @@ Styling: all styles are scoped to the element. Custom properties: `--inlang-patt
 
 Compact overview of a message's variants for picking one. One selector: a list (match, plural example numbers, pattern). Two selectors: a grid (rows: first selector incl. "any other" for `*`, columns: second selector with plural examples). Three or more: segmented tabs for each leading selector plus a grid for the last two. Required forms (see `requiredForms`) without a variant are "+ Add form" buttons. Scrolls horizontally with a sticky first column.
 
+An exact number next to a plural category of the same input — what `@inlang/plugin-icu1` imports for `{count, plural, =0 {…} one {…} other {…}}`: an un-annotated selector (`countPluralExact`) plus a `:plural` selector (`countPlural`), both reading `count` — is shown as **one** choice (`0 exactly`, `one`, `other`) and a form never needs a number *and* a category (see `selectorGroups`). The data is not changed.
+
 | Property | Type | |
 | --- | --- | --- |
 | `message` | `Message` (or nested message with `variants`) | |
 | `variants` | `Variant[]` | defaults to `message.variants` |
 | `declarations` | `Declaration[]` | |
 | `locale` | `string` | defaults to `message.locale` |
+| `referenceVariants` | `Variant[]` (property only) | variants of the reference language: their literal keys of select selectors (e.g. female / male) are also required here, so a translation without variants yet is asked for the same forms |
 | `selectedVariantId` | `string` | outlined, `aria-pressed="true"` |
 | `caption` | `string` | defaults to "Russian uses 4 plural forms. The numbers are examples."; `""` hides it; or use `slot="caption"` |
 
@@ -159,6 +162,20 @@ requiredForms(message, bundle.declarations, "ru", message.variants);
 // literal keys beat catch-all, first selector most significant).
 selectVariant({ message, variants, declarations, values: { count: 3 }, locale: "ru" });
 
+// Make a message plural / ordinal / a select in every language (pure, returns a new bundle).
+// `bundle` is a nested bundle: { declarations, messages: [{ id, selectors, variants }] }.
+const plural = addSelector(bundle, { variable: "count", kind: "plural" });
+// declares `.local $countPlural = {$count :plural}`, adds the selector to every message and a catch-all
+// match to every existing variant (the text stays as the "other" form); requiredForms / <inlang-message-forms>
+// then offer "+ Add form" for the categories of each language.
+addSelector(bundle, { variable: "gender", kind: "select", values: ["female", "male"] }); // + empty forms
+selectableVariables(bundle); // ["count", "gender"]: declared variables that are no selector yet
+removeSelector(plural, "countPlural"); // keeps the catch-all ("other") form per language (`{ keep: "one" }` to keep another), drops the rest and the local variable
+
+// The selectors of a message as the choices a translator sees (an exact number + plural of one input are one group).
+selectorGroups(message, bundle.declarations, "en", message.variants);
+// [{ names: ["countPlural"], input: "count", plural, keys: ["one", "*"], requiredKeys: ["one", "*"], values(key), keyOf(variant) }]
+
 formatPattern({ pattern, declarations, values: { name: "Anna", count: 3 }, locale: "ru" });
 // [{ type: "markup-start", name: "b" }, { type: "text", value: "Anna" }, { type: "markup-end", name: "b" }, …]
 formatMessage({ message, variants, declarations, values, locale: "en" }); // "Anna sent you 3 files"
@@ -174,4 +191,6 @@ messageIssues({
 
 `messageIssues` returns, in this order: `missing-translation` (target missing or all patterns empty; nothing else is reported then), `missing-variable` (a reference variable absent from any non-empty target variant; variables used only as selectors are ignored; variants that match an exact number such as `"0"` on a plural selector are exempt), `extra-variable`, `missing-markup`, and `missing-form` (a required form without an exactly matching variant — a catch-all does not cover a plural category the locale has).
 
-Also exported: `selectorKeys`, `formatPatternToString`, `variableNames`, `markupNames`, `previewInputs`, `languageName`, `selectorMatches`, `patternToString`, `stringToPattern`, `createChangeEvent`.
+`requiredForms(message, declarations, locale, variants, referenceVariants?)` never requires an exact number together with a plural category of the same input (the form "0 × one" of an imported ICU `=0 {…} one {…}` can never be chosen). `addSelector` / `removeSelector` accept `BundleNested` (`messageId`) as well as database rows (`message_id`): fields they do not know are kept. New variants copy an existing variant of the message and only get a new `id` (default uuid v7, `createId` to override).
+
+Also exported: `selectorGroups`, `selectorKeys`, `formatPatternToString`, `variableNames`, `markupNames`, `previewInputs`, `languageName`, `selectorMatches`, `patternToString`, `stringToPattern`, `createChangeEvent`.

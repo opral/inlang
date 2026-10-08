@@ -55,3 +55,25 @@ export function message(
 		selectors: selectors.map((name) => ({ type: "variable-reference", name })),
 	};
 }
+
+/** What `@inlang/plugin-icu1` imports for `{count, plural, =0 {…} one {…} other {…}}`. */
+export const icuExactPluralDeclarations: Declaration[] = [
+	{ type: "input-variable", name: "count" },
+	{
+		type: "local-variable",
+		name: "countPluralExact",
+		value: {
+			type: "expression",
+			arg: { type: "variable-reference", name: "count" },
+		},
+	},
+	{
+		type: "local-variable",
+		name: "countPlural",
+		value: {
+			type: "expression",
+			arg: { type: "variable-reference", name: "count" },
+			annotation: { type: "function-reference", name: "plural", options: [] },
+		},
+	},
+];

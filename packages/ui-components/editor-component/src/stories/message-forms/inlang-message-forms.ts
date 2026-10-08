@@ -4,27 +4,28 @@ import { customElement, property, state } from "lit/decorators.js";
 import { tokens } from "../../styling/tokens.js";
 import {
 	isNumericKey,
-	literalKeys,
 	matchFor,
 	matchValue,
-	resolveInputName,
-	selectorPluralResolver,
 	type Match,
 	type PluralResolver,
 } from "../../helper/declarations.js";
 import { requiredForms } from "../../helper/requiredForms.js";
+import { selectorGroups } from "../../helper/selectorGroups.js";
 import { pluralExamples } from "../../helper/pluralExamples.js";
 import { languageName } from "../../helper/languageName.js";
 import patternToString from "../../helper/patternToString.js";
 import "../pattern-view/inlang-pattern-view.js";
 
 type SelectorInfo = {
-	name: string;
+	/** The selector names behind this choice: two for an exact number + plural category of one input. */
+	names: string[];
 	/** Display name: the input variable a selector reads from ("count" for "countPlural"). */
 	label: string;
 	plural?: PluralResolver;
 	keys: string[];
 	examples: Record<string, string>;
+	values(key: string): Record<string, string>;
+	keyOf(variant: Pick<VariantRow, "matches">): string;
 };
 
 export type SelectVariantEventDetail = { variantId: string };
@@ -40,6 +41,10 @@ export type AddVariantEventDetail = { matches: Match[] };
  *   `*`), columns the second selector's keys with plural examples in the header
  * - 3+ selectors: segmented tabs for each extra leading selector, a grid for
  *   the last two
+ *
+ * An exact number next to a plural category of the same input (ICU
+ * `=0 {…} one {…} other {…}`, two selectors in the model) is shown as ONE
+ * choice, see `selectorGroups`.
  *
  * Required forms (see `requiredForms`) without a variant render as
  * "+ Add form" buttons. Narrow containers scroll horizontally with a sticky
@@ -258,6 +263,14 @@ export default class InlangMessageForms extends LitElement {
 	@property({ type: Array })
 	declarations: Declaration[] = [];
 
+	/**
+	 * Variants of the reference language. Their literal keys of select selectors
+	 * (e.g. female / male) are also required in this locale, so a translation that
+	 * has no variants yet is asked for the same forms as the source.
+	 */
+	@property({ type: Array, attribute: false })
+	referenceVariants?: VariantRow[];
+
 	/** Defaults to `message.locale`. */
 	@property({ type: String })
 	locale?: string;
@@ -281,38 +294,25 @@ export default class InlangMessageForms extends LitElement {
 		return this.locale ?? this.message?.locale ?? "en";
 	}
 
-	private _selectorInfo(name: string): SelectorInfo {
-		const variants = this._variants;
-		const used = literalKeys(name, variants);
-		const plural = selectorPluralResolver(
-			name,
+	private _infos(): SelectorInfo[] {
+		if (!this.message) return [];
+		return selectorGroups(
+			this.message,
 			this.declarations,
-			this._locale
-		);
-		const label = resolveInputName(name, this.declarations) ?? name;
-		if (plural) {
-			const numbers = used
-				.filter(isNumericKey)
-				.sort((a, b) => Number(a) - Number(b));
-			const others = used.filter(
-				(key) => !isNumericKey(key) && !plural.categories.includes(key)
-			);
-			return {
-				name,
-				label,
-				plural,
-				// The catch-all is the "other" form; an explicit "other" variant is shown if present.
-				keys: [
-					...numbers,
-					...plural.categories.filter((category) => category !== "other"),
-					...(used.includes("other") ? ["other"] : []),
-					...others,
-					"*",
-				],
-				examples: pluralExamples(this._locale, plural.type),
-			};
-		}
-		return { name, label, keys: [...used, "*"], examples: {} };
+			this._locale,
+			this._variants,
+			this.referenceVariants
+		).map((group) => ({
+			names: group.names,
+			label: group.input,
+			plural: group.plural,
+			keys: group.keys,
+			values: group.values,
+			keyOf: group.keyOf,
+			examples: group.plural
+				? pluralExamples(this._locale, group.plural.type)
+				: {},
+		}));
 	}
 
 	private _find(combination: Record<string, string>): VariantRow | undefined {
@@ -322,6 +322,16 @@ export default class InlangMessageForms extends LitElement {
 				(name) => matchValue(matchFor(variant, name)) === combination[name]
 			)
 		);
+	}
+
+	/** The match values of the selected keys of several choices. */
+	private _combination(
+		keys: Iterable<[SelectorInfo, string]>
+	): Record<string, string> {
+		const combination: Record<string, string> = {};
+		for (const [info, key] of keys)
+			Object.assign(combination, info.values(key));
+		return combination;
 	}
 
 	private _toMatches(combination: Record<string, string>): Match[] {
@@ -339,7 +349,8 @@ export default class InlangMessageForms extends LitElement {
 				this.message,
 				this.declarations,
 				this._locale,
-				this._variants
+				this._variants,
+				this.referenceVariants
 			).map((form) => JSON.stringify(form.map(matchValue)))
 		);
 	}
@@ -431,8 +442,8 @@ export default class InlangMessageForms extends LitElement {
 			);
 			if (selected) {
 				const active = { ...this._active };
-				for (const { name } of (this.message?.selectors ?? []).slice(0, -2)) {
-					active[name] = matchValue(matchFor(selected, name));
+				for (const info of this._infos().slice(0, -2)) {
+					active[info.names[0]!] = info.keyOf(selected);
 				}
 				this._active = active;
 			}
@@ -441,7 +452,7 @@ export default class InlangMessageForms extends LitElement {
 
 	override render() {
 		const selectors = this.message?.selectors ?? [];
-		const infos = selectors.map(({ name }) => this._selectorInfo(name));
+		const infos = this._infos();
 		const required = this._required();
 		const caption = this._caption(infos);
 		const hasCaptionSlot = !!this.querySelector(":scope > [slot=caption]");
@@ -453,7 +464,7 @@ export default class InlangMessageForms extends LitElement {
 			<slot name="caption">${caption}</slot>
 		</p>`;
 
-		if (infos.length === 0) {
+		if (selectors.length === 0) {
 			return html`${captionTemplate}
 				<div class="list" part="list">
 					${this._cell({}, required, ["Default"])}
@@ -478,7 +489,7 @@ export default class InlangMessageForms extends LitElement {
 						>`;
 						return html`<div role="listitem">
 							${this._cell(
-								{ [info.name]: key },
+								info.values(key),
 								required,
 								[this._keyLabel(info, key)],
 								label
@@ -491,14 +502,17 @@ export default class InlangMessageForms extends LitElement {
 		const leading = infos.slice(0, -2);
 		const rowInfo = infos[infos.length - 2]!;
 		const columnInfo = infos[infos.length - 1]!;
-		const fixed: Record<string, string> = {};
+		const fixed = new Map<SelectorInfo, string>();
 		for (const info of leading) {
-			const active = this._active[info.name];
-			fixed[info.name] =
+			const active = this._active[info.names[0]!];
+			fixed.set(
+				info,
 				active !== undefined && info.keys.includes(active)
 					? active
-					: info.keys[0]!;
+					: info.keys[0]!
+			);
 		}
+		const fixedCombination = this._combination(fixed);
 
 		return html`${captionTemplate}
 			${leading.map((info) => this._tabs(info, fixed, required, infos))}
@@ -542,14 +556,14 @@ export default class InlangMessageForms extends LitElement {
 										html`<td>
 											${this._cell(
 												{
-													...fixed,
-													[rowInfo.name]: rowKey,
-													[columnInfo.name]: columnKey,
+													...fixedCombination,
+													...rowInfo.values(rowKey),
+													...columnInfo.values(columnKey),
 												},
 												required,
 												[
 													...leading.map((info) =>
-														this._keyLabel(info, fixed[info.name]!)
+														this._keyLabel(info, fixed.get(info)!)
 													),
 													this._keyLabel(rowInfo, rowKey),
 													this._keyLabel(columnInfo, columnKey),
@@ -566,39 +580,51 @@ export default class InlangMessageForms extends LitElement {
 
 	private _tabs(
 		info: SelectorInfo,
-		fixed: Record<string, string>,
+		fixed: Map<SelectorInfo, string>,
 		required: Set<string>,
 		infos: SelectorInfo[]
 	) {
+		const id = info.names[0]!;
+		const selectors = this.message?.selectors ?? [];
 		return html`<div>
-			<span class="tabs-label" id=${`tabs-${info.name}`}>${info.label}</span>
+			<span class="tabs-label" id=${`tabs-${id}`}>${info.label}</span>
 			<div
 				class="tabs"
 				part="tabs"
 				role="group"
-				aria-labelledby=${`tabs-${info.name}`}
+				aria-labelledby=${`tabs-${id}`}
 			>
 				${info.keys.map((key) => {
 					const missing = [...required].filter((form) => {
 						const values = JSON.parse(form) as string[];
-						const index = infos.indexOf(info);
-						if (values[index] !== key) return false;
-						const combination: Record<string, string> = {};
-						infos.forEach((other, i) => (combination[other.name] = values[i]!));
+						const byName = (name: string) =>
+							values[
+								selectors.findIndex((selector) => selector.name === name)
+							]!;
+						const keyIn = (other: SelectorInfo) =>
+							other.keyOf({
+								matches: other.names.map((name) => {
+									const value = byName(name);
+									return value === "*"
+										? { type: "catchall-match", key: name }
+										: { type: "literal-match", key: name, value };
+								}),
+							});
+						if (keyIn(info) !== key) return false;
 						for (const leading of infos.slice(0, -2)) {
-							if (
-								leading !== info &&
-								combination[leading.name] !== fixed[leading.name]
-							)
+							if (leading !== info && keyIn(leading) !== fixed.get(leading))
 								return false;
 						}
+						const combination: Record<string, string> = {};
+						selectors.forEach(
+							(selector, index) => (combination[selector.name] = values[index]!)
+						);
 						return !this._find(combination);
 					}).length;
 					return html`<button
 						type="button"
-						aria-pressed=${fixed[info.name] === key ? "true" : "false"}
-						@click=${() =>
-							(this._active = { ...this._active, [info.name]: key })}
+						aria-pressed=${fixed.get(info) === key ? "true" : "false"}
+						@click=${() => (this._active = { ...this._active, [id]: key })}
 					>
 						${this._keyLabel(info, key)}${missing
 							? html`<span

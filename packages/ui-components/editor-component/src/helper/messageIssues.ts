@@ -8,6 +8,7 @@ import {
 	type Match,
 } from "./declarations.js";
 import { requiredForms } from "./requiredForms.js";
+import { selectorGroups } from "./selectorGroups.js";
 
 export type MessageIssue =
 	| { type: "missing-translation" }
@@ -37,7 +38,8 @@ export type MessageWithVariants = {
  * - `extra-variable`: a target pattern uses a variable no reference pattern uses.
  * - `missing-markup`: a markup tag (start or standalone) used in the
  *   reference is absent from at least one non-empty target variant.
- * - `missing-form`: a form from `requiredForms(target)` has no variant with
+ * - `missing-form`: a form from `requiredForms(target)` (a select's literal keys
+ *   include those of the reference) has no variant with
  *   exactly those matches. A catch-all variant does not count as covering a
  *   plural category the locale has, but it is the plural's "other" form (an
  *   explicit "other" variant covers the catch-all form as well).
@@ -67,12 +69,19 @@ export function messageIssues(args: {
 	const referenceVariables = unique(referencePatterns.flatMap(variableNames));
 	const referenceMarkup = unique(referencePatterns.flatMap(markupNames));
 
+	// exact numbers live on the plural selector or, for imported ICU `=0`, on a second selector of the same input
+	const exactNumberSelectors = new Set(
+		selectorGroups(target.message, declarations, locale, target.variants)
+			.filter((group) => group.names.length > 1)
+			.flatMap((group) => group.names)
+	);
 	const exempt = (variant: Pick<VariantRow, "matches">) =>
 		variant.matches.some(
 			(match) =>
 				match.type === "literal-match" &&
 				isNumericKey(match.value) &&
-				selectorPluralResolver(match.key, declarations, locale) !== undefined
+				(exactNumberSelectors.has(match.key) ||
+					selectorPluralResolver(match.key, declarations, locale) !== undefined)
 		);
 
 	if (reference) {
@@ -117,7 +126,8 @@ export function messageIssues(args: {
 		target.message,
 		declarations,
 		locale,
-		target.variants
+		target.variants,
+		reference?.variants
 	)) {
 		if (!target.variants.some((variant) => covers(variant, form))) {
 			issues.push({ type: "missing-form", matches: form });
