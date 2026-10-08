@@ -376,10 +376,14 @@ export default class InlangPatternEditor extends LitElement {
 		this.contentEditableElementRef.value?.focus();
 	}
 
-	/** Wraps the selected text in markup, e.g. the reference's link. Returns false without a selection. */
-	wrapSelection(start: MarkupStart): boolean {
+	/** Wraps the selected text in markup, e.g. the reference's link; without a selection, inserts it around `placeholder`. */
+	wrapSelection(start: MarkupStart, placeholder?: string): boolean {
 		let wrapped = false;
-		this.editor.update(() => { wrapped = $wrapSelection(start); }, { discrete: true });
+		this.editor.update(() => {
+			// Unfocused editors have no selection: wrap at the end.
+			if (placeholder && !$isRangeSelection($getSelection())) $getRoot().selectEnd();
+			wrapped = $wrapSelection(start, placeholder);
+		}, { discrete: true });
 		this._toolbar = undefined;
 		this.contentEditableElementRef.value?.focus();
 		return wrapped;

@@ -392,11 +392,24 @@ export function $removeOrphanMarkup() {
 
 /**
  * Wraps the selected text in `start` and its closing tag, e.g. the reference's
- * `<link>` with its options. Must run inside `editor.update`. Returns false
- * when nothing is selected.
+ * `<link>` with its options. Without a selection, inserts the markup around
+ * `placeholder` at the caret and selects it. Must run inside `editor.update`.
+ * Returns false when nothing was wrapped.
  */
-export function $wrapSelection(start: MarkupStart): boolean {
+export function $wrapSelection(start: MarkupStart, placeholder?: string): boolean {
 	const selection = $getSelection();
+	if ($isRangeSelection(selection) && selection.isCollapsed() && placeholder) {
+		// Nothing selected: insert the markup around placeholder text and select it for typing.
+		const text = $createTextNode(placeholder);
+		selection.insertNodes([
+			$createPatternTokenNode(structuredClone(start)),
+			text,
+			$createPatternTokenNode({ type: "markup-end", name: start.name } satisfies MarkupEnd),
+		]);
+		text.select(0, placeholder.length);
+		$syncMarkupFormats();
+		return true;
+	}
 	if (!$isRangeSelection(selection) || selection.isCollapsed()) return false;
 	const [first, last] = selection.isBackward()
 		? [selection.focus, selection.anchor]
