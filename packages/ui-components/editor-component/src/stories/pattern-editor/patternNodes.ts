@@ -62,7 +62,8 @@ export function tokenTitle(
 		return annotation ? `${name} · ${annotation.name}` : name;
 	}
 	const kind = markupKind(part.name);
-	const label = kind === "unknown" ? `<${part.name}>` : kind;
+	const isLink = ["a", "link"].includes(part.name.toLowerCase());
+	const label = isLink ? "link" : kind === "unknown" ? `<${part.name}>` : kind;
 	if (part.type === "markup-start") return `Start of ${label}`;
 	if (part.type === "markup-end") return `End of ${label}`;
 	return label;

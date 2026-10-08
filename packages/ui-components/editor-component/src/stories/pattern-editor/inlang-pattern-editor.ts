@@ -5,6 +5,7 @@ import { ref, createRef, type Ref } from "lit/directives/ref.js";
 import {
 	$getRoot,
 	$createRangeSelection,
+	$createRangeSelectionFromDom,
 	$getNearestNodeFromDOMNode,
 	$getSelection,
 	$isElementNode,
@@ -114,7 +115,7 @@ export default class InlangPatternEditor extends LitElement {
 	variables: Array<{ name: string; hint?: string }> = [];
 
 	@state()
-	private _toolbar?: { x: number; y: number };
+	private _toolbar?: { x: number; y: number; below?: number };
 
 	@state()
 	private _suggest?: { items: Array<{ name: string; hint?: string }>; index: number; x: number; y: number; target: { key: string; from: number; to: number } };
@@ -359,15 +360,20 @@ export default class InlangPatternEditor extends LitElement {
 		this.editor.update(
 			() => {
 				let selection = $getSelection();
+				let atEnd = false;
 				if (!$isRangeSelection(selection)) {
 					$getRoot().selectEnd();
 					selection = $getSelection();
+					atEnd = true;
 				}
 				if (!$isRangeSelection(selection)) return;
 				const token = $createPatternTokenNode({
 					type: "expression",
 					arg: { type: "variable-reference", name },
 				});
+				// Appended to existing text, a variable gets a space in front ("belegt {total}").
+				const text = $getRoot().getTextContent();
+				if (atEnd && text && !/\s$/.test(text)) (selection as RangeSelection).insertText(" ");
 				(selection as RangeSelection).insertNodes([token]);
 				token.selectNext(0, 0);
 			},
@@ -380,6 +386,13 @@ export default class InlangPatternEditor extends LitElement {
 	wrapSelection(start: MarkupStart, placeholder?: string): boolean {
 		let wrapped = false;
 		this.editor.update(() => {
+			// Lexical reads the DOM selection asynchronously; a shortcut right after a keyboard
+			// selection must use the selection the user sees.
+			const dom = window.getSelection();
+			if (dom && this.contentEditableElementRef.value?.contains(dom.anchorNode)) {
+				const live = $createRangeSelectionFromDom(dom, this.editor);
+				if (live) $setSelection(live);
+			}
 			// Unfocused editors have no selection: wrap at the end.
 			if (placeholder && !$isRangeSelection($getSelection())) $getRoot().selectEnd();
 			wrapped = $wrapSelection(start, placeholder);
@@ -424,13 +437,54 @@ export default class InlangPatternEditor extends LitElement {
 		const state = this.editor.getEditorState();
 		const ranged = state.read(() => { const selection = $getSelection(); return $isRangeSelection(selection) && !selection.isCollapsed(); });
 		const box = focused ? this._selectionBox() : undefined;
-		this._toolbar = focused && ranged && box && this.markupOptions.length ? { x: Math.max(0, box.x), y: box.y } : undefined;
+		this._markActiveMarkup(focused);
+		const width = this.querySelector(".inlang-pattern-editor-wrapper")?.clientWidth ?? 0;
+		// Above the selection, or below it when that would cover the content above the editor.
+		this._toolbar =
+			focused && ranged && box && this.markupOptions.length
+				? { x: Math.max(0, Math.min(box.x, width - 220)), y: box.y, below: box.y < 36 ? box.y + box.height + 6 : undefined }
+				: undefined;
 		const query = focused && this.variables.length ? state.read($caretQuery) : undefined;
 		const spot = query && `${query.key}:${query.from}`;
 		const items = query ? this.variables.filter((item) => item.name.toLowerCase().startsWith(query.query.toLowerCase())) : [];
 		if (!query || !box || !items.length || spot === this._dismissed) { this._suggest = undefined; return; }
 		const index = this._suggest && this._suggest.target.key === query.key && this._suggest.target.from === query.from ? Math.min(this._suggest.index, items.length - 1) : 0;
-		this._suggest = { items, index, x: box.x, y: box.y + box.height, target: query };
+		this._suggest = { items, index, x: Math.max(0, Math.min(box.x, width - 240)), y: box.y + box.height, target: query };
+	}
+
+	/**
+	 * Markup tags for known formatting (bold, italic, links) are hidden so translators see formatted
+	 * text; the tags of the markup around the cursor are shown so it is clear what it is.
+	 */
+	private _markActiveMarkup(focused: boolean) {
+		const active = new Set<string>();
+		if (focused)
+			this.editor.getEditorState().read(() => {
+				const selection = $getSelection();
+				if (!$isRangeSelection(selection)) return;
+				const anchor = selection.anchor.getNode();
+				const block = anchor.getTopLevelElement();
+				if (!block || !$isElementNode(block)) return;
+				const children = block.getChildren();
+				const at = children.findIndex((child) => child.getKey() === anchor.getKey() || child.isParentOf(anchor));
+				const open: PatternTokenNode[] = [];
+				children.forEach((child, index) => {
+					if (!$isPatternTokenNode(child)) return;
+					const part = child.getPart();
+					if (part.type === "markup-start") open.push(child);
+					else if (part.type === "markup-end") {
+						const start = open.map((node) => node.getPart().type === "markup-start" && (node.getPart() as MarkupStart).name).lastIndexOf(part.name);
+						if (start === -1) return;
+						const [opening] = open.splice(start, 1);
+						const from = children.indexOf(opening!);
+						if (at >= from && at <= index) { active.add(opening!.getKey()); active.add(child.getKey()); }
+					}
+				});
+			});
+		const elements = new Set([...active].map((key) => this.editor.getElementByKey(key)));
+		this.querySelectorAll<HTMLElement>(".inlang-token-markup").forEach((element) =>
+			element.classList.toggle("inlang-token-active", elements.has(element))
+		);
 	}
 
 	private _choose(name: string) {
@@ -542,7 +596,18 @@ export default class InlangPatternEditor extends LitElement {
 				}
 				inlang-pattern-editor .inlang-pattern-editor-underline {
 					text-decoration: underline;
-					text-underline-offset: 2px;
+					text-decoration-color: var(--inlang-link-color, #1d4ed8);
+					text-decoration-thickness: 1.5px;
+					text-underline-offset: 3px;
+				}
+				/* Known formatting shows as formatted text; its tags appear while the cursor is inside. */
+				inlang-pattern-editor .inlang-token-markup-bold:not(.inlang-token-active),
+				inlang-pattern-editor .inlang-token-markup-italic:not(.inlang-token-active),
+				inlang-pattern-editor .inlang-token-markup-underline:not(.inlang-token-active) {
+					font-size: 0;
+					padding: 0;
+					margin: 0;
+					border: 0;
 				}
 				inlang-pattern-editor .inlang-token {
 					font-family: var(
@@ -585,6 +650,9 @@ export default class InlangPatternEditor extends LitElement {
 					border-radius: 8px;
 					background: var(--inlang-toolbar-background, #18181b);
 					box-shadow: 0 10px 24px -8px rgb(24 24 27 / 0.5);
+				}
+				inlang-pattern-editor .inlang-pattern-editor-toolbar.below {
+					transform: none;
 				}
 				inlang-pattern-editor .inlang-pattern-editor-toolbar button {
 					border: 0;
@@ -650,7 +718,7 @@ export default class InlangPatternEditor extends LitElement {
 					${ref(this.contentEditableElementRef)}
 				></div>
 				${this._toolbar
-					? html`<div class="inlang-pattern-editor-toolbar" role="toolbar" aria-label="Format selection" style="left: ${this._toolbar.x}px; top: ${this._toolbar.y}px" @mousedown=${(event: Event) => event.preventDefault()}>
+					? html`<div class=${this._toolbar.below === undefined ? "inlang-pattern-editor-toolbar" : "inlang-pattern-editor-toolbar below"} role="toolbar" aria-label="Format selection" style="left: ${this._toolbar.x}px; top: ${this._toolbar.below ?? this._toolbar.y}px" @mousedown=${(event: Event) => event.preventDefault()}>
 							${this.markupOptions.map((option) => html`<button type="button" @click=${() => this.wrapSelection(option.part)}>${option.label}</button>`)}
 						</div>`
 					: ""}
