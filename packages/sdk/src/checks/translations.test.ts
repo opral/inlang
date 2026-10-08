@@ -132,6 +132,57 @@ test("empty translations are missing, and exact numbers may spell the number out
 	).toEqual([]);
 });
 
+test("an ICU exact-number form may spell the number out", () => {
+	// ICU `{count, plural, =0 {…} one {…} other {…}}` imports as two selectors on the same input
+	const icuDeclarations: Declaration[] = [
+		...declarations,
+		{
+			type: "local-variable",
+			name: "countPluralExact",
+			value: {
+				type: "expression",
+				arg: { type: "variable-reference", name: "count" },
+			},
+		},
+	];
+	const icu = (locale: string, forms: [string, string, Pattern][]) => ({
+		id: `m-${locale}`,
+		locale,
+		selectors: [
+			{ type: "variable-reference" as const, name: "countPluralExact" },
+			{ type: "variable-reference" as const, name: "countPlural" },
+		],
+		variants: forms.map(([exact, plural, pattern]) => ({
+			id: `${locale}-${exact}-${plural}`,
+			matches: [
+				exact === "*"
+					? ({ type: "catchall-match", key: "countPluralExact" } as const)
+					: ({
+							type: "literal-match",
+							key: "countPluralExact",
+							value: exact,
+						} as const),
+				key(plural),
+			],
+			pattern,
+		})),
+	});
+	const issues = checkTranslation({
+		reference: icu("en", [
+			["0", "*", [t("No files")]],
+			["*", "one", [v("count"), t(" file")]],
+			["*", "*", [v("count"), t(" files")]],
+		]),
+		target: icu("de", [
+			["0", "*", [t("Keine Dateien")]],
+			["*", "one", [v("count"), t(" Datei")]],
+			["*", "*", [v("count"), t(" Dateien")]],
+		]),
+		declarations: icuDeclarations,
+	});
+	expect(issues).toEqual([]);
+});
+
 test("a plural category of one number may spell it out, others need the variable", () => {
 	const forms = (locale: string, one: string) =>
 		message(locale, {

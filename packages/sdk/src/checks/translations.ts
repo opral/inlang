@@ -55,6 +55,23 @@ export function resolveAnnotation(
 		: undefined;
 }
 
+/** The variable a declaration ultimately reads, following `.local` aliases. */
+function inputVariable(
+	name: string,
+	declarations: readonly Declaration[] | undefined,
+	seen: Set<string> = new Set()
+): string {
+	if (seen.has(name)) return name;
+	seen.add(name);
+	const declaration = declarations?.find((value) => value.name === name);
+	if (
+		declaration?.type === "local-variable" &&
+		declaration.value.arg.type === "variable-reference"
+	)
+		return inputVariable(declaration.value.arg.name, declarations, seen);
+	return name;
+}
+
 const NUMERIC_OPTIONS = [
 	"minimumIntegerDigits",
 	"minimumFractionDigits",
@@ -194,7 +211,11 @@ export function selectorKeys(
 	return { plural: false, keys: [...keys, "*"] };
 }
 
-/** Every match combination a message needs in a locale (cartesian product over its selectors). */
+/**
+ * Every match combination a message needs in a locale (cartesian product over its selectors).
+ * An exact number and a plural category of the same input exclude each other: ICU's
+ * `=0 {…} one {…} other {…}` imports as two selectors, and "0 and one" is not a form.
+ */
 export function requiredVariants(
 	message: Pick<MessageLike, "selectors" | "locale"> & {
 		variants?: readonly Pick<VariantLike, "matches">[];
@@ -219,7 +240,24 @@ export function requiredVariants(
 			])
 		);
 	}
-	return combinations;
+	const isPlural = (name: string) =>
+		pluralCategories(name, declarations, message.locale) !== undefined;
+	return combinations.filter(
+		(combination) =>
+			!combination.some(
+				(exact) =>
+					exact.type === "literal-match" &&
+					isNumeric(exact.value) &&
+					!isPlural(exact.key) &&
+					combination.some(
+						(category) =>
+							category.type === "literal-match" &&
+							isPlural(category.key) &&
+							inputVariable(category.key, declarations) ===
+								inputVariable(exact.key, declarations)
+					)
+			)
+	);
 }
 
 /** True when a pattern has no visible text, variables or markup. */
@@ -327,17 +365,27 @@ export function checkTranslation(args: {
 	const markup = [...new Set(referencePatterns.flatMap(markupNames))];
 	const plural = (selector: string) =>
 		pluralCategories(selector, declarations, target.locale) !== undefined;
+	// The input of a plural selector, so an exact-number selector on the same input counts as
+	// plural too: ICU imports `=0 {…} one {…}` as `countPluralExact = {$count}` next to
+	// `countPlural = {$count :plural}`.
+	const pluralInputs = new Set(
+		(declarations ?? [])
+			.filter((declaration) => plural(declaration.name))
+			.map((declaration) => inputVariable(declaration.name, declarations))
+	);
 	// A variant for one exact number may spell it out: "=0", or a category such as German "one".
 	const spellsOut = (match: Match) =>
 		match.type === "literal-match" &&
-		plural(match.key) &&
-		(isNumeric(match.value) ||
-			isSingleNumberCategory(
-				match.key,
-				declarations,
-				target.locale,
-				match.value
-			));
+		((isNumeric(match.value) &&
+			(plural(match.key) ||
+				pluralInputs.has(inputVariable(match.key, declarations)))) ||
+			(plural(match.key) &&
+				isSingleNumberCategory(
+					match.key,
+					declarations,
+					target.locale,
+					match.value
+				)));
 	if (reference)
 		for (const variant of target.variants) {
 			if (isEmptyPattern(variant.pattern)) continue;
