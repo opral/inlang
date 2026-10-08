@@ -18,6 +18,9 @@ import { renderParts, type RenderItem } from "./renderParts.js";
  * @csspart placeholder - The placeholder shown for an empty pattern.
  * @cssprop --inlang-variable-color - Token text color (default #1d4ed8).
  * @cssprop --inlang-variable-background - Token background (default transparent).
+ * @cssprop --inlang-search-highlight - Background of text ranges a host registers
+ *   as the `inlang-search` CSS custom highlight (default #fde68a). Text lives in
+ *   the open shadow root, so walk `shadowRoot` to build the ranges.
  */
 @customElement("inlang-pattern-view")
 export default class InlangPatternView extends LitElement {
@@ -35,6 +38,10 @@ export default class InlangPatternView extends LitElement {
 			}
 			.placeholder {
 				color: var(--_text-subtle);
+			}
+			::highlight(inlang-search) {
+				background-color: var(--inlang-search-highlight, #fde68a);
+				color: inherit;
 			}
 		`,
 	];
