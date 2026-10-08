@@ -4,6 +4,24 @@ export { default as InlangMessage } from "./stories/message/inlang-message.js";
 export { default as InlangVariant } from "./stories/variant/inlang-variant.js";
 export { default as InlangPatternEditor } from "./stories/pattern-editor/inlang-pattern-editor.js";
 
+// composable v13 components
+export { default as InlangPatternView } from "./stories/pattern-view/inlang-pattern-view.js";
+export { default as InlangMessageForms } from "./stories/message-forms/inlang-message-forms.js";
+export type {
+	SelectVariantEventDetail,
+	AddVariantEventDetail,
+} from "./stories/message-forms/inlang-message-forms.js";
+export {
+	default as InlangMessagePreview,
+	previewInputs,
+} from "./stories/message-preview/inlang-message-preview.js";
+export type {
+	PreviewInput,
+	PreviewInputKind,
+	ValuesChangeEventDetail,
+	VariantMatchEventDetail,
+} from "./stories/message-preview/inlang-message-preview.js";
+
 //modals & actions
 export { default as InlangBundleAction } from "./stories/actions/bundle-action/inlang-bundle-action.js";
 export { default as InlangAddSelector } from "./stories/actions/add-selector/inlang-add-selector.js";
@@ -41,6 +59,7 @@ export type {
 	MessageWithVariants,
 } from "./helper/messageIssues.js";
 export type { Match } from "./helper/declarations.js";
+export { languageName } from "./helper/languageName.js";
 export { default as patternToString } from "./helper/patternToString.js";
 export { default as stringToPattern } from "./helper/stringToPattern.js";
 export { createChangeEvent } from "./helper/event.js";

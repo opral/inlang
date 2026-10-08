@@ -4,8 +4,11 @@ import { customElement, property, state } from "lit/decorators.js";
 import { ref, createRef, type Ref } from "lit/directives/ref.js";
 import {
 	$getRoot,
+	$createRangeSelection,
+	$getNearestNodeFromDOMNode,
 	$getSelection,
 	$isElementNode,
+	$setSelection,
 	$isRangeSelection,
 	COMMAND_PRIORITY_LOW,
 	SELECTION_CHANGE_COMMAND,
@@ -165,6 +168,70 @@ export default class InlangPatternEditor extends LitElement {
 		if (!contentEditableElement) return;
 		this.editor.setRootElement(contentEditableElement);
 		this._attach();
+		// Lexical replaces a token when text is typed with the caret inside it.
+		// Move the caret to the token's edge before Lexical handles the input.
+		// Lexical replaces a token when text is typed with the caret inside it
+		// (native insertion writes into the token's DOM text). The DOM selection
+		// can be ahead of Lexical's (selectionchange is async), so read it here.
+		const tokenCaret = () => {
+			const selection = window.getSelection();
+			const anchor = selection?.anchorNode;
+			if (!selection || !anchor || !selection.isCollapsed) return undefined;
+			const element = (
+				anchor.nodeType === Node.TEXT_NODE
+					? anchor.parentElement
+					: (anchor as Element)
+			)?.closest("[data-inlang-token]");
+			if (!element || !contentEditableElement.contains(element))
+				return undefined;
+			const length = element.textContent?.length ?? 0;
+			const offset = selection.anchorOffset;
+			if (anchor.nodeType !== Node.TEXT_NODE || offset <= 0 || offset >= length)
+				return undefined;
+			return { element, edge: offset < length / 2 ? 0 : length };
+		};
+		const moveCaret = (caret: { element: Element; edge: number }) => {
+			const node = $getNearestNodeFromDOMNode(caret.element);
+			if (!$isPatternTokenNode(node)) return false;
+			const selection = $createRangeSelection();
+			selection.anchor.set(node.getKey(), caret.edge, "text");
+			selection.focus.set(node.getKey(), caret.edge, "text");
+			$setSelection(selection);
+			return true;
+		};
+		contentEditableElement.addEventListener(
+			"beforeinput",
+			(event: InputEvent) => {
+				const caret = tokenCaret();
+				if (!caret) return;
+				if (
+					(event.inputType === "insertText" ||
+						event.inputType === "insertReplacementText") &&
+					typeof event.data === "string"
+				) {
+					event.preventDefault();
+					event.stopImmediatePropagation();
+					const text = event.data;
+					this.editor.update(() => {
+						if (!moveCaret(caret)) return;
+						const selection = $getSelection();
+						if ($isRangeSelection(selection)) selection.insertText(text);
+					});
+				} else {
+					this.editor.update(() => void moveCaret(caret), { discrete: true });
+				}
+			},
+			{ capture: true }
+		);
+		contentEditableElement.addEventListener(
+			"compositionstart",
+			() => {
+				const caret = tokenCaret();
+				if (caret)
+					this.editor.update(() => void moveCaret(caret), { discrete: true });
+			},
+			{ capture: true }
+		);
 		contentEditableElement.addEventListener("focus", () => {
 			this.dispatchEvent(new CustomEvent("pattern-editor-focus"));
 		});
