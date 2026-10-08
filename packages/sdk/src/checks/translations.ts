@@ -62,7 +62,19 @@ const NUMERIC_OPTIONS = [
 	"minimumSignificantDigits",
 	"maximumSignificantDigits",
 ];
-const rulesCache = new Map<string, string[] | null>();
+type PluralRuleSet = {
+	categories: string[];
+	/** Categories that only one number selects, e.g. German "one" (1) but not Russian "one" (1, 21, 31, …). */
+	single: string[];
+};
+const rulesCache = new Map<string, PluralRuleSet | null>();
+
+/** Numbers that tell whether a category selects a single number. */
+const SAMPLES = [
+	...Array.from({ length: 1001 }, (_, index) => index),
+	...Array.from({ length: 21 }, (_, index) => index / 2 + 0.1),
+	...Array.from({ length: 21 }, (_, index) => index / 2),
+];
 
 /**
  * The plural categories a `plural` selector needs in a locale, in CLDR order.
@@ -74,11 +86,35 @@ export function pluralCategories(
 	declarations: readonly Declaration[] | undefined,
 	locale: string
 ): string[] | undefined {
+	return pluralRuleSet(selector, declarations, locale)?.categories;
+}
+
+/**
+ * True when a plural category selects exactly one number in the locale, so a
+ * translation may spell the number out ("Eine Datei" for German "one").
+ */
+export function isSingleNumberCategory(
+	selector: string,
+	declarations: readonly Declaration[] | undefined,
+	locale: string,
+	category: string
+): boolean {
+	return (
+		pluralRuleSet(selector, declarations, locale)?.single.includes(category) ??
+		false
+	);
+}
+
+function pluralRuleSet(
+	selector: string,
+	declarations: readonly Declaration[] | undefined,
+	locale: string
+): PluralRuleSet | undefined {
 	const annotation = resolveAnnotation(selector, declarations);
 	if (annotation?.name !== "plural") return undefined;
 	const key = JSON.stringify([locale, annotation.options ?? []]);
 	if (!rulesCache.has(key)) {
-		let result: string[] | null = null;
+		let result: PluralRuleSet | null = null;
 		try {
 			const options: Intl.PluralRulesOptions = { type: "cardinal" };
 			let known = true;
@@ -99,13 +135,23 @@ export function pluralCategories(
 				else known = false;
 			}
 			if (known && Intl.PluralRules.supportedLocalesOf(locale).length) {
-				const categories = new Intl.PluralRules(
-					locale,
-					options
-				).resolvedOptions().pluralCategories;
-				result = [...categories].sort(
-					(a, b) => PLURAL_ORDER.indexOf(a) - PLURAL_ORDER.indexOf(b)
-				);
+				const rules = new Intl.PluralRules(locale, options);
+				const numbers = new Map<string, Set<number>>();
+				for (const sample of SAMPLES) {
+					const category = rules.select(sample);
+					if (!numbers.has(category)) numbers.set(category, new Set());
+					numbers.get(category)!.add(sample);
+				}
+				result = {
+					categories: [...rules.resolvedOptions().pluralCategories].sort(
+						(a, b) => PLURAL_ORDER.indexOf(a) - PLURAL_ORDER.indexOf(b)
+					),
+					single: [...numbers]
+						.filter(
+							([category, values]) => category !== "other" && values.size === 1
+						)
+						.map(([category]) => category),
+				};
 			}
 		} catch {
 			result = null;
@@ -253,8 +299,9 @@ export function closestName(
  *
  * - `missing-translation`: no message, no variants, or every pattern is empty.
  * - `missing-variable`: a reference variable is absent from a non-empty
- *   variant. Variants matching an exact number on a plural selector may spell
- *   the number out and are exempt. Variables used only as selectors are not required.
+ *   variant. Variants for one exact number on a plural selector (`0`, or a
+ *   category that selects one number such as German `one`) may spell the
+ *   number out and are exempt. Variables used only as selectors are not required.
  * - `unknown-variable`: a variant uses a variable no reference pattern uses.
  * - `missing-markup`: a reference markup tag is absent from a non-empty variant.
  * - `missing-variant`: a required match combination (see {@link requiredVariants})
@@ -280,17 +327,23 @@ export function checkTranslation(args: {
 	const markup = [...new Set(referencePatterns.flatMap(markupNames))];
 	const plural = (selector: string) =>
 		pluralCategories(selector, declarations, target.locale) !== undefined;
+	// A variant for one exact number may spell it out: "=0", or a category such as German "one".
+	const spellsOut = (match: Match) =>
+		match.type === "literal-match" &&
+		plural(match.key) &&
+		(isNumeric(match.value) ||
+			isSingleNumberCategory(
+				match.key,
+				declarations,
+				target.locale,
+				match.value
+			));
 	if (reference)
 		for (const variant of target.variants) {
 			if (isEmptyPattern(variant.pattern)) continue;
 			const variantId = variant.id;
 			const own = variableNames(variant.pattern);
-			const exactNumber = variant.matches.some(
-				(match) =>
-					match.type === "literal-match" &&
-					isNumeric(match.value) &&
-					plural(match.key)
-			);
+			const exactNumber = variant.matches.some(spellsOut);
 			const missing = exactNumber
 				? []
 				: variables.filter((name) => !own.includes(name));

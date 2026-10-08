@@ -131,3 +131,28 @@ test("empty translations are missing, and exact numbers may spell the number out
 		checkTranslation({ reference: english, target: zero, declarations })
 	).toEqual([]);
 });
+
+test("a plural category of one number may spell it out, others need the variable", () => {
+	const forms = (locale: string, one: string) =>
+		message(locale, {
+			one: [t(one)],
+			few: [v("count"), t(" x")],
+			many: [v("count"), t(" x")],
+			"*": [v("count"), t(" x")],
+		});
+	const missing = (locale: string, one: string) =>
+		checkTranslation({
+			reference: english,
+			target: forms(locale, one),
+			declarations,
+		}).filter((issue) => issue.type === "missing-variable");
+	// German "one" is only 1
+	expect(missing("de", "Eine Datei")).toEqual([]);
+	// Russian "one" is 1, 21, 31, …; French "one" is 0 and 1
+	expect(missing("ru", "Один файл")).toEqual([
+		{ type: "missing-variable", name: "count", variantId: "ru-one" },
+	]);
+	expect(missing("fr", "Un fichier")).toEqual([
+		{ type: "missing-variable", name: "count", variantId: "fr-one" },
+	]);
+});
