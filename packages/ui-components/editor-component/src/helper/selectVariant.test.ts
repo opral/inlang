@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import { selectVariant } from "./selectVariant.js";
 import {
 	genderPluralDeclarations,
+	icuExactPluralDeclarations,
 	message,
 	pluralDeclarations,
 	text,
@@ -114,4 +115,24 @@ it("uses English rules for en and handles messages without selectors", () => {
 			locale: "en",
 		})
 	).toBe(only);
+});
+
+it("selects the exact number of an imported ICU =0 before the plural category", () => {
+	const m = message("en", ["countPluralExact", "countPlural"]);
+	const variants = [
+		variant({ countPluralExact: "0", countPlural: "*" }, [text("none")]),
+		variant({ countPluralExact: "*", countPlural: "one" }, [text("one")]),
+		variant({ countPluralExact: "*", countPlural: "*" }, [text("other")]),
+	];
+	const pickIcu = (count: number) =>
+		selectVariant({
+			message: m,
+			variants,
+			declarations: icuExactPluralDeclarations,
+			values: { count },
+			locale: "en",
+		});
+	expect(pickIcu(0)).toBe(variants[0]);
+	expect(pickIcu(1)).toBe(variants[1]);
+	expect(pickIcu(5)).toBe(variants[2]);
 });

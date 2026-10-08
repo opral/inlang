@@ -27,7 +27,7 @@ import {
 	type Spread,
 	type TextFormatType,
 } from "lexical";
-import { resolveAnnotation } from "../../helper/declarations.js";
+import { resolveAnnotation } from "@inlang/sdk/browser";
 
 export type TokenPart = Expression | MarkupStart | MarkupEnd | MarkupStandalone;
 

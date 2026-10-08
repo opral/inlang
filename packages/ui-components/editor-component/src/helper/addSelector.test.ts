@@ -5,9 +5,8 @@ import {
 	selectableVariables,
 	type SelectorBundle,
 } from "./addSelector.js";
-import { requiredForms } from "./requiredForms.js";
+import { requiredVariants, selectorGroups } from "@inlang/sdk/browser";
 import { selectVariant } from "./selectVariant.js";
-import { selectorGroups } from "./selectorGroups.js";
 import { icuExactPluralDeclarations } from "./fixtures.test-util.js";
 
 let n = 0;
@@ -75,11 +74,14 @@ it("then requires the plural categories of each language", () => {
 	const plural = addSelector(bundle(), { variable: "count", kind: "plural" });
 	// Russian has four categories, English two
 	expect(
-		requiredForms(plural.messages[1]! as never, plural.declarations, "ru")
+		requiredVariants(
+			{ ...plural.messages[1]!, locale: "ru" },
+			plural.declarations
+		)
 	).toHaveLength(4);
 	const en = plural.messages[0]!;
 	expect(
-		requiredForms(en as never, plural.declarations, "en").map(
+		requiredVariants({ ...en, locale: "en" }, plural.declarations).map(
 			(form) => form[0]!
 		)
 	).toEqual([
@@ -113,10 +115,8 @@ it("adds an ordinal plural and a select with empty forms for its values", () => 
 	});
 	expect(
 		selectorGroups(
-			ordinal.messages[0]! as never,
-			ordinal.declarations,
-			"en",
-			[]
+			{ ...ordinal.messages[0]!, locale: "en" },
+			ordinal.declarations
 		)[0]!.plural?.type
 	).toBe("ordinal");
 

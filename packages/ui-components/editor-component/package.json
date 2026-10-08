@@ -31,8 +31,9 @@
 	"author": "",
 	"license": "ISC",
 	"devDependencies": {
-		"@nx/storybook": "^18.0.4",
+		"@inlang/plugin-icu1": "workspace:*",
 		"@inlang/tsconfig": "workspace:*",
+		"@nx/storybook": "^18.0.4",
 		"@rollup/plugin-commonjs": "^25.0.7",
 		"@rollup/plugin-json": "^6.1.0",
 		"@rollup/plugin-node-resolve": "^15.2.3",

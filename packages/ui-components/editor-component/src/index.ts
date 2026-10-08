@@ -33,20 +33,23 @@ export type {
 	SelectorMatches,
 } from "./helper/selectorMatches.js";
 export { pluralExamples } from "./helper/pluralExamples.js";
-export { requiredForms, selectorKeys } from "./helper/requiredForms.js";
 export { selectVariant } from "./helper/selectVariant.js";
-export { selectorGroups } from "./helper/selectorGroups.js";
-export type { SelectorGroup } from "./helper/selectorGroups.js";
 export {
 	addSelector,
 	removeSelector,
 	selectableVariables,
+	addExactNumber,
+	removeExactNumber,
+	addSelectValue,
+	removeSelectValue,
 } from "./helper/addSelector.js";
 export type {
 	AddSelectorArgs,
 	RemoveSelectorOptions,
 	SelectorBundle,
 	SelectorKind,
+	ExactNumberArgs,
+	SelectValueArgs,
 } from "./helper/addSelector.js";
 export type { SelectVariantArgs } from "./helper/selectVariant.js";
 export {
@@ -59,15 +62,6 @@ export type {
 	FormatPatternArgs,
 	FormatMessageArgs,
 } from "./helper/formatPattern.js";
-export {
-	messageIssues,
-	variableNames,
-	markupNames,
-} from "./helper/messageIssues.js";
-export type {
-	MessageIssue,
-	MessageWithVariants,
-} from "./helper/messageIssues.js";
 export type { Match } from "./helper/declarations.js";
 export { languageName } from "./helper/languageName.js";
 export { default as patternToString } from "./helper/patternToString.js";

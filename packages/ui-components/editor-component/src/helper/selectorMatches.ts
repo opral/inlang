@@ -1,4 +1,5 @@
-import type { Declaration, FunctionReference, VariantRow } from "@inlang/sdk";
+import type { Declaration, VariantRow } from "@inlang/sdk";
+import { pluralRules, resolveAnnotation } from "@inlang/sdk/browser";
 
 export type MatchSuggestion = { value: string; description: string };
 export type SelectorMatches = {
@@ -13,35 +14,16 @@ const fallback: MatchSuggestion = { value: "*", description: "Fallback · matche
 
 /** Derive suggestions from declarations, never from a variable's spelling. */
 export function selectorMatches(name: string, declarations: Declaration[], locale: string, variants: VariantRow[]): SelectorMatches {
-  const seen = new Set<string>();
-  function annotation(variable: string): FunctionReference | undefined {
-    if (seen.has(variable)) return;
-    seen.add(variable);
-    const declaration = declarations.find(value => value.name === variable);
-    if (!declaration) return;
-    if (declaration.type === "input-variable") return declaration.annotation;
-    return declaration.value.annotation ?? (declaration.value.arg.type === "variable-reference" ? annotation(declaration.value.arg.name) : undefined);
-  }
-  const resolver = annotation(name);
+  const resolver = resolveAnnotation(name, declarations);
   if (resolver?.name === "plural") {
     const cacheKey = JSON.stringify([locale, resolver.options]);
     const cached = pluralCache.get(cacheKey);
     if (cached) return cached;
-    const option = resolver.options.find(value => value.name === "type");
-    let knownType = !option || option.value.type === "literal" && ["cardinal", "ordinal"].includes(option.value.value);
-    const type = option?.value.type === "literal" && option.value.value === "ordinal" ? "ordinal" : "cardinal";
-    const ruleOptions: Intl.PluralRulesOptions = { type };
-    const numericOptions = ["minimumIntegerDigits", "minimumFractionDigits", "maximumFractionDigits", "minimumSignificantDigits", "maximumSignificantDigits"];
-    for (const option of resolver.options.filter(value => value.name !== "type")) {
-      if (numericOptions.includes(option.name) && option.value.type === "literal" && option.value.value.trim() && Number.isFinite(Number(option.value.value))) {
-        Object.assign(ruleOptions, { [option.name]: Number(option.value.value) });
-      } else knownType = false;
-    }
-    let rules: Intl.PluralRules | undefined;
-    try {
-      if (knownType && Intl.PluralRules.supportedLocalesOf(locale).length) rules = new Intl.PluralRules(locale, ruleOptions);
-    } catch { /* Unknown locale: offer categories without guessing an English rule. */ }
-    const values = rules ? rules.resolvedOptions().pluralCategories : categories;
+    // Unknown locale or runtime options: offer categories without guessing an English rule.
+    const plural = pluralRules(name, declarations, locale);
+    const rules = plural?.rules;
+    const type = plural?.type ?? "cardinal";
+    const values = plural ? plural.categories : categories;
     const samples = new Map<string, number[]>();
     if (rules) for (const number of [...Array.from({ length: 201 }, (_, index) => index), 0.1, 0.2, 1.5, 2.5, 1000, 1000000]) {
       const category = rules.select(number);

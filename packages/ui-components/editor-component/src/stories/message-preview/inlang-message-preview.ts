@@ -2,7 +2,7 @@ import type { Declaration, MessageRow, Pattern, VariantRow } from "@inlang/sdk";
 import { LitElement, css, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { tokens, partStyles } from "../../styling/tokens.js";
-import { matchValue, resolveInputName } from "../../helper/declarations.js";
+import { resolveInputVariable } from "@inlang/sdk/browser";
 import {
 	previewInputs,
 	type PreviewInput,
@@ -200,7 +200,8 @@ export default class InlangMessagePreview extends LitElement {
 	}
 
 	private _inputs(): PreviewInput[] {
-		const messages: Array<{ message: MessageLike; variants: VariantRow[] }> = [];
+		const messages: Array<{ message: MessageLike; variants: VariantRow[] }> =
+			[];
 		if (this.message)
 			messages.push({ message: this.message, variants: this._variants });
 		if (this.reference)
@@ -276,7 +277,9 @@ export default class InlangMessagePreview extends LitElement {
 				declaration.value.arg.name === name
 		);
 		if (!plural) return [];
-		const numbers = Object.values(pluralExamples(this._locale)).map((example) => Number(/\d+(?:\.\d+)?/.exec(example)?.[0]));
+		const numbers = Object.values(pluralExamples(this._locale)).map((example) =>
+			Number(/\d+(?:\.\d+)?/.exec(example)?.[0])
+		);
 		return [...new Set(numbers.filter((value) => Number.isFinite(value)))];
 	}
 
@@ -285,19 +288,32 @@ export default class InlangMessagePreview extends LitElement {
 		switch (input.kind) {
 			case "number":
 				return html`${this._numberChips(name).length
-					? html`<span class="chips" role="group" aria-label=${`Example values for ${name}`}>${this._numberChips(name).map(
-							(number) => html`<button type="button" part="chip" aria-pressed=${value === number} @click=${() => this._set(name, number)}>${number}</button>`
-						)}</span>`
-					: nothing}<input
-					type="number"
-					step="any"
-					inputmode="decimal"
-					.value=${value === undefined || value === null ? "" : String(value)}
-					@input=${(e: Event) => {
-						const raw = (e.target as HTMLInputElement).value;
-						this._set(name, raw === "" ? undefined : Number(raw));
-					}}
-				/>`;
+						? html`<span
+								class="chips"
+								role="group"
+								aria-label=${`Example values for ${name}`}
+								>${this._numberChips(name).map(
+									(number) =>
+										html`<button
+											type="button"
+											part="chip"
+											aria-pressed=${value === number}
+											@click=${() => this._set(name, number)}
+										>
+											${number}
+										</button>`
+								)}</span
+							>`
+						: nothing}<input
+						type="number"
+						step="any"
+						inputmode="decimal"
+						.value=${value === undefined || value === null ? "" : String(value)}
+						@input=${(e: Event) => {
+							const raw = (e.target as HTMLInputElement).value;
+							this._set(name, raw === "" ? undefined : Number(raw));
+						}}
+					/>`;
 			case "date":
 			case "datetime":
 				return html`<input
@@ -396,10 +412,9 @@ export default class InlangMessagePreview extends LitElement {
 				? (this.message?.selectors ?? [])
 						.map(({ name }) => {
 							const match = target.variant!.matches.find((m) => m.key === name);
-							const value = match ? matchValue(match) : "*";
-							return value === "*"
-								? `any ${resolveInputName(name, this.declarations) ?? name}`
-								: value;
+							return match?.type === "literal-match"
+								? match.value
+								: `any ${resolveInputVariable(name, this.declarations)}`;
 						})
 						.join(" · ")
 				: undefined;

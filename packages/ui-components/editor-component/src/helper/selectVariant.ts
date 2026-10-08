@@ -1,13 +1,15 @@
 import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import {
 	isNumericKey,
-	matchFor,
+	pluralRules,
 	resolveAnnotation,
-	pluralResolver,
-} from "./declarations.js";
+} from "@inlang/sdk/browser";
+import { matchFor } from "./declarations.js";
 import { resolveValue } from "./resolveValue.js";
 
-export type SelectVariantArgs<V extends Pick<VariantRow, "matches"> = VariantRow> = {
+export type SelectVariantArgs<
+	V extends Pick<VariantRow, "matches"> = VariantRow,
+> = {
 	message: Pick<MessageRow, "selectors">;
 	variants: readonly V[];
 	declarations?: readonly Declaration[];
@@ -90,7 +92,7 @@ function keyRanker(
 		let category: string | undefined;
 		try {
 			category = (
-				pluralResolver(annotation, locale)?.rules ??
+				pluralRules(name, declarations, locale)?.rules ??
 				new Intl.PluralRules(locale)
 			).select(number);
 		} catch {

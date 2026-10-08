@@ -1,9 +1,6 @@
 import type { Declaration, MessageRow, Pattern, VariantRow } from "@inlang/sdk";
-import {
-	literalKeys,
-	resolveAnnotation,
-	resolveInputName,
-} from "./declarations.js";
+import { resolveAnnotation, resolveInputVariable } from "@inlang/sdk/browser";
+import { literalKeys } from "./declarations.js";
 
 export type PreviewInputKind =
 	| "number"
@@ -43,7 +40,8 @@ export function previewInputs(
 		if (own) functions.add(own.name);
 		for (const declaration of declarations) {
 			if (declaration.type !== "local-variable") continue;
-			if (resolveInputName(declaration.name, declarations) !== name) continue;
+			if (resolveInputVariable(declaration.name, declarations) !== name)
+				continue;
 			const annotation = resolveAnnotation(declaration.name, declarations);
 			if (annotation) functions.add(annotation.name);
 		}
@@ -53,7 +51,7 @@ export function previewInputs(
 					part.type === "expression" &&
 					part.annotation &&
 					part.arg.type === "variable-reference" &&
-					resolveInputName(part.arg.name, declarations) === name
+					resolveInputVariable(part.arg.name, declarations) === name
 				) {
 					functions.add(part.annotation.name);
 				}
@@ -64,7 +62,7 @@ export function previewInputs(
 			const withTime = declarations.some(
 				(d) =>
 					d.type === "local-variable" &&
-					resolveInputName(d.name, declarations) === name &&
+					resolveInputVariable(d.name, declarations) === name &&
 					resolveAnnotation(d.name, declarations)?.options?.some(
 						(o) => o.name === "timeStyle" || o.name === "hour"
 					)
@@ -80,7 +78,8 @@ export function previewInputs(
 		let isSelector = false;
 		for (const { message, variants } of messages) {
 			for (const selector of message.selectors ?? []) {
-				if (resolveInputName(selector.name, declarations) !== name) continue;
+				if (resolveInputVariable(selector.name, declarations) !== name)
+					continue;
 				isSelector = true;
 				for (const key of literalKeys(selector.name, variants)) {
 					if (!selectorKeys.includes(key)) selectorKeys.push(key);

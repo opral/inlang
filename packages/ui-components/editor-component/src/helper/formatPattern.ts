@@ -6,7 +6,7 @@ import type {
 	Pattern,
 	VariantRow,
 } from "@inlang/sdk";
-import { resolveAnnotation } from "./declarations.js";
+import { resolveAnnotation } from "@inlang/sdk/browser";
 import { resolveValue } from "./resolveValue.js";
 import { selectVariant } from "./selectVariant.js";
 

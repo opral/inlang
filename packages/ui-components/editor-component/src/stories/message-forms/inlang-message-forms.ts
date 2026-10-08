@@ -1,16 +1,14 @@
 import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
+import {
+	isNumericKey,
+	matchValue,
+	missingVariants,
+	selectorGroups,
+} from "@inlang/sdk/browser";
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { tokens } from "../../styling/tokens.js";
-import {
-	isNumericKey,
-	matchFor,
-	matchValue,
-	type Match,
-	type PluralResolver,
-} from "../../helper/declarations.js";
-import { requiredForms } from "../../helper/requiredForms.js";
-import { selectorGroups } from "../../helper/selectorGroups.js";
+import type { Match } from "../../helper/declarations.js";
 import { pluralExamples } from "../../helper/pluralExamples.js";
 import { languageName } from "../../helper/languageName.js";
 import patternToString from "../../helper/patternToString.js";
@@ -21,7 +19,7 @@ type SelectorInfo = {
 	names: string[];
 	/** Display name: the input variable a selector reads from ("count" for "countPlural"). */
 	label: string;
-	plural?: PluralResolver;
+	plural?: { type: "cardinal" | "ordinal"; categories: string[] };
 	keys: string[];
 	examples: Record<string, string>;
 	values(key: string): Record<string, string>;
@@ -44,10 +42,11 @@ export type AddVariantEventDetail = { matches: Match[] };
  *
  * An exact number next to a plural category of the same input (ICU
  * `=0 {…} one {…} other {…}`, two selectors in the model) is shown as ONE
- * choice, see `selectorGroups`.
+ * choice, see `selectorGroups` of `@inlang/sdk`.
  *
- * Required forms (see `requiredForms`) without a variant render as
- * "+ Add form" buttons. Narrow containers scroll horizontally with a sticky
+ * Forms the locale needs (`missingVariants` of `@inlang/sdk`, the rule behind
+ * the `missing-variant` check) render as "+ Add form" buttons, other empty
+ * combinations as a quiet "+ Add". Narrow containers scroll horizontally with a sticky
  * first column.
  *
  * @fires select-variant - `{ variantId }` when a form is clicked.
@@ -294,33 +293,38 @@ export default class InlangMessageForms extends LitElement {
 		return this.locale ?? this.message?.locale ?? "en";
 	}
 
+	private get _message() {
+		return this.message ? { ...this.message, locale: this._locale } : undefined;
+	}
+
+	private get _options() {
+		return {
+			variants: this._variants,
+			referenceVariants: this.referenceVariants,
+		};
+	}
+
 	private _infos(): SelectorInfo[] {
-		if (!this.message) return [];
-		return selectorGroups(
-			this.message,
-			this.declarations,
-			this._locale,
-			this._variants,
-			this.referenceVariants
-		).map((group) => ({
-			names: group.names,
-			label: group.input,
-			plural: group.plural,
-			keys: group.keys,
-			values: group.values,
-			keyOf: group.keyOf,
-			examples: group.plural
-				? pluralExamples(this._locale, group.plural.type)
-				: {},
-		}));
+		if (!this._message) return [];
+		return selectorGroups(this._message, this.declarations, this._options).map(
+			(group) => ({
+				names: group.names,
+				label: group.input,
+				plural: group.plural,
+				keys: group.keys,
+				values: group.values,
+				keyOf: group.keyOf,
+				examples: group.plural
+					? pluralExamples(this._locale, group.plural.type)
+					: {},
+			})
+		);
 	}
 
 	private _find(combination: Record<string, string>): VariantRow | undefined {
 		const names = Object.keys(combination);
 		return this._variants.find((variant) =>
-			names.every(
-				(name) => matchValue(matchFor(variant, name)) === combination[name]
-			)
+			names.every((name) => matchValue(variant, name) === combination[name])
 		);
 	}
 
@@ -342,16 +346,15 @@ export default class InlangMessageForms extends LitElement {
 		);
 	}
 
-	private _required(): Set<string> {
-		if (!this.message) return new Set();
-		return new Set(
-			requiredForms(
-				this.message,
-				this.declarations,
-				this._locale,
-				this._variants,
-				this.referenceVariants
-			).map((form) => JSON.stringify(form.map(matchValue)))
+	/** The forms the locale needs that no variant covers (as in the `missing-variant` check). */
+	private _missing(): Match[][] {
+		if (!this._message) return [];
+		return missingVariants(this._message, this.declarations, this._options);
+	}
+
+	private _formKey(values: (selector: string) => string): string {
+		return JSON.stringify(
+			(this.message?.selectors ?? []).map(({ name }) => values(name))
 		);
 	}
 
@@ -404,12 +407,9 @@ export default class InlangMessageForms extends LitElement {
 						></inlang-pattern-view>`}
 			</button>`;
 		}
-		const key = JSON.stringify(
-			(this.message?.selectors ?? []).map(
-				({ name }) => combination[name] ?? "*"
-			)
+		const isRequired = required.has(
+			this._formKey((name) => combination[name] ?? "*")
 		);
-		const isRequired = required.has(key);
 		return html`<button
 			type="button"
 			class=${isRequired ? "form missing" : "form optional"}
@@ -453,7 +453,12 @@ export default class InlangMessageForms extends LitElement {
 	override render() {
 		const selectors = this.message?.selectors ?? [];
 		const infos = this._infos();
-		const required = this._required();
+		const missing = this._missing();
+		const required = new Set(
+			missing.map((form) =>
+				this._formKey((name) => matchValue({ matches: form }, name))
+			)
+		);
 		const caption = this._caption(infos);
 		const hasCaptionSlot = !!this.querySelector(":scope > [slot=caption]");
 		const captionTemplate = html`<p
@@ -515,7 +520,7 @@ export default class InlangMessageForms extends LitElement {
 		const fixedCombination = this._combination(fixed);
 
 		return html`${captionTemplate}
-			${leading.map((info) => this._tabs(info, fixed, required, infos))}
+			${leading.map((info) => this._tabs(info, fixed, missing, infos))}
 			<div class="scroll">
 				<table
 					part="table"
@@ -581,11 +586,10 @@ export default class InlangMessageForms extends LitElement {
 	private _tabs(
 		info: SelectorInfo,
 		fixed: Map<SelectorInfo, string>,
-		required: Set<string>,
+		missingForms: Match[][],
 		infos: SelectorInfo[]
 	) {
 		const id = info.names[0]!;
-		const selectors = this.message?.selectors ?? [];
 		return html`<div>
 			<span class="tabs-label" id=${`tabs-${id}`}>${info.label}</span>
 			<div
@@ -595,32 +599,17 @@ export default class InlangMessageForms extends LitElement {
 				aria-labelledby=${`tabs-${id}`}
 			>
 				${info.keys.map((key) => {
-					const missing = [...required].filter((form) => {
-						const values = JSON.parse(form) as string[];
-						const byName = (name: string) =>
-							values[
-								selectors.findIndex((selector) => selector.name === name)
-							]!;
-						const keyIn = (other: SelectorInfo) =>
-							other.keyOf({
-								matches: other.names.map((name) => {
-									const value = byName(name);
-									return value === "*"
-										? { type: "catchall-match", key: name }
-										: { type: "literal-match", key: name, value };
-								}),
-							});
-						if (keyIn(info) !== key) return false;
-						for (const leading of infos.slice(0, -2)) {
-							if (leading !== info && keyIn(leading) !== fixed.get(leading))
-								return false;
-						}
-						const combination: Record<string, string> = {};
-						selectors.forEach(
-							(selector, index) => (combination[selector.name] = values[index]!)
-						);
-						return !this._find(combination);
-					}).length;
+					const missing = missingForms.filter(
+						(form) =>
+							info.keyOf({ matches: form }) === key &&
+							infos
+								.slice(0, -2)
+								.every(
+									(leading) =>
+										leading === info ||
+										leading.keyOf({ matches: form }) === fixed.get(leading)
+								)
+					).length;
 					return html`<button
 						type="button"
 						aria-pressed=${fixed.get(info) === key ? "true" : "false"}
