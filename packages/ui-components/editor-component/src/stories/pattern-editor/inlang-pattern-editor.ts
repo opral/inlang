@@ -96,6 +96,13 @@ export default class InlangPatternEditor extends LitElement {
 	@state()
 	_patternState: Pattern | undefined;
 
+	/**
+	 * Patterns this editor emitted recently. Hosts that save asynchronously pass
+	 * them back one by one while the user keeps typing; those echoes are older
+	 * than the content and must not replace it.
+	 */
+	private _emitted: string[] = [];
+
 	//disable shadow root -> because of contenteditable selection API
 	override createRenderRoot() {
 		return this;
@@ -113,11 +120,15 @@ export default class InlangPatternEditor extends LitElement {
 
 	// update editor state when variant prop changes
 	override updated(changedProperties: PropertyValues<this>) {
-		if (
+		const incoming = JSON.stringify(this.variant?.pattern ?? []);
+		if (changedProperties.has("variant") && this._emitted.includes(incoming)) {
+			// An echo of our own edit: drop it and everything emitted before it.
+			this._emitted = this._emitted.slice(this._emitted.indexOf(incoming) + 1);
+		} else if (
 			changedProperties.has("variant") &&
-			JSON.stringify(this.variant?.pattern ?? []) !==
-				JSON.stringify(this._patternState ?? [])
+			incoming !== JSON.stringify(this._patternState ?? [])
 		) {
+			this._emitted = [];
 			this._setEditorState();
 		} else if (
 			changedProperties.has("variant") &&
@@ -140,7 +151,9 @@ export default class InlangPatternEditor extends LitElement {
 		this.editor.update(
 			() => {
 				$setPattern(pattern);
+				// Without focus, keep no selection so Lexical doesn't pull focus back here.
 				if (caret !== null) $setCaretOffset(caret);
+				else $setSelection(null);
 			},
 			{ discrete: true, tag: SET_PATTERN_TAG }
 		);
@@ -266,6 +279,7 @@ export default class InlangPatternEditor extends LitElement {
 				)
 					return;
 				this._patternState = pattern;
+				this._emitted = [...this._emitted.slice(-49), JSON.stringify(pattern)];
 				this.dispatchEvent(
 					createChangeEvent({
 						entityId: this.variant.id,
