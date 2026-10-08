@@ -51,14 +51,14 @@ export default class InlangMessagePreview extends LitElement {
 				background: var(--_surface-muted);
 				border-radius: var(--_radius);
 				padding: 10px 12px;
-				font-size: 14px;
+				font-size: var(--_font-size-large);
 			}
 			:host([hidden]) {
 				display: none;
 			}
 			.heading {
 				margin: 0 0 8px;
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				font-weight: 500;
 				color: var(--_text-muted);
 			}
@@ -82,7 +82,7 @@ export default class InlangMessagePreview extends LitElement {
 				background: var(--_surface, #fff);
 				color: var(--_text);
 				font: inherit;
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				cursor: pointer;
 			}
 			.chips button[aria-pressed="true"] {
@@ -94,7 +94,7 @@ export default class InlangMessagePreview extends LitElement {
 				display: flex;
 				flex-direction: column;
 				gap: 3px;
-				font-size: 11px;
+				font-size: var(--_font-size-caption);
 				color: var(--_text-muted);
 				min-width: 0;
 			}
@@ -110,10 +110,10 @@ export default class InlangMessagePreview extends LitElement {
 				width: 100%;
 				min-width: 0;
 				border: 1px solid var(--_border-strong);
-				border-radius: 6px;
+				border-radius: var(--_radius-small);
 				padding: 0 8px;
 				font: inherit;
-				font-size: 13px;
+				font-size: var(--_font-size);
 				color: var(--_text);
 				background: var(--_surface);
 			}
@@ -138,7 +138,7 @@ export default class InlangMessagePreview extends LitElement {
 			}
 			.output .lang {
 				display: block;
-				font-size: 11px;
+				font-size: var(--_font-size-caption);
 				color: var(--_text-subtle);
 			}
 			.output .markup-bold {
@@ -146,7 +146,7 @@ export default class InlangMessagePreview extends LitElement {
 			}
 			.form {
 				margin: 6px 0 0;
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				color: var(--_text-subtle);
 			}
 			.none {

@@ -18,6 +18,9 @@ import { renderParts, type RenderItem } from "./renderParts.js";
  * @csspart placeholder - The placeholder shown for an empty pattern.
  * @cssprop --inlang-variable-color - Token text color (default #1d4ed8).
  * @cssprop --inlang-variable-background - Token background (default transparent).
+ * @cssprop --inlang-token-font-size - Token font size (default 0.86em).
+ * @cssprop --inlang-token-radius - Token corner radius (default 4px).
+ * @cssprop --inlang-font-mono - Token font family (default JetBrains Mono, monospace).
  * @cssprop --inlang-search-highlight - Background of text ranges a host registers
  *   as the `inlang-search` CSS custom highlight (default #fde68a). Text lives in
  *   the open shadow root, so walk `shadowRoot` to build the ranges.

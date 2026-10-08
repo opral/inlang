@@ -54,6 +54,13 @@ export type AddVariantEventDetail = { matches: Match[] };
  * @csspart tabs - A segmented control for a leading selector.
  * @csspart form - A form button.
  * @csspart form-selected - The selected form button.
+ * @cssprop --inlang-forms-row-min-height - Min. height of a form row (default 36px).
+ * @cssprop --inlang-forms-row-padding - Padding of a form row (default 8px 10px).
+ * @cssprop --inlang-control-height - Min. height of the segmented tabs (default 32px).
+ * @cssprop --inlang-radius-small - Corner radius of form rows (default 6px).
+ * @cssprop --inlang-font-size - Base text size (default 13px).
+ * @cssprop --inlang-font-size-small - Caption and labels (default 12px).
+ * @cssprop --inlang-font-size-caption - Example numbers (default 11px).
  * @csspart form-missing - An add-form button.
  */
 @customElement("inlang-message-forms")
@@ -63,7 +70,7 @@ export default class InlangMessageForms extends LitElement {
 		css`
 			:host {
 				display: block;
-				font-size: 13px;
+				font-size: var(--_font-size);
 				line-height: 1.45;
 			}
 			:host([hidden]) {
@@ -71,7 +78,7 @@ export default class InlangMessageForms extends LitElement {
 			}
 			.caption {
 				margin: 0 0 6px;
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				color: var(--_text-subtle);
 			}
 			button {
@@ -86,11 +93,11 @@ export default class InlangMessageForms extends LitElement {
 			.form {
 				display: block;
 				width: 100%;
-				min-height: 36px;
+				min-height: var(--inlang-forms-row-min-height, 36px);
 				border: 0;
 				background: var(--_surface);
-				border-radius: 6px;
-				padding: 8px 10px;
+				border-radius: var(--_radius-small);
+				padding: var(--inlang-forms-row-padding, 8px 10px);
 				text-align: left;
 				color: var(--_text-muted);
 			}
@@ -115,13 +122,13 @@ export default class InlangMessageForms extends LitElement {
 				font-style: italic;
 			}
 			.label {
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				color: var(--_text-muted);
 			}
 			.label small,
 			th small {
 				display: block;
-				font-size: 11px;
+				font-size: var(--_font-size-caption);
 				font-weight: 400;
 				color: var(--_text-subtle);
 			}
@@ -154,7 +161,7 @@ export default class InlangMessageForms extends LitElement {
 				border: 0;
 				background: var(--_surface);
 				padding: 0 12px;
-				min-height: 32px;
+				min-height: var(--inlang-control-height, 32px);
 				color: var(--_text-muted);
 			}
 			.tabs button + button {
@@ -172,7 +179,7 @@ export default class InlangMessageForms extends LitElement {
 			}
 			.tabs-label {
 				display: block;
-				font-size: 11px;
+				font-size: var(--_font-size-caption);
 				color: var(--_text-subtle);
 				margin-bottom: 4px;
 			}
@@ -196,7 +203,7 @@ export default class InlangMessageForms extends LitElement {
 			thead th {
 				border-top: 0;
 				padding: 0 10px 6px;
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				font-weight: 600;
 				color: var(--_text-muted);
 				vertical-align: bottom;
@@ -221,7 +228,7 @@ export default class InlangMessageForms extends LitElement {
 				white-space: nowrap;
 			}
 			thead th.corner {
-				font-size: 11px;
+				font-size: var(--_font-size-caption);
 				font-weight: 400;
 				color: var(--_text-subtle);
 			}
@@ -231,7 +238,7 @@ export default class InlangMessageForms extends LitElement {
 				z-index: 1;
 				background: var(--_surface);
 				padding: 10px 10px 8px;
-				font-size: 12px;
+				font-size: var(--_font-size-small);
 				font-weight: 400;
 				color: var(--_text-muted);
 			}

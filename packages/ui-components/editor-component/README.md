@@ -43,6 +43,14 @@ Components inherit the font of the page and use a neutral zinc palette. Override
 | `--inlang-markup-color` / `--inlang-markup-background` | `#52525b` / `#f4f4f5` | unknown markup tags |
 | `--inlang-warning` | `#b45309` | "+ Add form" |
 | `--inlang-font-mono` | JetBrains Mono, ui-monospace | tokens |
+| `--inlang-radius` / `--inlang-radius-small` | `8px` / `6px` | preview / cards, buttons and inputs |
+| `--inlang-font-size-large` / `--inlang-font-size` / `--inlang-font-size-small` / `--inlang-font-size-caption` | `14px` / `13px` / `12px` / `11px` | message preview and message forms text sizes |
+| `--inlang-token-font-size` / `--inlang-token-radius` | `0.86em` / `4px` | `{variable}` tokens and unknown-markup markers (editor and view) |
+| `--inlang-control-height` | `32px` | min. height of the tabs in `<inlang-message-forms>` |
+| `--inlang-forms-row-min-height` / `--inlang-forms-row-padding` | `36px` / `8px 10px` | form rows of `<inlang-message-forms>` |
+| `--inlang-popover-font-size` / `--inlang-popover-radius` / `--inlang-popover-shadow` | `13px` / `8px` (toolbar), `10px` (suggestions) / soft shadow | selection toolbar and `{` suggestions of `<inlang-pattern-editor>` |
+
+The pattern editor has its own border and hover/focus properties, see below. Together they are enough to match a host design system (Parrot maps them onto Figma's `--figma-color-*` tokens: 11px type, 1px borders, 5px radius).
 
 ### `<inlang-pattern-view>`
 
@@ -73,7 +81,7 @@ Lexical-based editor for a variant's pattern (light DOM). Expressions and markup
 
 Methods: `insertExpression(name: string)` inserts `{name}` at the caret (or at the end) and focuses the editor; `focus()`.
 Events: `change` (`ChangeEventDetail` with the updated variant), `pattern-editor-focus`, `pattern-editor-blur`.
-Styling: all styles are scoped to the element. Custom properties: `--inlang-pattern-padding` (`14px 12px`), `--inlang-pattern-min-height` (`44px`), `--inlang-pattern-background` (`#fff`), `--inlang-pattern-hover-background`, `--inlang-pattern-font-size` (`14px`), `--inlang-pattern-line-height`, `--inlang-pattern-color`, `--inlang-pattern-focus-ring`.
+Styling: all styles are scoped to the element. Custom properties: `--inlang-pattern-padding` (`14px 12px`), `--inlang-pattern-min-height` (`44px`), `--inlang-pattern-background` (`#fff`), `--inlang-pattern-hover-background`, `--inlang-pattern-font-size` (`14px`), `--inlang-pattern-line-height`, `--inlang-pattern-color`, `--inlang-pattern-focus-ring` (a box shadow; `none` removes it), `--inlang-pattern-border-width` (`0`), `--inlang-pattern-border-color` (`transparent`), `--inlang-pattern-hover-border-color` and `--inlang-pattern-focus-border-color` (both default to the border color), `--inlang-pattern-border-radius` (`0`). The border is part of the editable area: its padding and min-height include it, and the placeholder lines up with the text.
 
 ```html
 <inlang-pattern-editor

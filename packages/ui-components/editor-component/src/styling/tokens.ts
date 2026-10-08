@@ -25,6 +25,13 @@ export const tokens = css`
 		--_markup-bg: var(--inlang-markup-background, #f4f4f5);
 		--_warning: var(--inlang-warning, #b45309);
 		--_radius: var(--inlang-radius, 8px);
+		--_radius-small: var(--inlang-radius-small, 6px);
+		--_font-size-large: var(--inlang-font-size-large, 14px);
+		--_font-size: var(--inlang-font-size, 13px);
+		--_font-size-small: var(--inlang-font-size-small, 12px);
+		--_font-size-caption: var(--inlang-font-size-caption, 11px);
+		--_token-font-size: var(--inlang-token-font-size, 0.86em);
+		--_token-radius: var(--inlang-token-radius, 4px);
 		--_mono: var(
 			--inlang-font-mono,
 			"JetBrains Mono",
@@ -47,10 +54,10 @@ export const tokens = css`
 export const partStyles = css`
 	.variable {
 		font-family: var(--_mono);
-		font-size: 0.86em;
+		font-size: var(--_token-font-size);
 		color: var(--_variable);
 		background: var(--_variable-bg);
-		border-radius: 4px;
+		border-radius: var(--_token-radius);
 		white-space: nowrap;
 	}
 	.markup-bold {
@@ -71,7 +78,7 @@ export const partStyles = css`
 		color: var(--_markup);
 		background: var(--_markup-bg);
 		border: 1px solid var(--_border);
-		border-radius: 4px;
+		border-radius: var(--_token-radius);
 		padding: 0 3px;
 		margin: 0 1px;
 		vertical-align: 0.1em;

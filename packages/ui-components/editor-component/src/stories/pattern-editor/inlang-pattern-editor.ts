@@ -21,6 +21,7 @@ import {
 import { registerPlainText } from "@lexical/plain-text";
 import { mergeRegister } from "@lexical/utils";
 import { createChangeEvent } from "../../helper/event.js";
+import { EchoTracker } from "../../helper/echoTracker.js";
 import {
 	$caretQuery,
 	$createPatternTokenNode,
@@ -91,6 +92,17 @@ const theme = {
  * @cssprop --inlang-pattern-font-size - Font size (default 14px).
  * @cssprop --inlang-pattern-color - Text color (default #242424).
  * @cssprop --inlang-pattern-focus-ring - Box shadow when focused.
+ * @cssprop --inlang-pattern-border-width - Border width of the editable area (default 0).
+ * @cssprop --inlang-pattern-border-color - Border color (default transparent).
+ * @cssprop --inlang-pattern-hover-border-color - Border color on hover (default: the border color).
+ * @cssprop --inlang-pattern-focus-border-color - Border color when focused (default: the border color).
+ * @cssprop --inlang-pattern-border-radius - Corner radius of the editable area (default 0).
+ * @cssprop --inlang-popover-font-size - Font size of the selection toolbar and suggestions (default 13px).
+ * @cssprop --inlang-popover-radius - Corner radius of the toolbar and suggestions (default 8px / 10px).
+ * @cssprop --inlang-popover-shadow - Shadow of the toolbar and suggestions.
+ * @cssprop --inlang-token-font-size - Font size of expression tokens (default 0.86em).
+ * @cssprop --inlang-token-radius - Corner radius of tokens (default 4px).
+ * @cssprop --inlang-font-mono - Font family of tokens (default JetBrains Mono, monospace).
  * @cssprop --inlang-variable-color - Expression token text color.
  * @cssprop --inlang-variable-background - Expression token background.
  */
@@ -144,7 +156,7 @@ export default class InlangPatternEditor extends LitElement {
 	 * them back one by one while the user keeps typing; those echoes are older
 	 * than the content and must not replace it.
 	 */
-	private _emitted: string[] = [];
+	private _echoes = new EchoTracker();
 
 	//disable shadow root -> because of contenteditable selection API
 	override createRenderRoot() {
@@ -164,14 +176,13 @@ export default class InlangPatternEditor extends LitElement {
 	// update editor state when variant prop changes
 	override updated(changedProperties: PropertyValues<this>) {
 		const incoming = JSON.stringify(this.variant?.pattern ?? []);
-		if (changedProperties.has("variant") && this._emitted.includes(incoming)) {
-			// An echo of our own edit: drop it and everything emitted before it.
-			this._emitted = this._emitted.slice(this._emitted.indexOf(incoming) + 1);
+		if (changedProperties.has("variant") && this._echoes.consume(incoming)) {
+			// An echo of our own edit: dropped together with everything emitted before it.
 		} else if (
 			changedProperties.has("variant") &&
 			incoming !== JSON.stringify(this._patternState ?? [])
 		) {
-			this._emitted = [];
+			this._echoes.clear();
 			this._setEditorState();
 		} else if (
 			changedProperties.has("variant") &&
@@ -340,7 +351,7 @@ export default class InlangPatternEditor extends LitElement {
 				)
 					return;
 				this._patternState = pattern;
-				this._emitted = [...this._emitted.slice(-49), JSON.stringify(pattern)];
+				this._echoes.record(JSON.stringify(pattern));
 				this.dispatchEvent(
 					createChangeEvent({
 						entityId: this.variant.id,
@@ -553,7 +564,7 @@ export default class InlangPatternEditor extends LitElement {
 	 * host undoes an edit. The content is replaced in place and the caret kept, so focus stays.
 	 */
 	forgetEdits() {
-		this._emitted = [];
+		this._echoes.clear();
 	}
 
 	/** Focuses the editable area. */
@@ -597,6 +608,9 @@ export default class InlangPatternEditor extends LitElement {
 					font-size: var(--inlang-pattern-font-size, 14px);
 					line-height: var(--inlang-pattern-line-height, 1.5);
 					color: var(--inlang-pattern-color, #242424);
+					border: var(--inlang-pattern-border-width, 0px) solid
+						var(--inlang-pattern-border-color, transparent);
+					border-radius: var(--inlang-pattern-border-radius, 0);
 					outline: none;
 					white-space: pre-wrap;
 					overflow-wrap: anywhere;
@@ -605,10 +619,20 @@ export default class InlangPatternEditor extends LitElement {
 					margin: 0;
 				}
 				inlang-pattern-editor .inlang-pattern-editor-contenteditable:focus {
+					border-color: var(
+						--inlang-pattern-focus-border-color,
+						var(--inlang-pattern-border-color, transparent)
+					);
 					box-shadow: var(
 						--inlang-pattern-focus-ring,
 						0 0 0 var(--sl-focus-ring-width, 3px)
 							var(--sl-input-focus-ring-color, rgb(37 99 235 / 0.2))
+					);
+				}
+				inlang-pattern-editor .inlang-pattern-editor-contenteditable:hover:not(:focus) {
+					border-color: var(
+						--inlang-pattern-hover-border-color,
+						var(--inlang-pattern-border-color, transparent)
 					);
 				}
 				inlang-pattern-editor .inlang-pattern-editor-contenteditable:hover {
@@ -622,6 +646,8 @@ export default class InlangPatternEditor extends LitElement {
 					color: var(--inlang-text-subtle, #71717a);
 					position: absolute;
 					inset: 0;
+					/* the same box as the editable area, so the placeholder sits where the text starts */
+					border: var(--inlang-pattern-border-width, 0px) solid transparent;
 					padding: var(--inlang-pattern-padding, 14px 12px);
 					font-size: var(--inlang-pattern-font-size, 14px);
 					line-height: var(--inlang-pattern-line-height, 1.5);
@@ -660,12 +686,12 @@ export default class InlangPatternEditor extends LitElement {
 						Menlo,
 						monospace
 					);
-					border-radius: 4px;
+					border-radius: var(--inlang-token-radius, 4px);
 					white-space: nowrap;
 					cursor: default;
 				}
 				inlang-pattern-editor .inlang-token-variable {
-					font-size: 0.86em;
+					font-size: var(--inlang-token-font-size, 0.86em);
 					color: var(--inlang-variable-color, #1d4ed8);
 					background: var(--inlang-variable-background, #eff6ff);
 					padding: 0 3px;
@@ -689,9 +715,9 @@ export default class InlangPatternEditor extends LitElement {
 					display: flex;
 					gap: 2px;
 					padding: 3px;
-					border-radius: 8px;
+					border-radius: var(--inlang-popover-radius, 8px);
 					background: var(--inlang-toolbar-background, #18181b);
-					box-shadow: 0 10px 24px -8px rgb(24 24 27 / 0.5);
+					box-shadow: var(--inlang-popover-shadow, 0 10px 24px -8px rgb(24 24 27 / 0.5));
 				}
 				inlang-pattern-editor .inlang-pattern-editor-toolbar.below {
 					transform: none;
@@ -701,7 +727,7 @@ export default class InlangPatternEditor extends LitElement {
 					background: transparent;
 					color: var(--inlang-toolbar-color, #fff);
 					font: inherit;
-					font-size: 13px;
+					font-size: var(--inlang-popover-font-size, 13px);
 					line-height: 1.3;
 					padding: 5px 9px;
 					border-radius: 5px;
@@ -720,11 +746,11 @@ export default class InlangPatternEditor extends LitElement {
 					margin-top: 4px;
 					min-width: 220px;
 					padding: 4px;
-					border-radius: 10px;
+					border-radius: var(--inlang-popover-radius, 10px);
 					background: var(--inlang-surface, #fff);
 					border: 1px solid var(--inlang-border, #e4e4e7);
-					box-shadow: 0 14px 36px -10px rgb(24 24 27 / 0.3);
-					font-size: 13px;
+					box-shadow: var(--inlang-popover-shadow, 0 14px 36px -10px rgb(24 24 27 / 0.3));
+					font-size: var(--inlang-popover-font-size, 13px);
 				}
 				inlang-pattern-editor .inlang-pattern-editor-suggest [role="option"] {
 					display: flex;
