@@ -50,7 +50,7 @@ The caller owns file collection, exclusions and source revision tracking. Includ
 
 ### Supported m-function usage
 
-The m-function matcher analyzes ESM JavaScript, JSX, TypeScript and TSX (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs` and `.mts`). CommonJS and dynamically evaluated code (`eval`/`Function`) are unsupported: `.cjs`/`.cts` files, `require()` and TypeScript CommonJS imports/exports make analysis incomplete. It retains static reads and function references, not just calls:
+The m-function matcher analyzes ESM JavaScript, JSX, TypeScript, TSX and Svelte (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.mts` and `.svelte`). CommonJS and dynamically evaluated code (`eval`/`Function`) are unsupported: `.cjs`/`.cts` files, `require()` and TypeScript CommonJS imports/exports make analysis incomplete. It retains static reads and function references, not just calls:
 
 ```ts
 m.welcome();
@@ -76,7 +76,9 @@ const alias = m;
 renderLabel(m);
 ```
 
-This release does not implement TypeScript data-flow analysis or resolve all module graphs. Reexports with a source module, TypeScript import assignments, and all dynamic/CommonJS imports are incomplete. Vue, Svelte and Astro files are unsupported and make the snapshot incomplete. Do not omit relevant unsupported files to obtain a complete result.
+Svelte files use the Svelte compiler parser. Both instance and module scripts (JavaScript or TypeScript), template expressions, blocks, snippets, component references and directives are analyzed. Dynamic references, external scripts, unsupported script languages and parse failures make analysis incomplete. No Svelte-specific configuration is needed: include `.svelte` files in the same complete source snapshot.
+
+This release does not implement TypeScript data-flow analysis or resolve all module graphs. Reexports with a source module, TypeScript import assignments, and all dynamic/CommonJS imports are incomplete. Vue and Astro files are unsupported and make the snapshot incomplete. Do not omit relevant unsupported files to obtain a complete result.
 
 The matcher also reports incomplete analysis for parse errors, a file over two million characters, or a snapshot over 10,000 files or 50 million characters. It does not silently skip these files.
 

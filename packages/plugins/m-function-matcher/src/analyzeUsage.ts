@@ -1,3 +1,4 @@
+import { parse as parseSvelte } from "svelte/compiler";
 import { parse } from "@babel/parser";
 import type { AnalyzeUsage, UsageAnalysis } from "@inlang/sdk";
 
@@ -15,7 +16,7 @@ const messageModule = (value: unknown): boolean =>
 	typeof value === "string" &&
 	/(?:^|\/)(?:messages(?:\/|\.|$)|paraglide(?:\/|$))/.test(value);
 
-/** Conservative JS/TS analysis. Unsupported files and object escapes withhold unused fixes. */
+/** Conservative JS/TS/Svelte analysis. Unsupported files and object escapes withhold unused fixes. */
 export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 	if (
 		files.length > 10_000 ||
@@ -36,11 +37,11 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 	const issues: { path: string; reason: string }[] = [];
 	for (const file of files) {
 		const unresolved = new Set<string>();
-		if (!/\.(?:(?:[jt]sx?|m[jt]s))$/i.test(file.path)) {
+		if (!/\.(?:[jt]sx?|m[jt]s|svelte)$/i.test(file.path)) {
 			issues.push({
 				path: file.path,
 				reason:
-					"Unsupported source format. Supply ESM JavaScript or TypeScript files.",
+					"Unsupported source format. Supply ESM JavaScript, TypeScript or Svelte files.",
 			});
 			continue;
 		}
@@ -51,17 +52,46 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 			});
 			continue;
 		}
-		let ast: Node;
+		let root: Node;
+		let programs: Node[];
 		try {
-			ast = parse(file.content, {
-				sourceType: "module",
-				plugins: [
-					...(/\.(?:tsx?|mts)$/i.test(file.path)
-						? ["typescript" as const]
-						: []),
-					"jsx",
-				],
-			}) as unknown as Node;
+			if (/\.svelte$/i.test(file.path)) {
+				root = parseSvelte(file.content, { modern: true }) as unknown as Node;
+				const scripts = [root.module, root.instance].filter(isNode);
+				programs = scripts.map((script) => script.content as Node);
+				for (const script of scripts) {
+					for (const attribute of script.attributes as Node[]) {
+						if (attribute.name === "src")
+							unresolved.add("External Svelte scripts cannot be analyzed.");
+						if (attribute.name === "lang") {
+							const value =
+								Array.isArray(attribute.value) && attribute.value.length === 1
+									? attribute.value[0]
+									: undefined;
+							if (
+								!isNode(value) ||
+								value.type !== "Text" ||
+								!["js", "javascript", "ts", "typescript"].includes(
+									value.data as string
+								)
+							)
+								unresolved.add("Unsupported Svelte script language.");
+						}
+					}
+				}
+			} else {
+				const ast = parse(file.content, {
+					sourceType: "module",
+					plugins: [
+						...(/\.(?:tsx?|mts)$/i.test(file.path)
+							? ["typescript" as const]
+							: []),
+						"jsx",
+					],
+				}) as unknown as Node;
+				root = ast.program as Node;
+				programs = [root];
+			}
 		} catch (error) {
 			issues.push({
 				path: file.path,
@@ -72,8 +102,9 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 		// Overcounting shadowed names is intentional: it can retain a message,
 		// whereas ignoring an ambiguous binding could delete one still in use.
 		const namespaces = new Set<string>(["m"]);
-		const program = ast.program as Node;
-		for (const statement of program.body as Node[]) {
+		for (const statement of programs.flatMap(
+			(program) => program.body as Node[]
+		)) {
 			if (statement.type === "ImportDeclaration") {
 				const source = (statement.source as Node).value;
 				if (statement.importKind === "type") continue;
@@ -116,13 +147,23 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				);
 		}
 		const stack: { node: Node; parent?: Node; key?: string }[] = [
-			{ node: program },
+			{ node: root },
 		];
 		while (stack.length) {
 			const { node, parent, key } = stack.pop()!;
 			if (node.type === "ImportDeclaration") continue;
+			const staticProperty =
+				parent &&
+				(parent.type === "MemberExpression" ||
+					parent.type === "OptionalMemberExpression") &&
+				key === "property" &&
+				!parent.computed;
+			const objectKey =
+				parent && key === "key" && !parent.computed && !parent.shorthand;
 			if (
 				node.type === "Identifier" &&
+				!staticProperty &&
+				!objectKey &&
 				[
 					"require",
 					"createRequire",
@@ -174,6 +215,24 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				);
 			}
 			if (
+				[
+					"Component",
+					"UseDirective",
+					"TransitionDirective",
+					"AnimateDirective",
+				].includes(node.type) &&
+				typeof node.name === "string"
+			) {
+				const [namespace, member] = node.name.split(".");
+				if (namespace && namespaces.has(namespace)) {
+					if (member) used.add(member);
+					else
+						unresolved.add(
+							"A Svelte message namespace escapes through a component or directive."
+						);
+				}
+			}
+			if (
 				node.type === "JSXMemberExpression" &&
 				isNode(node.object) &&
 				node.object.type === "JSXIdentifier" &&
@@ -194,17 +253,25 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				const object = identifier(node.object);
 				const propertyName = !node.computed
 					? identifier(node.property)
-					: isNode(node.property) && node.property.type === "StringLiteral"
+					: isNode(node.property) &&
+						  (node.property.type === "StringLiteral" ||
+								node.property.type === "Literal") &&
+						  typeof node.property.value === "string"
 						? node.property.value
 						: undefined;
-				if (propertyName === "require" || propertyName === "createRequire")
+				if (
+					(!object || !namespaces.has(object)) &&
+					(propertyName === "require" || propertyName === "createRequire")
+				)
 					unresolved.add("CommonJS loader references are unsupported.");
 				if (object && namespaces.has(object)) {
 					let id: string | undefined;
 					if (!node.computed) id = identifier(node.property);
 					else if (
 						isNode(node.property) &&
-						node.property.type === "StringLiteral"
+						(node.property.type === "StringLiteral" ||
+							node.property.type === "Literal") &&
+						typeof node.property.value === "string"
 					)
 						id = node.property.value as string;
 					else if (
@@ -248,6 +315,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 			}
 			for (const [childKey, value] of Object.entries(node)) {
 				if (
+					childKey === "css" ||
 					childKey === "loc" ||
 					childKey === "comments" ||
 					childKey.endsWith("Comments")

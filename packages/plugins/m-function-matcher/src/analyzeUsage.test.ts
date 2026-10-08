@@ -57,7 +57,7 @@ test.each([
 test("parse errors, unsupported formats and size limits are explicit", async () => {
 	for (const [content, path] of [
 		["m.", "app.ts"],
-		["<p>{m.key()}</p>", "app.svelte"],
+		["<p>{m.key()}</p>", "app.vue"],
 		[" ".repeat(2_000_001), "large.js"],
 	]) {
 		expect((await analyze(content!, path)).status).toBe("incomplete");
@@ -155,3 +155,13 @@ test.each([
 		expect((await analyze(code)).status).toBe("incomplete");
 	}
 );
+
+test("message keys named like loaders are static message references", async () => {
+	const result = await analyze(
+		`import { m } from './messages'; m.module(); m.exports(); m.require(); m.Function();`
+	);
+	expect(result.status).toBe("complete");
+	expect(new Set(result.usedBundleIds)).toEqual(
+		new Set(["module", "exports", "require", "Function"])
+	);
+});

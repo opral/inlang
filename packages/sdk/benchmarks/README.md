@@ -48,6 +48,7 @@ From the repository root:
 
 ```sh
 node --expose-gc packages/plugins/m-function-matcher/benchmarks/analyze-usage.mjs
+node --expose-gc packages/plugins/m-function-matcher/benchmarks/analyze-usage.mjs svelte
 ```
 
 This isolates parser/traversal costs from database costs. Each ESM TSX component includes a typed parameter, JSX and 40 static message references. The analyzer runs three times per size without an SDK cache.
@@ -60,9 +61,17 @@ This isolates parser/traversal costs from database costs. Each ESM TSX component
 
 All three completed and retained the expected number of IDs. The matcher refuses snapshots above 10,000 files or 50 million characters, and individual files above two million characters, with an explicit incomplete result.
 
+Svelte was profiled separately after adding its compiler parser. Each TypeScript component has 20 script references and 20 template references. All runs completed with the expected IDs.
+
+|  Files | Source size | Median analysis | Largest sample | Post-GC JS heap |
+| -----: | ----------: | --------------: | -------------: | --------------: |
+|    100 |    0.09 MiB |        48.14 ms |      106.91 ms |         8.0 MiB |
+|  1,000 |    0.93 MiB |       235.17 ms |      286.49 ms |         9.6 MiB |
+| 10,000 |    9.72 MiB |     2,067.35 ms |    2,154.06 ms |        19.0 MiB |
+
 ## Browser bundle cost
 
-The existing matcher bundle was about 19 KB minified / 7 KB gzip. Including Babel's JavaScript/TypeScript parser increases the bundle to about 330 KB minified / 88 KB gzip. The parser is bundled for browsers, with no filesystem or Node parser dependency. This is a one-time download/module-load cost, not an allocation for every project check.
+The existing matcher bundle was about 19 KB minified / 7 KB gzip. Including Babel's JavaScript/TypeScript parser increases the bundle to about 330 KB minified / 88 KB gzip. Adding the Svelte compiler parser brings the final bundle to 831,971 bytes minified / 213,406 bytes gzip (about 502 KB minified / 126 KB gzip more than Babel alone). Both parsers are bundled for browsers, with no filesystem or Node parser dependency. This is a one-time download/module-load cost, not an allocation for every project check.
 
 ## Implications
 

@@ -44,6 +44,8 @@ The plugin recognizes these patterns:
 
 ## Project checks
 
-The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript AST analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes.
+The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript and Svelte AST analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes.
 
 See the [SDK checks and fixes documentation](../../sdk/docs/checks.md) for source snapshot requirements, supported syntax, limits and programmatic usage. This capability is separate from the existing IDE reference matchers.
+
+Svelte analysis covers instance/module scripts (JavaScript or TypeScript) and template expressions, blocks, snippets, components and directives. Include `.svelte` files in the full source snapshot; no extra configuration is required. External scripts and unsupported script languages report incomplete analysis.
