@@ -205,6 +205,14 @@ test("a translation needs the reference's select values and exact numbers, not i
 			requiredVariants(german, genderPlural, { referenceVariants: reference })
 		)
 	).toEqual(["female", "male", "*"]);
+	// the reference's order first, then values only the translation has
+	expect(
+		selectorGroups(
+			message("de", ["gender"], [{ gender: "diverse" }, { gender: "female" }]),
+			genderPlural,
+			{ referenceVariants: reference }
+		)[0]!.keys
+	).toEqual(["female", "male", "diverse", "*"]);
 	expect(
 		values(
 			requiredVariants(message("de", ["countPlural"]), plural, {
