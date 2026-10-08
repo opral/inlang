@@ -50,7 +50,11 @@ The caller owns file collection, exclusions and source revision tracking. Includ
 
 ### Supported m-function usage
 
-The m-function matcher analyzes ESM JavaScript, JSX, TypeScript, TSX and Svelte (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.mts` and `.svelte`). CommonJS and dynamically evaluated code (`eval`/`Function`) are unsupported: `.cjs`/`.cts` files, `require()` and TypeScript CommonJS imports/exports make analysis incomplete. It retains static reads and function references, not just calls:
+The m-function matcher analyzes ESM JavaScript, JSX, TypeScript, TSX and Svelte (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.mts` and `.svelte`). CommonJS and dynamically evaluated code (`eval`/`Function`) are unsupported: `.cjs`/`.cts` files, `require()` and TypeScript CommonJS imports/exports make analysis incomplete.
+
+Known evaluator/loader references, indirect function-constructor access, and dynamic access to or escapes of global objects (`globalThis`, `window`, `self`, `global`, `parent`, `top`, `frames`, `opener`) also make analysis incomplete. These guards are conservative: passing a global object as a value or reading a non-message object’s `constructor` can withhold findings even when the application does not evaluate code. Possible global-object member aliases (such as `window`, `parent`, `top`, `contentWindow` and `defaultView`) also withhold findings. Timer references (`setTimeout`/`setInterval`) require inline function handlers: string handlers, aliases and handlers whose type is unresolved make analysis incomplete. Ordinary static global members and `typeof window` remain supported.
+
+It retains static reads and function references, not just calls:
 
 ```ts
 m.welcome();
@@ -203,4 +207,4 @@ const plugin: InlangPlugin = {
 };
 ```
 
-Return canonical stored bundle IDs, including references passed as functions. Return `incomplete` with issues whenever parsing or unresolved usage prevents a conclusion. The SDK unions usages across all installed analyzers; every analyzer must complete before unused findings are emitted. Analyzers should be pure and avoid mutating supplied inputs. A rejected analyzer is reported as incomplete and is retried on the next check.
+Return canonical stored bundle IDs, including references passed as functions. Return `incomplete` with issues whenever parsing or unresolved usage prevents a conclusion. The SDK unions usages across all installed analyzers; every analyzer must complete before unused findings are emitted. Analyzers must treat inputs as immutable: the SDK supplies frozen source records and an isolated, deeply frozen settings copy. Malformed runtime results and rejected analyzers are reported as incomplete and retried on the next check. The SDK validates and copies indexed result entries, normalizes issue metadata to `path` and `reason`, and isolates public result objects from its cache.

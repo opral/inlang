@@ -11,7 +11,15 @@ export async function checkProject(
 	const usage = await projectUsage(args.project, args.files, settings);
 	const result: CheckResult = {
 		diagnostics: [],
-		checks: [{ id: "missing-translation", status: "complete" }, usage.check],
+		checks: [
+			{ id: "missing-translation", status: "complete" },
+			{
+				...usage.check,
+				...(usage.check.issues
+					? { issues: usage.check.issues.map((issue) => ({ ...issue })) }
+					: {}),
+			},
+		],
 	};
 	const ignored = new Map<string, Set<string>>();
 	for (const { bundleId, locale } of args.ignoreMissingTranslations ?? []) {

@@ -45,6 +45,9 @@ test.each([
 	"export { m }",
 	"export * from './paraglide/messages'",
 	"globalThis.m.key()",
+	"globalThis['m'].key()",
+	'window["m"].key()',
+	"globalThis[`m`].key()",
 	"const x = { m }",
 	"m[someKey as string]()",
 	"const t = require('./messages'); t.key()",
@@ -164,4 +167,104 @@ test("message keys named like loaders are static message references", async () =
 	expect(new Set(result.usedBundleIds)).toEqual(
 		new Set(["module", "exports", "require", "Function"])
 	);
+});
+
+test.each([
+	"globalThis.eval('m.live()')",
+	"globalThis['eval']('m.live()')",
+	"globalThis.Function('return m.live()')()",
+	"globalThis['Function']('return m.live()')()",
+])(
+	"indirect dynamic evaluation withholds unused findings: %s",
+	async (code) => {
+		expect((await analyze(code)).status).toBe("incomplete");
+	}
+);
+
+test.each([
+	"const { eval: execute } = globalThis; execute('m.live()')",
+	"const { Function: Build } = globalThis; Build('return m.live()')()",
+	"const { m: messages } = globalThis; messages.live()",
+	"const { ['m']: messages } = globalThis; messages.live()",
+	"const run = ({}).constructor.constructor; run('return m.live()')()",
+	"Function.prototype.constructor('return m.live()')()",
+])(
+	"destructured namespaces and indirect constructors withhold findings: %s",
+	async (code) => {
+		expect((await analyze(code)).status).toBe("incomplete");
+	}
+);
+
+test.each([
+	"const key = 'm'; globalThis[key].live()",
+	"const key = 'm'; const messages = globalThis[key]; messages.live()",
+	"const key = 'm'; const {[key]: messages} = globalThis; messages.live()",
+	"const key = 'eval'; const {[key]: execute} = globalThis; execute('m.live()')",
+	"Reflect.get(globalThis, 'eval')('m.live()')",
+	"Object.getOwnPropertyDescriptor(window, 'eval').value('m.live()')",
+	"const browser = window; browser['m'].live()",
+])("dynamic global lookups and escapes withhold findings: %s", async (code) => {
+	expect((await analyze(code)).status).toBe("incomplete");
+});
+test("static ordinary global members do not make usage incomplete", async () => {
+	const result = await analyze(
+		"globalThis.console.log(m.live()); window['location'].href; self?.location; const options = {window: 'name'}; typeof window;"
+	);
+	expect(result.status).toBe("complete");
+	expect(result.usedBundleIds).toEqual(["live"]);
+});
+
+test.each([
+	"const key='m'; globalThis.window[key].live()",
+	"const key='m'; globalThis.globalThis[key].live()",
+	"const key='m'; const browser=globalThis.window; browser[key].live()",
+	"const key='m'; globalThis['globalThis'][key].live()",
+	"const key='m'; window.parent[key].live()",
+	"const key='m'; iframe.contentWindow[key].live()",
+	"const key='m'; document.defaultView[key].live()",
+])("possible global member aliases withhold findings: %s", async (code) => {
+	expect((await analyze(code)).status).toBe("incomplete");
+});
+
+test.each([
+	"const key='m'; parent[key].live()",
+	"const key='m'; top[key].live()",
+	"const key='m'; frames[key].live()",
+	"const key='m'; opener[key].live()",
+	"const key='m'; const browser=parent; browser[key].live()",
+	"const key='m'; const {contentWindow: browser}=iframe; browser[key].live()",
+	"const key='m'; const {defaultView: browser}=document; browser[key].live()",
+	"const key='m'; const {parent: browser}=frame; browser[key].live()",
+])(
+	"browser global identifiers and destructured aliases withhold findings: %s",
+	async (code) => {
+		expect((await analyze(code)).status).toBe("incomplete");
+	}
+);
+
+test.each([
+	"setTimeout('m.live()', 0)",
+	"setInterval('m.live()', 1000)",
+	"window.setTimeout('m.live()', 0)",
+	"window['setInterval']('m.live()', 1000)",
+	"const execute=setTimeout; execute('m.live()', 0)",
+	"const source='m.live()'; setTimeout(source, 0)",
+])("unresolved timer handlers withhold findings: %s", async (code) => {
+	expect((await analyze(code)).status).toBe("incomplete");
+});
+test("inline timer callbacks remain supported", async () => {
+	const result = await analyze(
+		"setTimeout(() => m.live(), 0); window.setInterval(function() { m.repeat(); }, 1000); m.setTimeout();"
+	);
+	expect(result.status).toBe("complete");
+	expect(new Set(result.usedBundleIds)).toEqual(
+		new Set(["live", "repeat", "setTimeout"])
+	);
+});
+
+test.each([
+	"const {setTimeout: later}=thing; later('m.live()', 0)",
+	"const {['setInterval']: repeat}=thing; repeat('m.live()', 1000)",
+])("destructured timer aliases withhold findings: %s", async (code) => {
+	expect((await analyze(code)).status).toBe("incomplete");
 });

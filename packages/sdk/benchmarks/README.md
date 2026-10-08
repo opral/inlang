@@ -42,6 +42,8 @@ Large revision sets use one metadata join rather than repeatedly scanning/joinin
 
 Whole-process memory is considerably larger than the JavaScript heap: the 25,000-bundle unused run had about 1,164 MiB RSS after fixture construction and 1,332 MiB after the checks/fix. This includes the native Lix engine, fixture storage, query allocations and retained allocator pages. The normal run had roughly 927 MiB before checks and 735 MiB afterward; RSS variation is not a measure of JavaScript allocations attributable to checks. Large in-memory catalogs still have a substantial process-memory cost.
 
+A separate post-QA sanity profile at 1,000 bundles confirmed cache reuse (one analyzer invocation before fixing), with 43.17 ms median warm scans, 1.49 ms median one-bundle refreshes and a 40.02 ms single deletion fix. The larger catalog tables above retain the original isolated measurements.
+
 ## Source-volume profile
 
 From the repository root:
@@ -51,13 +53,13 @@ node --expose-gc packages/plugins/m-function-matcher/benchmarks/analyze-usage.mj
 node --expose-gc packages/plugins/m-function-matcher/benchmarks/analyze-usage.mjs svelte
 ```
 
-This isolates parser/traversal costs from database costs. Each ESM TSX component includes a typed parameter, JSX and 40 static message references. The analyzer runs three times per size without an SDK cache.
+The source tables below were refreshed after the QA fixes, with no concurrent review tests/builds. This isolates parser/traversal costs from database costs. Each ESM TSX component includes a typed parameter, JSX and 40 static message references. The analyzer runs three times per size without an SDK cache.
 
 |  Files | Source size | Median analysis | Largest sample | Post-GC JS heap |
 | -----: | ----------: | --------------: | -------------: | --------------: |
-|    100 |    0.12 MiB |        12.42 ms |       49.06 ms |         5.7 MiB |
-|  1,000 |    1.29 MiB |       112.44 ms |      121.00 ms |         7.6 MiB |
-| 10,000 |   13.23 MiB |     1,622.83 ms |    2,252.17 ms |        21.6 MiB |
+|    100 |    0.12 MiB |        16.82 ms |       53.22 ms |         8.0 MiB |
+|  1,000 |    1.29 MiB |       127.26 ms |      160.96 ms |         9.9 MiB |
+| 10,000 |   13.23 MiB |     1,162.45 ms |    2,883.93 ms |        23.9 MiB |
 
 All three completed and retained the expected number of IDs. The matcher refuses snapshots above 10,000 files or 50 million characters, and individual files above two million characters, with an explicit incomplete result.
 
@@ -65,13 +67,13 @@ Svelte was profiled separately after adding its compiler parser. Each TypeScript
 
 |  Files | Source size | Median analysis | Largest sample | Post-GC JS heap |
 | -----: | ----------: | --------------: | -------------: | --------------: |
-|    100 |    0.09 MiB |        48.14 ms |      106.91 ms |         8.0 MiB |
-|  1,000 |    0.93 MiB |       235.17 ms |      286.49 ms |         9.6 MiB |
-| 10,000 |    9.72 MiB |     2,067.35 ms |    2,154.06 ms |        19.0 MiB |
+|    100 |    0.09 MiB |        29.29 ms |       64.37 ms |         8.0 MiB |
+|  1,000 |    0.93 MiB |       206.47 ms |      230.14 ms |         9.6 MiB |
+| 10,000 |    9.72 MiB |     2,845.37 ms |    3,295.58 ms |        19.0 MiB |
 
 ## Browser bundle cost
 
-The existing matcher bundle was about 19 KB minified / 7 KB gzip. Including Babel's JavaScript/TypeScript parser increases the bundle to about 330 KB minified / 88 KB gzip. Adding the Svelte compiler parser brings the final bundle to 831,971 bytes minified / 213,406 bytes gzip (about 502 KB minified / 126 KB gzip more than Babel alone). Both parsers are bundled for browsers, with no filesystem or Node parser dependency. This is a one-time download/module-load cost, not an allocation for every project check.
+The existing matcher bundle was about 19 KB minified / 7 KB gzip. Including Babel's JavaScript/TypeScript parser increases the bundle to about 330 KB minified / 88 KB gzip. Adding the Svelte compiler parser brings the final bundle to 833,318 bytes minified / 213,822 bytes gzip (about 503 KB minified / 126 KB gzip more than Babel alone). Both parsers are bundled for browsers, with no filesystem or Node parser dependency. This is a one-time download/module-load cost, not an allocation for every project check.
 
 ## Implications
 

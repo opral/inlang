@@ -5,7 +5,7 @@ import type { InlangPlugin } from "../plugin/schema.js";
 import type { InlangProject } from "../project/api.js";
 import { checkProject } from "./checkProject.js";
 import { applyFix } from "./applyFix.js";
-import type { CheckDiagnostic, SourceFile } from "./types.js";
+import type { CheckDiagnostic, SourceFile, UsageAnalysis } from "./types.js";
 
 const cleanup: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -389,6 +389,167 @@ test("analyzer issues withhold fixes even if status incorrectly says complete", 
 				usedBundleIds: [],
 				issues: [{ path: "app.ts", reason: "Unresolved usage" }],
 			}),
+		},
+	]);
+	const result = await checkProject({ project, files });
+	expect(result.checks[1]?.status).toBe("incomplete");
+	expect(result.diagnostics.some((d) => d.checkId === "unused-message")).toBe(
+		false
+	);
+});
+
+test("plugin load failures remain incomplete when no analyzer is available", async () => {
+	const project = await setup([]);
+	vi.spyOn(project.errors, "get").mockResolvedValue([
+		new Error("Plugin failed to load"),
+	]);
+	const result = await checkProject({ project, files });
+	expect(result.checks[1]).toMatchObject({
+		status: "incomplete",
+		issues: [{ reason: "Project plugin loading reported errors." }],
+	});
+	expect(result.diagnostics.some((d) => d.checkId === "unused-message")).toBe(
+		false
+	);
+});
+
+test.each([
+	{ status: "complete", usedBundleIds: "old" },
+	{ status: "complete", usedBundleIds: [1] },
+	{ status: "invalid", usedBundleIds: [] },
+	{ status: "complete", usedBundleIds: [], issues: [{ reason: 1 }] },
+	null,
+])("invalid runtime analyzer output withholds findings: %j", async (output) => {
+	const project = await setup([
+		{ key: "invalid", analyzeUsage: () => output as unknown as UsageAnalysis },
+	]);
+	const result = await checkProject({ project, files });
+	expect(result.checks[1]?.status).toBe("incomplete");
+	expect(result.diagnostics.some((d) => d.checkId === "unused-message")).toBe(
+		false
+	);
+});
+test.each(["settings", "files"])(
+	"plugin mutation of %s cannot corrupt later checks",
+	async (target) => {
+		let observed = "";
+		const project = await setup([
+			{
+				key: "mutating",
+				analyzeUsage: ({ files, settings }) => {
+					if (target === "settings") settings.locales.length = 0;
+					else files[0]!.content = "";
+					return { status: "complete", usedBundleIds: [] };
+				},
+			},
+			{
+				key: "observing",
+				analyzeUsage: ({ files, settings }) => {
+					observed = files[0]!.content + settings.locales.join(",");
+					return { status: "complete", usedBundleIds: ["used"] };
+				},
+			},
+		]);
+		const result = await checkProject({ project, files });
+		expect(observed).toBe("m.used()en,de");
+		expect(result.checks[1]?.status).toBe("incomplete");
+		expect(result.diagnostics).toMatchObject([
+			{ checkId: "missing-translation", bundleId: "used", locale: "de" },
+		]);
+		expect((await project.settings.get()).locales).toEqual(["en", "de"]);
+		expect(files[0]!.content).toBe("m.used()");
+	}
+);
+test("caller mutations of result status cannot change cached analysis", async () => {
+	const project = await setup([
+		{
+			key: "uncertain",
+			analyzeUsage: () => ({
+				status: "incomplete",
+				usedBundleIds: [],
+				issues: [{ reason: "Dynamic reference" }],
+			}),
+		},
+	]);
+	const first = await checkProject({ project, files });
+	first.checks[1]!.status = "complete";
+	(first.checks[1]!.issues as { reason: string }[])[0]!.reason = "Changed";
+	const second = await checkProject({ project, files });
+	expect(second.checks[1]).toMatchObject({
+		status: "incomplete",
+		issues: [{ reason: "Dynamic reference" }],
+	});
+	expect(second.diagnostics.some((d) => d.checkId === "unused-message")).toBe(
+		false
+	);
+});
+
+test("normalizes plugin issues to serializable public metadata", async () => {
+	const project = await setup([
+		{
+			key: "extra",
+			analyzeUsage: () => ({
+				status: "incomplete",
+				usedBundleIds: [],
+				issues: [{ reason: "Dynamic reference", path: "app.ts", extra: 1n }],
+			}),
+		},
+	]);
+	const result = await checkProject({ project, files });
+	expect(result.checks[1]?.issues).toEqual([
+		{ reason: "Dynamic reference", path: "app.ts" },
+	]);
+	expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+});
+
+test("uses validated indexed plugin entries despite custom array methods", async () => {
+	const usedBundleIds = ["old"];
+	Object.defineProperty(usedBundleIds, Symbol.iterator, {
+		value: function* () {
+			yield "used";
+		},
+	});
+	Object.defineProperty(usedBundleIds, "every", { value: () => true });
+	const issues = [{ reason: "Unresolved" }];
+	issues.map = (() => [
+		{ reason: "Unresolved", extra: 1n },
+	]) as typeof issues.map;
+	const project = await setup([
+		{
+			key: "custom",
+			analyzeUsage: () => ({ status: "complete", usedBundleIds }),
+		},
+	]);
+	const result = await checkProject({ project, files });
+	expect(
+		result.diagnostics
+			.filter((d) => d.checkId === "unused-message")
+			.map((d) => d.bundleId)
+	).toEqual(["used"]);
+	const uncertain = await setup([
+		{
+			key: "issues",
+			analyzeUsage: () => ({ status: "incomplete", usedBundleIds: [], issues }),
+		},
+	]);
+	const incomplete = await checkProject({ project: uncertain, files });
+	expect(incomplete.checks[1]?.issues).toEqual([{ reason: "Unresolved" }]);
+	expect(JSON.parse(JSON.stringify(incomplete))).toEqual(incomplete);
+});
+test.each([
+	Object.create(null),
+	{
+		toString() {
+			throw new Error("Cannot stringify");
+		},
+	},
+])("unprintable analyzer exceptions report incomplete", async (error) => {
+	const project = await setup([
+		{
+			key: "throwing",
+			analyzeUsage: () => {
+				throw error;
+			},
 		},
 	]);
 	const result = await checkProject({ project, files });

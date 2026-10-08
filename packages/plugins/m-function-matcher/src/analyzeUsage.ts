@@ -12,6 +12,44 @@ const identifier = (value: unknown): string | undefined =>
 	isNode(value) && value.type === "Identifier"
 		? (value.name as string)
 		: undefined;
+const staticMemberName = (node: Node): string | undefined => {
+	if (!node.computed) return identifier(node.property);
+	const property = node.property;
+	if (!isNode(property)) return undefined;
+	if (
+		(property.type === "StringLiteral" || property.type === "Literal") &&
+		typeof property.value === "string"
+	)
+		return property.value;
+	if (
+		property.type === "TemplateLiteral" &&
+		(property.expressions as unknown[]).length === 0
+	) {
+		const quasi = (property.quasis as Node[])[0];
+		return (quasi?.value as { cooked?: string })?.cooked;
+	}
+	return undefined;
+};
+const timers = new Set(["setTimeout", "setInterval"]);
+const globalObjects = new Set([
+	"globalThis",
+	"window",
+	"self",
+	"global",
+	"parent",
+	"top",
+	"frames",
+	"opener",
+]);
+const globalAliases = new Set([
+	...globalObjects,
+	"parent",
+	"top",
+	"frames",
+	"opener",
+	"contentWindow",
+	"defaultView",
+]);
 const messageModule = (value: unknown): boolean =>
 	typeof value === "string" &&
 	/(?:^|\/)(?:messages(?:\/|\.|$)|paraglide(?:\/|$))/.test(value);
@@ -158,6 +196,64 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 					parent.type === "OptionalMemberExpression") &&
 				key === "property" &&
 				!parent.computed;
+			if (
+				node.type === "Identifier" &&
+				globalObjects.has(node.name as string)
+			) {
+				const isStaticMemberObject =
+					parent &&
+					(parent.type === "MemberExpression" ||
+						parent.type === "OptionalMemberExpression") &&
+					key === "object" &&
+					staticMemberName(parent) !== undefined;
+				if (
+					!isStaticMemberObject &&
+					!(
+						parent?.type === "UnaryExpression" && parent.operator === "typeof"
+					) &&
+					!staticProperty &&
+					!(parent && key === "key" && !parent.computed && !parent.shorthand)
+				)
+					unresolved.add(
+						"A global object is accessed dynamically or passed as a value."
+					);
+			}
+			const memberObject = isNode(node.object)
+				? identifier(node.object)
+				: undefined;
+			const timerReference =
+				(node.type === "Identifier" &&
+					timers.has(node.name as string) &&
+					!staticProperty &&
+					!(
+						parent &&
+						key === "key" &&
+						!parent.computed &&
+						!parent.shorthand
+					)) ||
+				((node.type === "MemberExpression" ||
+					node.type === "OptionalMemberExpression") &&
+					timers.has(staticMemberName(node) ?? "") &&
+					(!memberObject || !namespaces.has(memberObject)));
+			if (timerReference) {
+				const directCall =
+					parent &&
+					(parent.type === "CallExpression" ||
+						parent.type === "OptionalCallExpression") &&
+					key === "callee";
+				const handler = directCall
+					? (parent.arguments as Node[])[0]
+					: undefined;
+				if (
+					!isNode(handler) ||
+					!["FunctionExpression", "ArrowFunctionExpression"].includes(
+						handler.type
+					)
+				)
+					unresolved.add(
+						"Timer handlers may evaluate source strings; only inline function handlers can be resolved."
+					);
+			}
 			const objectKey =
 				parent && key === "key" && !parent.computed && !parent.shorthand;
 			if (
@@ -203,6 +299,30 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				].includes(node.type)
 			)
 				continue;
+			if (node.type === "ObjectPattern") {
+				for (const property of node.properties as Node[]) {
+					const name = staticMemberName({
+						type: "MemberExpression",
+						computed: property.computed,
+						property: property.key,
+					});
+					if (
+						name === "m" ||
+						(name !== undefined &&
+							(globalAliases.has(name) || timers.has(name))) ||
+						[
+							"require",
+							"createRequire",
+							"eval",
+							"Function",
+							"constructor",
+						].includes(name ?? "")
+					)
+						unresolved.add(
+							"A destructured message namespace, loader or evaluator cannot be resolved."
+						);
+				}
+			}
 			if (node.type === "ImportExpression")
 				unresolved.add("Dynamic message imports cannot be resolved.");
 			if (
@@ -251,47 +371,35 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				node.type === "OptionalMemberExpression"
 			) {
 				const object = identifier(node.object);
-				const propertyName = !node.computed
-					? identifier(node.property)
-					: isNode(node.property) &&
-						  (node.property.type === "StringLiteral" ||
-								node.property.type === "Literal") &&
-						  typeof node.property.value === "string"
-						? node.property.value
-						: undefined;
+				const propertyName = staticMemberName(node);
 				if (
 					(!object || !namespaces.has(object)) &&
-					(propertyName === "require" || propertyName === "createRequire")
+					propertyName !== undefined &&
+					[
+						"require",
+						"createRequire",
+						"eval",
+						"Function",
+						"constructor",
+					].includes(propertyName)
 				)
-					unresolved.add("CommonJS loader references are unsupported.");
+					unresolved.add(
+						"CommonJS loader or dynamically evaluated code references are unsupported."
+					);
+				if (
+					propertyName &&
+					globalAliases.has(propertyName) &&
+					(!object || !namespaces.has(object))
+				)
+					unresolved.add("A possible global object alias cannot be resolved.");
 				if (object && namespaces.has(object)) {
-					let id: string | undefined;
-					if (!node.computed) id = identifier(node.property);
-					else if (
-						isNode(node.property) &&
-						(node.property.type === "StringLiteral" ||
-							node.property.type === "Literal") &&
-						typeof node.property.value === "string"
-					)
-						id = node.property.value as string;
-					else if (
-						isNode(node.property) &&
-						node.property.type === "TemplateLiteral" &&
-						(node.property.expressions as unknown[]).length === 0
-					) {
-						const quasi = (node.property.quasis as Node[])[0];
-						id = (quasi?.value as { cooked?: string })?.cooked;
-					}
+					const id = propertyName;
 					if (id === undefined)
 						unresolved.add("Dynamic message access cannot be resolved.");
 					else used.add(id);
 				}
 				// Nested/global message namespaces require binding graph analysis.
-				if (
-					!node.computed &&
-					identifier(node.property) === "m" &&
-					(!object || !namespaces.has(object))
-				)
+				if (propertyName === "m" && (!object || !namespaces.has(object)))
 					unresolved.add("An indirect message namespace cannot be resolved.");
 			}
 			if (node.type === "Identifier" && namespaces.has(node.name as string)) {
