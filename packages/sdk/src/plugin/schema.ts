@@ -1,3 +1,4 @@
+import type { AnalyzeUsage } from "../checks/types.js";
 import type { TObject } from "@sinclair/typebox";
 import type { MessageV1 } from "../json-schema/old-v1-message/schemaV1.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
@@ -23,6 +24,8 @@ export type InlangPlugin<
 	 */
 	key: string;
 	settingsSchema?: TObject;
+	/** Analyze a complete source snapshot. Report unresolved usages as incomplete. */
+	analyzeUsage?: AnalyzeUsage;
 	/**
 	 * @deprecated Use `importFiles` instead.
 	 */

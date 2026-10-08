@@ -13,6 +13,7 @@
 - [Use the SDK when](#use-the-sdk-when)
 - [Getting Started](#getting-started)
 - [Plugins](#plugins)
+- [Project checks and fixes](docs/checks.md)
 - [API reference](#api-reference)
 - [Listing on inlang.com](#listing-on-inlangcom)
 

@@ -30,3 +30,5 @@ export type {
 export type { IdeExtensionConfig } from "./plugin/meta/ideExtension.js";
 export * from "./database/schema.js";
 export { createMessageV1 } from "./migrations/v2/createMessageV1.js";
+
+export * from "./checks/index.js";
