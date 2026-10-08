@@ -124,10 +124,16 @@ it("adds an ordinal plural and a select with empty forms for its values", () => 
 		variable: "count",
 		kind: "select",
 		values: ["female", " male ", "female", "*", ""],
+		locale: "en",
 		createId,
 	});
 	expect(select.declarations).toEqual(bundle().declarations);
 	const en = select.messages[0]!;
+	// only the given language gets the empty forms, the others need them
+	expect(select.messages[1]!.variants).toHaveLength(1);
+	expect(() =>
+		addSelector(bundle(), { variable: "count", kind: "select", values: ["a"] })
+	).toThrow(/locale/);
 	expect(en.selectors).toEqual([{ type: "variable-reference", name: "count" }]);
 	expect(en.variants.map((v) => v.matches[0])).toEqual([
 		{ type: "catchall-match", key: "count" },
@@ -143,6 +149,7 @@ it("adds the new selector to the matches of a message that already has selectors
 		variable: "count",
 		kind: "select",
 		values: ["a"],
+		locale: "en",
 		createId,
 	});
 	first.declarations.push({ type: "input-variable", name: "who" });
@@ -150,6 +157,7 @@ it("adds the new selector to the matches of a message that already has selectors
 		variable: "who",
 		kind: "select",
 		values: ["x"],
+		locale: "en",
 		createId,
 	});
 	const en = second.messages[0]!;

@@ -44,8 +44,18 @@ export type AddSelectorArgs = {
 	 */
 	variable: string;
 	kind: SelectorKind;
-	/** `select` only: values that get an (empty) form of their own, e.g. `["female", "male"]`. The catch-all always exists. */
+	/**
+	 * `select` only: values that get an empty form of their own in the message of
+	 * `locale`, e.g. `["female", "male"]`. The catch-all always exists.
+	 */
 	values?: readonly string[];
+	/**
+	 * The language (normally the reference) whose message gets the empty forms of
+	 * `values`; required with `values`. Other languages get the selector only and
+	 * then need those forms (`missingVariants` of `@inlang/sdk`, "+ Add form"), so
+	 * an untranslated value never exports as an empty text.
+	 */
+	locale?: string;
 	/** Name of the local variable that is declared for `plural` / `ordinal` (default `<variable>Plural` / `<variable>Ordinal`). */
 	name?: string;
 	/** Creates ids of new variants (default: uuid v7). */
@@ -96,6 +106,7 @@ function uniqueName(base: string, declarations: readonly Declaration[]) {
  *   `<inlang-message-forms>` then offer "+ Add form" for the categories of
  *   each language
  * - `select` with `values` adds an empty variant per existing variant and value
+ *   to the message of `locale` only
  *
  * Pure: returns a new bundle and leaves the argument untouched. Throws when the
  * variable is not declared or already is a selector.
@@ -167,6 +178,8 @@ export function addSelector<B extends SelectorBundle>(
 				]
 			: [];
 
+	if (values.length > 0 && args.locale === undefined)
+		throw new Error("Select values need the locale that gets their forms.");
 	const messages = bundle.messages.map((message) => {
 		const variants: typeof message.variants = [];
 		for (const variant of message.variants) {
@@ -175,6 +188,7 @@ export function addSelector<B extends SelectorBundle>(
 				...copy(variant),
 				matches: [...copy(variant.matches), catchall],
 			});
+			if (message.locale !== args.locale) continue;
 			for (const value of values) {
 				variants.push({
 					...copy(variant),
@@ -368,6 +382,13 @@ export type ExactNumberArgs = {
 	selector: string;
 	/** The number, e.g. `0` (ICU `=0`). A leading "=" is ignored. */
 	value: string | number;
+	/**
+	 * The language (normally the reference) whose message gets the empty form.
+	 * Other languages only get the exact-number selector and then need the form
+	 * (`missingVariants` of `@inlang/sdk`, "+ Add form"): an untranslated `=0` is
+	 * absent instead of an empty text.
+	 */
+	locale: string;
 	/** Creates ids of new variants (default: uuid v7). */
 	createId?: () => string;
 };
@@ -380,24 +401,25 @@ function exactNumber(value: string | number): string {
 }
 
 /**
- * Gives a plural message a form for an exact number (ICU `=0`) in **every**
- * language, in the shape `@inlang/plugin-icu1` imports and exports
+ * Gives a plural message a form for an exact number (ICU `=0`), in the shape
+ * `@inlang/plugin-icu1` imports and exports
  * `{count, plural, =0 {…} one {…} other {…}}`:
  *
  * - unless the plural has one, an exact-number selector is declared
  *   (`.local $countPluralExact = {$count}`), put before the plural selector in
  *   every message that has the plural, and every existing variant gets a
  *   catch-all match for it
- * - an empty variant for the number is added per combination of the other
- *   selectors (`gender`), with the plural's catch-all
+ * - the message of `locale` gets an empty variant for the number per
+ *   combination of the other selectors (`gender`), with the plural's catch-all
  *
- * The SDK then requires that number in every language (`missingVariants`,
- * `checkBundle`) and `<inlang-message-forms>` lists it as one choice with the
- * plural categories. Pure. Throws when the selector is not a plural or the
- * value is not a number.
+ * The SDK then requires that number in every other language too
+ * (`missingVariants`, `missing-variant` of `checkBundle`), so
+ * `<inlang-message-forms>` offers "+ Add form" there; it lists the number as one
+ * choice with the plural categories. Pure. Throws when the selector is not a
+ * plural of the message of `locale` or the value is not a number.
  *
  * @example
- * addExactNumber(bundle, { selector: "count", value: 0 });
+ * addExactNumber(bundle, { selector: "count", value: 0, locale: "en" });
  */
 export function addExactNumber<B extends SelectorBundle>(
 	bundle: B,
@@ -406,6 +428,7 @@ export function addExactNumber<B extends SelectorBundle>(
 	const number = exactNumber(args.value);
 	const createId = args.createId ?? v7;
 	const plural = pluralSelectorOf(bundle, args.selector);
+	requireSelectorIn(bundle, plural, args.locale);
 	const declarations = copy(bundle.declarations);
 	let exact = groupOf(bundle, plural)?.exactSelector;
 	if (!exact) {
@@ -444,7 +467,8 @@ export function addExactNumber<B extends SelectorBundle>(
 				);
 			}
 		}
-		addRows(message, { [exactName]: number, [plural]: "*" }, createId);
+		if (message.locale === args.locale)
+			addRows(message, { [exactName]: number, [plural]: "*" }, createId);
 		return message;
 	});
 	return { ...bundle, declarations, messages };
@@ -452,13 +476,13 @@ export function addExactNumber<B extends SelectorBundle>(
 
 /**
  * The reverse of {@link addExactNumber}: removes the forms of an exact number
- * from every language. When no form for an exact number is left, the
+ * from every language (also those translators added). When no form for an exact number is left, the
  * exact-number selector and its local variable are removed as well. Pure.
  * Throws when no message has a form for the number.
  */
 export function removeExactNumber<B extends SelectorBundle>(
 	bundle: B,
-	args: Omit<ExactNumberArgs, "createId">
+	args: Omit<ExactNumberArgs, "createId" | "locale">
 ): B {
 	const number = exactNumber(args.value);
 	const plural = pluralSelectorOf(bundle, args.selector);
@@ -493,9 +517,24 @@ export type SelectValueArgs = {
 	selector: string;
 	/** The value, e.g. "diverse". */
 	value: string;
+	/**
+	 * The language (normally the reference) whose message gets the empty forms.
+	 * Other languages then need them (`missingVariants` of `@inlang/sdk`).
+	 */
+	locale: string;
 	/** Creates ids of new variants (default: uuid v7). */
 	createId?: () => string;
 };
+
+function requireSelectorIn(
+	bundle: SelectorBundle,
+	selector: string,
+	locale: string
+) {
+	const message = bundle.messages.find((m) => m.locale === locale);
+	if (!message?.selectors.some((s) => s.name === selector))
+		throw new Error(`The "${locale}" message has no selector "${selector}".`);
+}
 
 function selectSelectorOf(bundle: SelectorBundle, selector: string): string {
 	const group = groupOf(bundle, selector);
@@ -516,13 +555,14 @@ function selectValue(value: string): string {
 }
 
 /**
- * Adds a value to a select (e.g. "diverse" to `gender`) in **every** language
- * that has the selector: an empty form per combination of the other selectors.
- * The SDK then requires the value in every language. Pure. Throws for a plural
- * selector, an unknown selector or an empty value.
+ * Adds a value to a select (e.g. "diverse" to `gender`): an empty form per
+ * combination of the other selectors in the message of `locale`. The SDK then
+ * requires the value in every other language that has the selector
+ * (`missingVariants`, "+ Add form"). Pure. Throws for a plural selector, a
+ * selector the message of `locale` does not have or an empty value.
  *
  * @example
- * addSelectValue(bundle, { selector: "gender", value: "diverse" });
+ * addSelectValue(bundle, { selector: "gender", value: "diverse", locale: "en" });
  */
 export function addSelectValue<B extends SelectorBundle>(
 	bundle: B,
@@ -531,12 +571,13 @@ export function addSelectValue<B extends SelectorBundle>(
 	const selector = selectSelectorOf(bundle, args.selector);
 	const value = selectValue(args.value);
 	const createId = args.createId ?? v7;
+	requireSelectorIn(bundle, selector, args.locale);
 	return {
 		...bundle,
 		declarations: copy(bundle.declarations),
 		messages: bundle.messages.map((original) => {
 			const message = copy(original);
-			if (message.selectors.some((s) => s.name === selector))
+			if (message.locale === args.locale)
 				addRows(message, { [selector]: value }, createId);
 			return message;
 		}),
@@ -550,7 +591,7 @@ export function addSelectValue<B extends SelectorBundle>(
  */
 export function removeSelectValue<B extends SelectorBundle>(
 	bundle: B,
-	args: Omit<SelectValueArgs, "createId">
+	args: Omit<SelectValueArgs, "createId" | "locale">
 ): B {
 	const selector = selectSelectorOf(bundle, args.selector);
 	const value = selectValue(args.value);

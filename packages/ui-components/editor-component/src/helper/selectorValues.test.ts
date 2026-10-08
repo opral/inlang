@@ -116,11 +116,12 @@ const items = {
 	de: { items: "{count, plural, one {# Element} other {# Elemente}}" },
 };
 
-it("adds an exact number in every language in the shape ICU imports and exports", async () => {
+it("adds an exact number to the reference in the shape ICU imports and exports; other languages need it", async () => {
 	const [bundle] = await importIcu(items);
 	const zero = addExactNumber(bundle!, {
 		selector: "count",
 		value: 0,
+		locale: "en",
 		createId,
 	});
 	expect(zero.declarations).toContainEqual({
@@ -131,46 +132,79 @@ it("adds an exact number in every language in the shape ICU imports and exports"
 			arg: { type: "variable-reference", name: "count" },
 		},
 	});
-	for (const message of zero.messages) {
+	for (const message of zero.messages)
 		expect(message.selectors.map((s) => s.name)).toEqual([
 			"countPluralExact",
 			"countPlural",
 		]);
-		expect(message.variants).toHaveLength(3);
-	}
-	// one choice, and every language now needs the =0 form, which exists (empty)
-	const de = zero.messages[1]!;
+	// only the reference gets the (empty) form; German keeps its two forms and needs "0"
+	const [en, de] = zero.messages;
+	expect(en!.variants).toHaveLength(3);
+	expect(en!.variants.filter((v) => v.pattern.length === 0)).toHaveLength(1);
+	expect(de!.variants).toHaveLength(2);
 	expect(
-		selectorGroups({ ...de, locale: "de" }, zero.declarations)[0]!.keys
+		selectorGroups({ ...de!, locale: "de" }, zero.declarations, {
+			referenceVariants: en!.variants,
+		})[0]!.keys
 	).toEqual(["0", "one", "*"]);
-	expect(missing(zero, "de")).toEqual([]);
-	// export -> import is lossless
-	const exported = await exportIcu([
-		fill(zero, { en: "No items", de: "Keine Elemente" }),
-	]);
-	expect(exported).toEqual({
+	expect(missing(zero, "en")).toEqual([]);
+	expect(missing(zero, "de")).toEqual(["0 · *"]);
+	// the untranslated =0 is absent from the export, not an empty text
+	const english = fill(zero, { en: "No items" });
+	expect(await exportIcu([english])).toEqual({
 		en: {
 			items: "{count, plural, =0 {No items} one {# item} other {# items}}",
 		},
-		de: {
-			items:
-				"{count, plural, =0 {Keine Elemente} one {# Element} other {# Elemente}}",
-		},
+		de: items.de,
 	});
+	// once German has the form too, both export it
+	const translated = {
+		...english,
+		messages: english.messages.map((m) =>
+			m.locale === "de"
+				? {
+						...m,
+						variants: [
+							{
+								...m.variants[0]!,
+								id: createId(),
+								matches: [
+									{
+										type: "literal-match" as const,
+										key: "countPluralExact",
+										value: "0",
+									},
+									{ type: "catchall-match" as const, key: "countPlural" },
+								],
+								pattern: text("Keine Elemente"),
+							},
+							...m.variants,
+						],
+					}
+				: m
+		),
+	};
+	expect(missing(translated, "de")).toEqual([]);
+	const exported = await exportIcu([translated]);
+	expect(exported.de.items).toBe(
+		"{count, plural, =0 {Keine Elemente} one {# Element} other {# Elemente}}"
+	);
 	const [again] = await importIcu(exported);
 	expect(again!.declarations).toEqual(zero.declarations);
 	expect(again!.messages.map((m) => m.selectors)).toEqual(
 		zero.messages.map((m) => m.selectors)
 	);
-	// a second number reuses the exact selector; removing both removes it again
+	// a second number reuses the exact selector; removing both (in every language) removes it again
 	const one = addExactNumber(again!, {
 		selector: "countPlural",
 		value: "=1",
+		locale: "en",
 		createId,
 	});
 	expect(one.declarations).toEqual(again!.declarations);
-	expect(one.messages[0]!.variants).toHaveLength(4);
+	expect(one.messages.map((m) => m.variants.length)).toEqual([4, 3]);
 	const withoutZero = removeExactNumber(one, { selector: "count", value: 0 });
+	expect(withoutZero.messages.map((m) => m.variants.length)).toEqual([3, 2]);
 	expect(withoutZero.messages[0]!.selectors).toHaveLength(2);
 	const plain = removeExactNumber(withoutZero, { selector: "count", value: 1 });
 	expect(plain.declarations.map((d) => d.name)).toEqual([
@@ -178,6 +212,9 @@ it("adds an exact number in every language in the shape ICU imports and exports"
 		"countPlural",
 	]);
 	expect(await exportIcu([plain])).toEqual(items);
+	expect(() =>
+		addExactNumber(bundle!, { selector: "count", value: 0, locale: "fr" })
+	).toThrow(/no selector/);
 });
 
 it("adds the exact number to every combination of the other selectors", async () => {
@@ -190,6 +227,7 @@ it("adds the exact number to every combination of the other selectors", async ()
 	const zero = addExactNumber(bundle!, {
 		selector: "count",
 		value: 0,
+		locale: "en",
 		createId,
 	});
 	const en = zero.messages[0]!;
@@ -204,18 +242,18 @@ it("adds the exact number to every combination of the other selectors", async ()
 	expect(exported.en.invite).toBe(
 		"{gender, select, female {{count, plural, =0 {Nobody was invited} one {She invited # guest} other {She invited # guests}}} other {{count, plural, =0 {Nobody was invited} one {They invited # guest} other {They invited # guests}}}}"
 	);
-	expect(() => addExactNumber(zero, { selector: "gender", value: 0 })).toThrow(
-		/not a plural/
-	);
 	expect(() =>
-		addExactNumber(zero, { selector: "count", value: "few" })
+		addExactNumber(zero, { selector: "gender", value: 0, locale: "en" })
+	).toThrow(/not a plural/);
+	expect(() =>
+		addExactNumber(zero, { selector: "count", value: "few", locale: "en" })
 	).toThrow(/not a number/);
 	expect(() =>
 		removeExactNumber(zero, { selector: "count", value: 7 })
 	).toThrow(/not an exact number/);
 });
 
-it("adds and removes a value of a select in every language", async () => {
+it("adds a select value to the reference, other languages need it, removing removes it everywhere", async () => {
 	const [bundle] = await importIcu({
 		en: { greeting: "{gender, select, female {She} male {He} other {They}}" },
 		de: { greeting: "{gender, select, female {Sie} male {Er} other {Sie}}" },
@@ -223,61 +261,49 @@ it("adds and removes a value of a select in every language", async () => {
 	const diverse = addSelectValue(bundle!, {
 		selector: "gender",
 		value: " diverse ",
+		locale: "en",
 		createId,
 	});
-	for (const message of diverse.messages)
-		expect(message.variants.map((v) => v.matches[0])).toEqual([
-			{ type: "literal-match", key: "gender", value: "female" },
-			{ type: "literal-match", key: "gender", value: "male" },
-			{ type: "literal-match", key: "gender", value: "diverse" },
-			{ type: "catchall-match", key: "gender" },
-		]);
+	const keys = (locale: string, b = diverse) =>
+		b.messages
+			.find((m) => m.locale === locale)!
+			.variants.map((v) =>
+				v.matches[0]?.type === "literal-match" ? v.matches[0].value : "*"
+			);
+	expect(keys("en")).toEqual(["female", "male", "diverse", "*"]);
+	expect(keys("de")).toEqual(["female", "male", "*"]);
+	expect(missing(diverse, "de")).toEqual(["diverse"]);
 	// adding it again changes nothing
 	expect(
-		addSelectValue(diverse, { selector: "gender", value: "diverse", createId })
+		addSelectValue(diverse, {
+			selector: "gender",
+			value: "diverse",
+			locale: "en",
+			createId,
+		})
 	).toEqual(diverse);
-	expect(await exportIcu([fill(diverse, { en: "They", de: "Sie" })])).toEqual({
+	// German exports without an empty "diverse"
+	expect(await exportIcu([fill(diverse, { en: "They" })])).toEqual({
 		en: {
 			greeting:
 				"{gender, select, female {She} male {He} diverse {They} other {They}}",
 		},
 		de: {
-			greeting:
-				"{gender, select, female {Sie} male {Er} diverse {Sie} other {Sie}}",
+			greeting: "{gender, select, female {Sie} male {Er} other {Sie}}",
 		},
 	});
-	// a value only the reference has is needed in the translation
-	const onlyEnglish = {
-		...diverse,
-		messages: diverse.messages.map((m) =>
-			m.locale === "de"
-				? {
-						...m,
-						variants: m.variants.filter(
-							(v) =>
-								v.matches[0]?.type !== "literal-match" ||
-								v.matches[0].value !== "diverse"
-						),
-					}
-				: m
-		),
-	};
-	expect(missing(onlyEnglish, "de")).toEqual(["diverse"]);
 	const removed = removeSelectValue(diverse, {
 		selector: "gender",
 		value: "male",
 	});
-	expect(removed.messages[1]!.variants.map((v) => v.matches[0])).toEqual([
-		{ type: "literal-match", key: "gender", value: "female" },
-		{ type: "literal-match", key: "gender", value: "diverse" },
-		{ type: "catchall-match", key: "gender" },
-	]);
-	expect(missing(removed, "de")).toEqual([]);
+	expect(keys("en", removed)).toEqual(["female", "diverse", "*"]);
+	expect(keys("de", removed)).toEqual(["female", "*"]);
+	expect(missing(removed, "de")).toEqual(["diverse"]);
 	expect(() =>
 		removeSelectValue(removed, { selector: "gender", value: "male" })
 	).toThrow(/not a value/);
 	expect(() =>
-		addSelectValue(removed, { selector: "gender", value: "*" })
+		addSelectValue(removed, { selector: "gender", value: "*", locale: "en" })
 	).toThrow(/cannot be a value/);
 });
 
@@ -286,12 +312,20 @@ it("does not add select values to a plural or its exact-number selector", async 
 		en: { items: "{count, plural, =0 {none} one {# item} other {# items}}" },
 	});
 	expect(() =>
-		addSelectValue(bundle!, { selector: "countPlural", value: "few" })
+		addSelectValue(bundle!, {
+			selector: "countPlural",
+			value: "few",
+			locale: "en",
+		})
 	).toThrow(/chooses by number/);
 	expect(() =>
-		addSelectValue(bundle!, { selector: "countPluralExact", value: "5" })
+		addSelectValue(bundle!, {
+			selector: "countPluralExact",
+			value: "5",
+			locale: "en",
+		})
 	).toThrow(/chooses by number/);
 	expect(() =>
-		addSelectValue(bundle!, { selector: "nope", value: "x" })
+		addSelectValue(bundle!, { selector: "nope", value: "x", locale: "en" })
 	).toThrow(/not a selector/);
 });

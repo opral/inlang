@@ -166,18 +166,19 @@ const plural = addSelector(bundle, { variable: "count", kind: "plural" });
 // declares `.local $countPlural = {$count :plural}`, adds the selector to every message and a catch-all
 // match to every existing variant (the text stays as the "other" form); the SDK's missingVariants /
 // <inlang-message-forms> then offer "+ Add form" for the categories of each language.
-addSelector(bundle, { variable: "gender", kind: "select", values: ["female", "male"] }); // + empty forms
+addSelector(bundle, { variable: "gender", kind: "select", values: ["female", "male"], locale: "en" }); // + empty forms in "en"
 selectableVariables(bundle); // ["count", "gender"]: declared variables that are no selector yet
 removeSelector(plural, "countPlural"); // keeps the catch-all ("other") form per language (`{ keep: "one" }` to keep another), drops the rest and the local variable
 
-// Exact numbers (ICU `=0`) of a plural, in every language. The first one declares
-// `.local $countPluralExact = {$count}` (what @inlang/plugin-icu1 imports and exports), puts it before
-// `countPlural` in every message and adds an empty "0" form per row; the last one removed removes it again.
-const zero = addExactNumber(plural, { selector: "count", value: 0 }); // or selector: "countPlural"
-removeExactNumber(zero, { selector: "count", value: 0 });
+// Exact numbers (ICU `=0`) of a plural. The first one declares `.local $countPluralExact = {$count}`
+// (what @inlang/plugin-icu1 imports and exports) and puts it before `countPlural` in every message; the
+// message of `locale` (the reference) gets an empty "0" form per row. Other languages get no form: the SDK
+// requires it there ("+ Add form", `missing-variant`), so an untranslated =0 is absent from exports.
+const zero = addExactNumber(plural, { selector: "count", value: 0, locale: "en" }); // or selector: "countPlural"
+removeExactNumber(zero, { selector: "count", value: 0 }); // from every language; the last one removes the selector
 
-// One more value of a select (an empty form per row, in every language that has the selector), or one less.
-addSelectValue(bundle, { selector: "gender", value: "diverse" });
+// One more value of a select (an empty form per row in the message of `locale`), or one less (every language).
+addSelectValue(bundle, { selector: "gender", value: "diverse", locale: "en" });
 removeSelectValue(bundle, { selector: "gender", value: "male" }); // the selector and its other values stay
 
 formatPattern({ pattern, declarations, values: { name: "Anna", count: 3 }, locale: "ru" });
@@ -185,6 +186,6 @@ formatPattern({ pattern, declarations, values: { name: "Anna", count: 3 }, local
 formatMessage({ message, variants, declarations, values, locale: "en" }); // "Anna sent you 3 files"
 ```
 
-`addSelector`, `removeSelector`, `addExactNumber`, `removeExactNumber`, `addSelectValue` and `removeSelectValue` are pure: they return a new bundle and accept `BundleNested` (`messageId`) as well as database rows (`message_id`); fields they do not know are kept. New variants copy a variant of their row, get an empty pattern and a new `id` (default uuid v7, `createId` to override); new forms are put before the row's catch-all, so exports keep "other" last. They throw for requests that make no sense (a select value on a plural, a word as an exact number, a value that does not exist). Afterwards `missingVariants` / `checkBundle` of `@inlang/sdk` require the new forms in every language.
+`addSelector`, `removeSelector`, `addExactNumber`, `removeExactNumber`, `addSelectValue` and `removeSelectValue` are pure: they return a new bundle and accept `BundleNested` (`messageId`) as well as database rows (`message_id`); fields they do not know are kept. New forms are created only in the message of `locale` (normally the reference): they copy a variant of their row, get an empty pattern and a new `id` (default uuid v7, `createId` to override) and are put before the row's catch-all, so exports keep "other" last. Other languages never get empty forms: they show "+ Add form" and the `missing-variant` check until a translator adds the form. Removing a value or number removes its forms from every language. They throw for requests that make no sense (a select value on a plural, a word as an exact number, a value that does not exist). Afterwards `missingVariants` / `checkBundle` of `@inlang/sdk` require the new forms in every other language.
 
 Also exported: `formatPatternToString`, `previewInputs`, `languageName`, `selectorMatches`, `patternToString`, `stringToPattern`, `createChangeEvent`.
