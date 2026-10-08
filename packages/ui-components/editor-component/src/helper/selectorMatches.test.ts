@@ -38,7 +38,7 @@ it("does not silently use English rules for unsupported or invalid locales", () 
 });
 it("keeps runtime plural options open rather than pretending the type is known", () => {
   const declarations = plural();
-  const declaration = declarations[1];
+  const declaration = declarations[1]!;
   if (declaration.type === "local-variable") declaration.value.annotation!.options.push({ name: "type", value: { type: "variable-reference", name: "type" } });
   expect(selectorMatches("amount", declarations, "en", []).allowed).toBeUndefined();
 });
