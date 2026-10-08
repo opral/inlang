@@ -1,4 +1,4 @@
-import { Text, VariableReference, type Variant } from "@inlang/sdk";
+import { Text, VariableReference, type VariantRow } from "@inlang/sdk";
 
 type PlaceholderMetadata = Record<
   string,
@@ -12,9 +12,9 @@ const escapeStart = `<span class="notranslate">`;
 const escapeEnd = "</span>";
 
 export function findMatchingVariant(
-  variants: Variant[],
-  matches: Variant["matches"],
-): Variant | undefined {
+  variants: VariantRow[],
+  matches: VariantRow["matches"],
+): VariantRow | undefined {
   if (matches.length === 0) {
     return variants.find((variant) => variant.matches.length === 0);
   }
@@ -47,7 +47,7 @@ export function findMatchingVariant(
 }
 
 export function serializePattern(
-  pattern: Variant["pattern"],
+  pattern: VariantRow["pattern"],
   placeholderMetadata: PlaceholderMetadata,
 ) {
   let result = "";
@@ -71,8 +71,8 @@ export function serializePattern(
   return result;
 }
 
-export function deserializePattern(text: string): Variant["pattern"] {
-  const result: Variant["pattern"] = [];
+export function deserializePattern(text: string): VariantRow["pattern"] {
+  const result: VariantRow["pattern"] = [];
   const unescapedText = text
     .replaceAll("&quot;", '"')
     .replaceAll("&#39;", "'")

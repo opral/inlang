@@ -57,13 +57,13 @@ await insertBundleNested(project.db, {
   messages: [
     {
       id: "greeting_en",
-      bundleId: "greeting",
+      bundle_id: "greeting",
       locale: "en",
       selectors: [],
       variants: [
         {
           id: "greeting_en_default",
-          messageId: "greeting_en",
+          message_id: "greeting_en",
           matches: [],
           pattern: [{ type: "text", value: "Hello world!" }],
         },

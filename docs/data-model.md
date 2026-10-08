@@ -36,7 +36,7 @@ A message is a locale-specific translation. One message per locale per bundle.
 ```typescript
 type Message = {
   id: string; // auto-generated UUID
-  bundleId: string; // references Bundle.id
+  bundle_id: string; // references Bundle.id
   locale: string; // e.g., "en", "de", "fr"
   selectors: VariableReference[];
 };
@@ -51,7 +51,7 @@ A variant is the actual text pattern. Most messages have one variant, but plural
 ```typescript
 type Variant = {
   id: string; // auto-generated UUID
-  messageId: string; // references Message.id
+  message_id: string; // references Message.id
   matches: Match[]; // conditions for this variant
   pattern: Pattern; // the text content
 };
@@ -115,28 +115,28 @@ Use Kysely to query messages:
 ```typescript
 // Get all messages for a bundle
 const messages = await project.db
-  .selectFrom("message")
-  .where("bundleId", "=", "greeting")
+  .selectFrom("inlang_message")
+  .where("bundle_id", "=", "greeting")
   .selectAll()
   .execute();
 
 // Get all bundles with their messages
 const bundles = await project.db
-  .selectFrom("bundle")
-  .leftJoin("message", "message.bundleId", "bundle.id")
+  .selectFrom("inlang_bundle")
+  .leftJoin("inlang_message", "inlang_message.bundle_id", "inlang_bundle.id")
   .selectAll()
   .execute();
 
 // Find missing translations
-const allBundles = await project.db.selectFrom("bundle").selectAll().execute();
+const allBundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
 const germanMessages = await project.db
-  .selectFrom("message")
-  .select("bundleId")
+  .selectFrom("inlang_message")
+  .select("bundle_id")
   .where("locale", "=", "de")
   .execute();
 
 const translatedBundleIds = new Set(
-  germanMessages.map((message) => message.bundleId),
+  germanMessages.map((message) => message.bundle_id),
 );
 const missing = allBundles.filter(
   (bundle) => translatedBundleIds.has(bundle.id) === false,

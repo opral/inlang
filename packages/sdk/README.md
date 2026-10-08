@@ -187,7 +187,7 @@ const plugins = await project.plugins.get();
 
 // Querying messages
 const messages = await project.db
-  .selectFrom("message")
+  .selectFrom("inlang_message")
   .selectAll()
   .execute();
 

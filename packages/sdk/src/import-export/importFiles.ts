@@ -4,8 +4,16 @@ import {
 	PluginMissingError,
 } from "../plugin/errors.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
-import type { InlangDatabaseSchema, NewVariant } from "../database/schema.js";
-import type { InlangPlugin, VariantImport } from "../plugin/schema.js";
+import type {
+	InlangDatabaseSchema,
+	NewVariantRow,
+} from "../database/schema.js";
+import {
+	messageFromPlugin,
+	variantFromPlugin,
+	type ImportedVariant,
+} from "./pluginRows.js";
+import type { InlangPlugin } from "../plugin/schema.js";
 import type { ImportFile } from "../project/api.js";
 import { v7 } from "uuid";
 
@@ -74,14 +82,19 @@ export async function importFiles(args: {
 		});
 	}
 
-	const imported = await plugin.importFiles({
+	const pluginResult = await plugin.importFiles({
 		files: args.files,
 		settings: structuredClone(args.settings),
 	});
+	const imported = {
+		bundles: pluginResult.bundles,
+		messages: pluginResult.messages.map(messageFromPlugin),
+		variants: pluginResult.variants.map(variantFromPlugin),
+	};
 
 	await args.db.transaction().execute(async (trx) => {
 		const hasExistingBundles = await trx
-			.selectFrom("bundle")
+			.selectFrom("inlang_bundle")
 			.select("id")
 			.limit(1)
 			.executeTakeFirst();
@@ -97,7 +110,7 @@ export async function importFiles(args: {
 		const messageKeys = new Set<string>();
 		let messagesHaveUniqueKeys = true;
 		for (const message of imported.messages) {
-			const key = messageReferenceKey(message.bundleId, message.locale);
+			const key = messageReferenceKey(message.bundle_id, message.locale);
 			if (messageKeys.has(key)) {
 				messagesHaveUniqueKeys = false;
 				break;
@@ -134,11 +147,11 @@ export async function importFiles(args: {
 			imported.variants.every(
 				(variant) =>
 					variant.id === undefined &&
-					variant.messageId === undefined &&
+					variant.message_id === undefined &&
 					variant.messageBundleId !== undefined &&
 					variant.messageLocale !== undefined
 			) &&
-			imported.messages.every((message) => bundleIds.has(message.bundleId)) &&
+			imported.messages.every((message) => bundleIds.has(message.bundle_id)) &&
 			imported.variants.every((variant) =>
 				messageKeys.has(
 					messageReferenceKey(variant.messageBundleId!, variant.messageLocale!)
@@ -150,7 +163,7 @@ export async function importFiles(args: {
 				rows: imported.bundles,
 				optionalColumns: ["declarations"],
 				insert: async (rows) => {
-					await trx.insertInto("bundle").values(rows).execute();
+					await trx.insertInto("inlang_bundle").values(rows).execute();
 				},
 			});
 
@@ -162,17 +175,17 @@ export async function importFiles(args: {
 				rows: messagesWithIds,
 				optionalColumns: ["selectors"],
 				insert: async (rows) => {
-					await trx.insertInto("message").values(rows).execute();
+					await trx.insertInto("inlang_message").values(rows).execute();
 				},
 			});
 
 			const messageIds = new Map(
 				messagesWithIds.map((message) => [
-					messageReferenceKey(message.bundleId, message.locale),
+					messageReferenceKey(message.bundle_id, message.locale),
 					message.id,
 				])
 			);
-			const variantsWithMessageIds: NewVariant[] = imported.variants.map(
+			const variantsWithMessageIds: NewVariantRow[] = imported.variants.map(
 				(variant) => {
 					const messageId = messageIds.get(
 						messageReferenceKey(
@@ -184,7 +197,7 @@ export async function importFiles(args: {
 						throw new Error("Imported variant does not reference a message");
 					}
 					return {
-						messageId,
+						message_id: messageId,
 						matches: variant.matches,
 						pattern: variant.pattern,
 					};
@@ -194,7 +207,7 @@ export async function importFiles(args: {
 				rows: variantsWithMessageIds,
 				optionalColumns: ["matches", "pattern"],
 				insert: async (rows) => {
-					await trx.insertInto("variant").values(rows).execute();
+					await trx.insertInto("inlang_variant").values(rows).execute();
 				},
 			});
 			return;
@@ -203,7 +216,7 @@ export async function importFiles(args: {
 		// upsert every bundle
 		for (const bundle of imported.bundles) {
 			await trx
-				.insertInto("bundle")
+				.insertInto("inlang_bundle")
 				.values(bundle)
 				.onConflict((oc) => oc.column("id").doUpdateSet(bundle))
 				.execute();
@@ -214,26 +227,26 @@ export async function importFiles(args: {
 			// no id is provided by the importer
 			if (message.id === undefined) {
 				const exisingMessage = await trx
-					.selectFrom("message")
-					.where("bundleId", "=", message.bundleId)
+					.selectFrom("inlang_message")
+					.where("bundle_id", "=", message.bundle_id)
 					.where("locale", "=", message.locale)
 					.select("id")
 					.executeTakeFirst();
 				message.id = exisingMessage?.id;
 			}
 			const referencedBundle = await trx
-				.selectFrom("bundle")
+				.selectFrom("inlang_bundle")
 				.select("id")
-				.where("id", "=", message.bundleId)
+				.where("id", "=", message.bundle_id)
 				.executeTakeFirst();
 			if (!referencedBundle) {
 				await trx
-					.insertInto("bundle")
-					.values({ id: message.bundleId })
+					.insertInto("inlang_bundle")
+					.values({ id: message.bundle_id })
 					.execute();
 			}
 			await trx
-				.insertInto("message")
+				.insertInto("inlang_message")
 				.values(message)
 				.onConflict((oc) => oc.column("id").doUpdateSet(message))
 				.execute();
@@ -244,8 +257,8 @@ export async function importFiles(args: {
 			// no id is provided by the importer
 			if (variant.id === undefined) {
 				let existingMessage = await trx
-					.selectFrom("message")
-					.where("bundleId", "=", variant.messageBundleId)
+					.selectFrom("inlang_message")
+					.where("bundle_id", "=", variant.messageBundleId)
 					.where("locale", "=", variant.messageLocale)
 					.select("id")
 					.executeTakeFirst();
@@ -253,22 +266,22 @@ export async function importFiles(args: {
 				// if the message does not exist, create it
 				if (existingMessage === undefined) {
 					const existingBundle = await trx
-						.selectFrom("bundle")
+						.selectFrom("inlang_bundle")
 						.where("id", "=", variant.messageBundleId)
 						.select("id")
 						.executeTakeFirst();
 					// if the bundle does not exist, create it
 					if (existingBundle === undefined) {
 						await trx
-							.insertInto("bundle")
+							.insertInto("inlang_bundle")
 							.values({ id: variant.messageBundleId })
 							.execute();
 					}
 					// insert the message
 					existingMessage = await trx
-						.insertInto("message")
+						.insertInto("inlang_message")
 						.values({
-							bundleId: variant.messageBundleId,
+							bundle_id: variant.messageBundleId,
 							locale: variant.messageLocale,
 						})
 						.returningAll()
@@ -276,8 +289,8 @@ export async function importFiles(args: {
 				}
 
 				const existingVariants = await trx
-					.selectFrom("variant")
-					.where("messageId", "=", existingMessage.id)
+					.selectFrom("inlang_variant")
+					.where("message_id", "=", existingMessage.id)
 					.selectAll()
 					.execute();
 
@@ -286,17 +299,17 @@ export async function importFiles(args: {
 				);
 
 				// need to reset typescript's type narrowing
-				(variant as VariantImport).id = existingVariant?.id;
-				(variant as VariantImport).messageId = existingMessage.id;
+				(variant as ImportedVariant).id = existingVariant?.id;
+				(variant as ImportedVariant).message_id = existingMessage.id;
 			}
-			const toBeInsertedVariant: NewVariant = {
+			const toBeInsertedVariant: NewVariantRow = {
 				...variant,
 				// @ts-expect-error - bundle id is provided by VariantImport but not needed when inserting
 				messageBundleId: undefined,
 				messageLocale: undefined,
 			};
 			await trx
-				.insertInto("variant")
+				.insertInto("inlang_variant")
 				.values(toBeInsertedVariant)
 				.onConflict((oc) => oc.column("id").doUpdateSet(toBeInsertedVariant))
 				.execute();

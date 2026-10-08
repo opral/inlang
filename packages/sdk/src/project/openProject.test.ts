@@ -32,12 +32,12 @@ test("opens a project on a caller-owned Lix", async () => {
 	).resolves.toBeDefined();
 
 	await project.db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({ id: "caller-owned-lix" })
 		.execute();
 	expect(
 		await project.db
-			.selectFrom("bundle")
+			.selectFrom("inlang_bundle")
 			.select("id")
 			.where("id", "=", "caller-owned-lix")
 			.executeTakeFirst()

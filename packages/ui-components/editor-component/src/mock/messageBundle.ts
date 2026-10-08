@@ -1,9 +1,9 @@
-import type { Bundle, Message, Variant } from "@inlang/sdk";
+import type { BundleRow, MessageRow, VariantRow } from "@inlang/sdk";
 
 export const exampleWithoutSelectors: {
-  bundles: Bundle[];
-  messages: Message[];
-  variants: Variant[];
+  bundles: BundleRow[];
+  messages: MessageRow[];
+  variants: VariantRow[];
 } = {
   bundles: [
     {
@@ -13,13 +13,13 @@ export const exampleWithoutSelectors: {
   ],
   messages: [
     {
-      bundleId: "message-bundle-id",
+      bundle_id: "message-bundle-id",
       id: "message-id-en",
       locale: "en",
       selectors: [],
     },
     {
-      bundleId: "message-bundle-id",
+      bundle_id: "message-bundle-id",
       id: "message-id-de",
       locale: "de",
       selectors: [],
@@ -27,13 +27,13 @@ export const exampleWithoutSelectors: {
   ],
   variants: [
     {
-      messageId: "message-id-en",
+      message_id: "message-id-en",
       id: "variant-id-en-*",
       matches: [],
       pattern: [{ type: "text", value: "{count} new messages" }],
     },
     {
-      messageId: "message-id-de",
+      message_id: "message-id-de",
       id: "variant-id-de-*",
       matches: [],
       pattern: [{ type: "text", value: "{count} neue Nachrichten" }],

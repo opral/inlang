@@ -1,7 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { createChangeEvent } from "../../../helper/event.js";
-import type { Bundle, Declaration } from "@inlang/sdk";
+import type { BundleRow, Declaration } from "@inlang/sdk";
 import { baseStyling } from "../../../styling/base.js";
 
 import SlDropdown from "@shoelace-style/shoelace/dist/components/dropdown/dropdown.component.js";
@@ -123,7 +123,7 @@ export default class InlangAddVariable extends LitElement {
   ];
 
   @property({ type: Object })
-  bundle: Bundle;
+  bundle: BundleRow;
 
   //state
   @state()

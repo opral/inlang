@@ -1,7 +1,7 @@
 import type {
 	BundleNested,
 	MessageNested,
-	Variant,
+	VariantRow,
 } from "../../database/schema.js";
 import type { Pattern, VariableReference } from "../pattern.js";
 import type { MessageV1, PatternV1 } from "./schemaV1.js";
@@ -32,7 +32,7 @@ export function fromMessageV1(messageV1: MessageV1): BundleNested {
 			(variant) => variant.languageTag === language
 		);
 
-		const variants: Variant[] = [];
+		const variants: VariantRow[] = [];
 		let variantIndex = 1;
 		for (const v1Variant of v1Variants) {
 			if (v1Variant.match.length !== selectorNames.length) {
@@ -58,14 +58,14 @@ export function fromMessageV1(messageV1: MessageV1): BundleNested {
 				),
 				pattern: fromPatternV1(v1Variant.pattern),
 				id: messageId + "_" + variantIndex,
-				messageId: messageId,
+				message_id: messageId,
 			});
 			variantIndex += 1;
 		}
 
 		return {
 			id: messageId,
-			bundleId: bundleId,
+			bundle_id: bundleId,
 			locale: language,
 			selectors: [...selectors],
 			variants,

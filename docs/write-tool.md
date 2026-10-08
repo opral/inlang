@@ -67,7 +67,7 @@ console.log("Locales:", settings.locales);
 ## Step 4: Query all bundles
 
 ```typescript
-const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
 
 console.log(`Found ${bundles.length} translation keys`);
 ```
@@ -79,21 +79,21 @@ Now let's find bundles that are missing translations for certain locales:
 ```typescript
 async function findMissingTranslations(project) {
   const settings = await project.settings.get();
-  const bundles = await project.db.selectFrom("bundle").selectAll().execute();
-  const messages = await project.db.selectFrom("message").selectAll().execute();
+  const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
+  const messages = await project.db.selectFrom("inlang_message").selectAll().execute();
 
   const missing = [];
 
   for (const bundle of bundles) {
     // Get all messages for this bundle
-    const bundleMessages = messages.filter((m) => m.bundleId === bundle.id);
+    const bundleMessages = messages.filter((m) => m.bundle_id === bundle.id);
     const localesWithTranslation = bundleMessages.map((m) => m.locale);
 
     // Find which locales are missing
     for (const locale of settings.locales) {
       if (!localesWithTranslation.includes(locale)) {
         missing.push({
-          bundleId: bundle.id,
+          bundle_id: bundle.id,
           locale,
         });
       }
@@ -125,16 +125,16 @@ async function main() {
     }
 
     const settings = await project.settings.get();
-    const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+    const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
     const messages = await project.db
-      .selectFrom("message")
+      .selectFrom("inlang_message")
       .selectAll()
       .execute();
 
     const missing = [];
 
     for (const bundle of bundles) {
-      const bundleMessages = messages.filter((m) => m.bundleId === bundle.id);
+      const bundleMessages = messages.filter((m) => m.bundle_id === bundle.id);
       const localesWithTranslation = bundleMessages.map((m) => m.locale);
 
       for (const locale of settings.locales) {
@@ -179,22 +179,22 @@ The CRUD API is powered by Kysely. For reports, it is often clearest to query th
 
 ```typescript
 // Find bundles missing a specific locale
-const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+const bundles = await project.db.selectFrom("inlang_bundle").selectAll().execute();
 const germanMessages = await project.db
-  .selectFrom("message")
-  .select("bundleId")
+  .selectFrom("inlang_message")
+  .select("bundle_id")
   .where("locale", "=", "de")
   .execute();
 
 const translatedBundleIds = new Set(
-  germanMessages.map((message) => message.bundleId),
+  germanMessages.map((message) => message.bundle_id),
 );
 const missingGerman = bundles.filter(
   (bundle) => translatedBundleIds.has(bundle.id) === false,
 );
 
 // Count translations per locale
-const messages = await project.db.selectFrom("message").selectAll().execute();
+const messages = await project.db.selectFrom("inlang_message").selectAll().execute();
 const counts = Object.entries(
   messages.reduce<Record<string, number>>((result, message) => {
     result[message.locale] = (result[message.locale] ?? 0) + 1;
@@ -210,10 +210,10 @@ Tools can also create, update, and delete translations:
 ```typescript
 // Add a missing translation
 const message = await project.db
-  .insertInto("message")
+  .insertInto("inlang_message")
   .values({
     id: crypto.randomUUID(),
-    bundleId: "greeting",
+    bundle_id: "greeting",
     locale: "fr",
     selectors: [],
   })
@@ -222,10 +222,10 @@ const message = await project.db
 
 // Add the variant with text
 await project.db
-  .insertInto("variant")
+  .insertInto("inlang_variant")
   .values({
     id: crypto.randomUUID(),
-    messageId: message.id,
+    message_id: message.id,
     matches: [],
     pattern: [{ type: "text", value: "Bonjour!" }],
   })

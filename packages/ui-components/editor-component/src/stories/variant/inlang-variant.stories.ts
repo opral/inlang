@@ -5,7 +5,7 @@ import type { Meta, StoryObj } from "@storybook/web-components";
 //@ts-ignore
 import { useArgs } from "@storybook/preview-api";
 import { html } from "lit";
-import { type Variant } from "@inlang/sdk";
+import { type VariantRow } from "@inlang/sdk";
 import { type ChangeEventDetail } from "../../helper/event.ts";
 import { examplePlural } from "../../mock/pluralBundle.ts";
 
@@ -31,7 +31,7 @@ export const Example: StoryObj = {
 			if (change.newData === undefined) {
 				updateArgs({ variant: undefined });
 			} else {
-				updateArgs({ variant: change.newData as Variant });
+				updateArgs({ variant: change.newData as VariantRow });
 			}
 			console.info(change);
 		};
@@ -57,7 +57,7 @@ export const VariantInMessage: StoryObj = {
 			if (change.newData === undefined) {
 				updateArgs({ variant: undefined });
 			} else {
-				updateArgs({ variant: change.newData as Variant });
+				updateArgs({ variant: change.newData as VariantRow });
 			}
 			console.info(change);
 		};

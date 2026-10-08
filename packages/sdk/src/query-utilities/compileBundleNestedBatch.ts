@@ -15,7 +15,7 @@ export function compileBundleNestedBatch(
 	const queries: CompiledQuery[] = [];
 
 	const bundleInsert = db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({ id: bundleId, declarations: bundle.declarations });
 	queries.push(
 		(mode === "upsert"
@@ -30,9 +30,9 @@ export function compileBundleNestedBatch(
 
 	for (const message of bundle.messages) {
 		const messageId = message.id ?? crypto.randomUUID();
-		const messageInsert = db.insertInto("message").values({
+		const messageInsert = db.insertInto("inlang_message").values({
 			id: messageId,
-			bundleId,
+			bundle_id: bundleId,
 			locale: message.locale,
 			selectors: message.selectors,
 		});
@@ -40,7 +40,7 @@ export function compileBundleNestedBatch(
 			(mode === "upsert"
 				? messageInsert.onConflict((oc) =>
 						oc.column("id").doUpdateSet({
-							bundleId,
+							bundle_id: bundleId,
 							locale: message.locale,
 							selectors: message.selectors,
 						})
@@ -51,9 +51,9 @@ export function compileBundleNestedBatch(
 
 		for (const variant of message.variants) {
 			const variantId = variant.id ?? crypto.randomUUID();
-			const variantInsert = db.insertInto("variant").values({
+			const variantInsert = db.insertInto("inlang_variant").values({
 				id: variantId,
-				messageId,
+				message_id: messageId,
 				matches: variant.matches,
 				pattern: variant.pattern,
 			});
@@ -61,7 +61,7 @@ export function compileBundleNestedBatch(
 				(mode === "upsert"
 					? variantInsert.onConflict((oc) =>
 							oc.column("id").doUpdateSet({
-								messageId,
+								message_id: messageId,
 								matches: variant.matches,
 								pattern: variant.pattern,
 							})

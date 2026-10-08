@@ -30,12 +30,18 @@ test("batch imports an unambiguous fresh project", async () => {
 		settings: {} as any,
 	});
 
-	const messages = await project.db.selectFrom("message").selectAll().execute();
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(messages).toHaveLength(2);
 	expect(variants).toHaveLength(2);
-	expect(new Set(variants.map((variant) => variant.messageId))).toEqual(
+	expect(new Set(variants.map((variant) => variant.message_id))).toEqual(
 		new Set(messages.map((message) => message.id))
 	);
 });
@@ -81,8 +87,14 @@ test("batches rows with mixed optional columns", async () => {
 		settings: {} as any,
 	});
 
-	const messages = await project.db.selectFrom("message").selectAll().execute();
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(messages).toHaveLength(2);
 	expect(
@@ -133,7 +145,10 @@ test("preserves variant upsert semantics for duplicate matches", async () => {
 		settings: {} as any,
 	});
 
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(variants).toHaveLength(1);
 	expect(variants[0]?.pattern).toStrictEqual([{ type: "text", value: "last" }]);
@@ -173,11 +188,19 @@ test("does not alias message references containing NUL characters", async () => 
 		settings: {} as any,
 	});
 
-	const messages = await project.db.selectFrom("message").selectAll().execute();
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(variants).toHaveLength(2);
-	expect(new Set(variants.map((variant) => variant.messageId))).toHaveLength(2);
+	expect(new Set(variants.map((variant) => variant.message_id))).toHaveLength(
+		2
+	);
 	expect(messages).toHaveLength(2);
 });
 
@@ -201,7 +224,10 @@ test("it should insert a message as is if the id is provided", async () => {
 		settings: {} as any,
 	});
 
-	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
 
 	expect(messages.length).toBe(1);
 	expect(messages[0]?.id).toBe("alfa23");
@@ -210,12 +236,15 @@ test("it should insert a message as is if the id is provided", async () => {
 test("it should match an existing message if the id is not provided", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 
-	await project.db.insertInto("bundle").values({ id: "mock-bundle" }).execute();
 	await project.db
-		.insertInto("message")
+		.insertInto("inlang_bundle")
+		.values({ id: "mock-bundle" })
+		.execute();
+	await project.db
+		.insertInto("inlang_message")
 		.values({
 			id: "alfa23",
-			bundleId: "mock-bundle",
+			bundle_id: "mock-bundle",
 			locale: "en",
 			selectors: [],
 		})
@@ -244,7 +273,10 @@ test("it should match an existing message if the id is not provided", async () =
 		settings: {} as any,
 	});
 
-	const messages = await project.db.selectFrom("message").selectAll().execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
 
 	expect(messages.length).toBe(1);
 	expect(messages[0]?.id).toBe("alfa23");
@@ -273,7 +305,10 @@ test("it should create a bundle for a message if the bundle does not exist to av
 		settings: {} as any,
 	});
 
-	const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+	const bundles = await project.db
+		.selectFrom("inlang_bundle")
+		.selectAll()
+		.execute();
 
 	expect(bundles.length).toBe(1);
 	expect(bundles[0]?.id).toBe("non-existent-bundle");
@@ -282,12 +317,15 @@ test("it should create a bundle for a message if the bundle does not exist to av
 test("it should insert a variant as is if the id is provided", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 
-	await project.db.insertInto("bundle").values({ id: "mock-bundle" }).execute();
 	await project.db
-		.insertInto("message")
+		.insertInto("inlang_bundle")
+		.values({ id: "mock-bundle" })
+		.execute();
+	await project.db
+		.insertInto("inlang_message")
 		.values({
 			id: "mock-message",
-			bundleId: "mock-bundle",
+			bundle_id: "mock-bundle",
 			locale: "en",
 		})
 		.execute();
@@ -309,7 +347,10 @@ test("it should insert a variant as is if the id is provided", async () => {
 		settings: {} as any,
 	});
 
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(variants.length).toBe(1);
 	expect(variants[0]?.id).toBe("variant-id-23");
@@ -318,12 +359,15 @@ test("it should insert a variant as is if the id is provided", async () => {
 test("it should match an existing variant if the id is not provided", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 
-	await project.db.insertInto("bundle").values({ id: "mock-bundle" }).execute();
 	await project.db
-		.insertInto("message")
+		.insertInto("inlang_bundle")
+		.values({ id: "mock-bundle" })
+		.execute();
+	await project.db
+		.insertInto("inlang_message")
 		.values({
 			id: "mock-message",
-			bundleId: "mock-bundle",
+			bundle_id: "mock-bundle",
 			locale: "en",
 		})
 		.execute();
@@ -345,17 +389,23 @@ test("it should match an existing variant if the id is not provided", async () =
 		settings: {} as any,
 	});
 
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(variants.length).toBe(1);
-	expect(variants[0]?.messageId).toBe("mock-message");
+	expect(variants[0]?.message_id).toBe("mock-message");
 	expect(variants[0]?.id).toBeDefined();
 });
 
 test("it should create a message for a variant if the message does not exist to avoid foreign key conflicts and enable partial imports", async () => {
 	const project = await loadProjectInMemory({ blob: await newProject() });
 
-	await project.db.insertInto("bundle").values({ id: "mock-bundle" }).execute();
+	await project.db
+		.insertInto("inlang_bundle")
+		.values({ id: "mock-bundle" })
+		.execute();
 
 	const mockPlugin: InlangPlugin = {
 		key: "mock",
@@ -374,15 +424,24 @@ test("it should create a message for a variant if the message does not exist to 
 		settings: {} as any,
 	});
 
-	const bundles = await project.db.selectFrom("bundle").selectAll().execute();
-	const messages = await project.db.selectFrom("message").selectAll().execute();
-	const variants = await project.db.selectFrom("variant").selectAll().execute();
+	const bundles = await project.db
+		.selectFrom("inlang_bundle")
+		.selectAll()
+		.execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
 
 	expect(bundles.length).toBe(1);
 	expect(messages.length).toBe(1);
 	expect(variants.length).toBe(1);
 
-	expect(messages[0]?.bundleId).toBe("mock-bundle");
+	expect(messages[0]?.bundle_id).toBe("mock-bundle");
 	expect(messages[0]?.locale).toBe("en");
-	expect(variants[0]?.messageId).toBe(messages[0]?.id);
+	expect(variants[0]?.message_id).toBe(messages[0]?.id);
 });

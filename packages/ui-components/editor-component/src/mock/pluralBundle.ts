@@ -1,9 +1,9 @@
-import type { Bundle, Message, Variant } from "@inlang/sdk";
+import type { BundleRow, MessageRow, VariantRow } from "@inlang/sdk";
 
 export const examplePlural: {
-  bundles: Bundle[];
-  messages: Message[];
-  variants: Variant[];
+  bundles: BundleRow[];
+  messages: MessageRow[];
+  variants: VariantRow[];
 } = {
   bundles: [
     {
@@ -26,7 +26,7 @@ export const examplePlural: {
   ],
   messages: [
     {
-      bundleId: "mock_bundle_human_id",
+      bundle_id: "mock_bundle_human_id",
       id: "mock_message_id_de",
       locale: "de",
       selectors: [
@@ -37,7 +37,7 @@ export const examplePlural: {
       ],
     },
     {
-      bundleId: "mock_bundle_human_id",
+      bundle_id: "mock_bundle_human_id",
       id: "mock_message_id_en",
       locale: "en",
       selectors: [
@@ -50,7 +50,7 @@ export const examplePlural: {
   ],
   variants: [
     {
-      messageId: "mock_message_id_de",
+      message_id: "mock_message_id_de",
       id: "mock_variant_id_de_zero",
       matches: [
         {
@@ -67,7 +67,7 @@ export const examplePlural: {
       ],
     },
     {
-      messageId: "mock_message_id_de",
+      message_id: "mock_message_id_de",
       id: "mock_variant_id_de_one",
       matches: [
         {
@@ -84,7 +84,7 @@ export const examplePlural: {
       ],
     },
     {
-      messageId: "mock_message_id_de",
+      message_id: "mock_message_id_de",
       id: "mock_variant_id_de_other",
       matches: [
         {
@@ -108,7 +108,7 @@ export const examplePlural: {
       ],
     },
     {
-      messageId: "mock_message_id_en",
+      message_id: "mock_message_id_en",
       id: "mock_variant_id_en_zero",
       matches: [
         {
@@ -125,7 +125,7 @@ export const examplePlural: {
       ],
     },
     {
-      messageId: "mock_message_id_en",
+      message_id: "mock_message_id_en",
       id: "mock_variant_id_en_one",
       matches: [
         {
@@ -142,7 +142,7 @@ export const examplePlural: {
       ],
     },
     {
-      messageId: "mock_message_id_en",
+      message_id: "mock_message_id_en",
       id: "mock_variant_id_en_other",
       matches: [
         {

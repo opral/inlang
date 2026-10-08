@@ -32,8 +32,20 @@ export const translate = new Command()
     let exitCode = 0;
     try {
       const project = await getInlangProject({ projectPath: args.project });
-      await translateCommandAction({ project });
+      let partialError: PartialMachineTranslateError | undefined;
+      try {
+        await translateCommandAction({ project });
+      } catch (error) {
+        if (!(error instanceof PartialMachineTranslateError)) {
+          throw error;
+        }
+        partialError = error;
+      }
+      // Keep every translation that succeeded, even if some didn't.
       await saveProjectToDirectory({ fs, path: args.project, project });
+      if (partialError) {
+        throw partialError;
+      }
     } catch (error) {
       logError(error);
       exitCode = 1;
@@ -41,6 +53,14 @@ export const translate = new Command()
       process.exit(exitCode);
     }
   });
+
+/**
+ * Thrown when the translation provider was unavailable for some translations.
+ * Every translation that did succeed has already been written to the project.
+ */
+export class PartialMachineTranslateError extends Error {
+  override name = "PartialMachineTranslateError";
+}
 
 export async function translateCommandAction(args: { project: InlangProject }) {
   const options = translate.opts();
@@ -99,30 +119,36 @@ export async function translateCommandAction(args: { project: InlangProject }) {
     const updatedBundles = await Promise.all(promises);
 
     let unavailableError: string | undefined;
+    let unavailableCount = 0;
     for (const bundle of updatedBundles) {
-      if (bundle.error) {
+      if (bundle.unavailable) {
+        // Reported once below rather than once per affected bundle.
+        unavailableError = bundle.error;
+        unavailableCount += bundle.unavailableCount ?? 1;
+      } else if (bundle.error) {
         errors.push(bundle.error);
-        if (bundle.unavailable) {
-          unavailableError = bundle.error;
-        }
         continue;
-      } else if (bundle.data) {
+      }
+      if (bundle.data) {
         await upsertBundleNested(args.project.db, bundle.data);
       }
     }
     bar?.stop();
 
-    // The provider itself is unavailable (not just a handful of bundles that
-    // failed to translate): fail the command instead of reporting success.
-    if (unavailableError) {
-      throw new Error(unavailableError);
-    }
-
-    log.success("Machine translate complete.");
     if (errors.length > 0) {
       log.warn("Some bundles could not be translated.");
       log.warn(errors.join("\n"));
     }
+
+    // The provider itself was unavailable for some translations: keep the ones
+    // that succeeded, but still fail the command with a single summary error.
+    if (unavailableError) {
+      throw new PartialMachineTranslateError(
+        `${unavailableCount} ${unavailableCount === 1 ? "translation" : "translations"} could not be completed.\n${unavailableError}`,
+      );
+    }
+
+    log.success("Machine translate complete.");
   } catch (error) {
     bar?.stop();
     throw error;

@@ -1,7 +1,7 @@
 import { css, html, LitElement } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import overridePrimitiveColors from "../helper/overridePrimitiveColors.js";
-import type { Bundle } from "@inlang/sdk";
+import type { BundleRow } from "@inlang/sdk";
 import { createChangeEvent } from "../helper/event.js";
 
 // //shoelace components
@@ -146,7 +146,7 @@ export default class InlangBundle extends LitElement {
   ];
   //props
   @property({ type: Object })
-  bundle: Bundle;
+  bundle: BundleRow;
 
   @state()
   private _bundleActionsPresent = false;

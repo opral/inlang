@@ -1,11 +1,11 @@
-import type { Bundle, Message, Variant } from "@inlang/sdk";
+import type { BundleRow, MessageRow, VariantRow } from "@inlang/sdk";
 import type { ChangeEventDetail } from "../helper/event.js";
 
 export const updateEntities = (args: {
   entities: {
-    bundles: Bundle[];
-    messages: Message[];
-    variants: Variant[];
+    bundles: BundleRow[];
+    messages: MessageRow[];
+    variants: VariantRow[];
   };
   change: ChangeEventDetail;
 }) => {

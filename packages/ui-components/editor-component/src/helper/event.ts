@@ -1,6 +1,6 @@
 //generalized event dispatcher
 
-import type { Bundle, Message, Variant } from "@inlang/sdk";
+import type { BundleRow, MessageRow, VariantRow } from "@inlang/sdk";
 
 /**
  * This event is dispatched when a change is made to a bundle, message or variant.
@@ -13,7 +13,7 @@ import type { Bundle, Message, Variant } from "@inlang/sdk";
 export type ChangeEventDetail = {
   entityId: string;
   entity: "bundle" | "message" | "variant";
-  newData?: Bundle | Message | Variant;
+  newData?: BundleRow | MessageRow | VariantRow;
 };
 
 export const createChangeEvent = (detail: ChangeEventDetail) => {

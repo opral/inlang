@@ -2,13 +2,13 @@
 // 	createMockMessageLintReport({
 // 		ruleId: "messageBundleLintRule.inlang.missingReference",
 // 		messageBundleId: "mock_bundle_human_id",
-// 		messageId: "mock_message_id_en",
+// 		message_id: "mock_message_id_en",
 // 		body: "The bundle `mock_bundle_human_id` is missing the reference message for the locale `en`",
 // 	}),
 // 	createMockMessageLintReport({
 // 		ruleId: "messageBundleLintRule.inlang.missingReference",
 // 		messageBundleId: "mock_bundle_human_id",
-// 		messageId: "mock_message_id_en",
+// 		message_id: "mock_message_id_en",
 // 		body: "The bundle `mock_bundle_human_id` is missing the reference message for the locale `en`",
 // 		level: "warning",
 // 	}),
@@ -18,7 +18,7 @@
 // 	createMockVariantLintReport({
 // 		ruleId: "messageBundleLintRule.inlang.missingMessage",
 // 		messageBundleId: "mock_bundle_human_id",
-// 		messageId: "mock_message_id_de",
+// 		message_id: "mock_message_id_de",
 // 		variantId: "mock_variant_id_de_one",
 // 		body: "Variant test for `de` to check if can be rendered correctly",
 // 	}),

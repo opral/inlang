@@ -54,14 +54,14 @@ test("saveProjectToDirectory writes namespaced files back to their pathPattern",
 		// update a message to prove that saving writes the change back
 		// to the path the namespace pattern describes
 		const message = await project.db
-			.selectFrom("message")
+			.selectFrom("inlang_message")
 			.selectAll()
-			.where("bundleId", "=", "common:hello")
+			.where("bundle_id", "=", "common:hello")
 			.executeTakeFirstOrThrow();
 		await project.db
-			.updateTable("variant")
+			.updateTable("inlang_variant")
 			.set({ pattern: [{ type: "text", value: "Hello updated" }] })
-			.where("messageId", "=", message.id)
+			.where("message_id", "=", message.id)
 			.execute();
 
 		await saveProjectToDirectory({

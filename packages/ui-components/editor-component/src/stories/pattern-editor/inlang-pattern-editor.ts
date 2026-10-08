@@ -1,4 +1,4 @@
-import type { Declaration, MarkupStandalone, MarkupStart, Pattern, Variant } from "@inlang/sdk";
+import type { Declaration, MarkupStandalone, MarkupStart, Pattern, VariantRow } from "@inlang/sdk";
 import { LitElement, html, nothing, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { ref, createRef, type Ref } from "lit/directives/ref.js";
@@ -91,7 +91,7 @@ export default class InlangPatternEditor extends LitElement {
 
 	// props
 	@property({ type: Object })
-	variant: Variant;
+	variant: VariantRow;
 
 	/** Optional declarations, used for token tooltips such as "count · plural". */
 	@property({ type: Array })
@@ -332,7 +332,7 @@ export default class InlangPatternEditor extends LitElement {
 					createChangeEvent({
 						entityId: this.variant.id,
 						entity: "variant",
-						newData: { ...this.variant, pattern } as Variant,
+						newData: { ...this.variant, pattern } as VariantRow,
 					})
 				);
 			})

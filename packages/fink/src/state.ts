@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { atom } from "jotai";
-import { Bundle, loadProjectInMemory, ProjectSettings } from "@inlang/sdk";
+import { BundleRow, loadProjectInMemory, ProjectSettings } from "@inlang/sdk";
 import { atomWithStorage } from "jotai/utils";
 import { jsonObjectFrom } from "kysely/helpers/sqlite";
 import { Change, isInSimulatedCurrentBranch } from "@inlang/sdk";
@@ -215,7 +215,7 @@ export const groupedPendingChangesAtom = atom(async (get) => {
 export const bundlesWithPendingChangesAtom = atom(async (get) => {
 	const bundlesNested = await get(bundlesNestedAtom);
 	const groupedPendingChanges = await get(groupedPendingChangesAtom);
-	const hasPendingChange = (id: Bundle["id"]) =>
+	const hasPendingChange = (id: BundleRow["id"]) =>
 		groupedPendingChanges.some((change) => change.value?.id === id);
 	const bundleNestedWithChanges = bundlesNested.filter(
 		(bundle) =>

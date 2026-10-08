@@ -1,4 +1,4 @@
-import type { Message, ProjectSettings, Variant, Declaration } from "@inlang/sdk";
+import type { MessageRow, ProjectSettings, VariantRow, Declaration } from "@inlang/sdk";
 import { LitElement, css, html } from "lit";
 import { v7 as uuidV7 } from "uuid";
 import { customElement, property } from "lit/decorators.js";
@@ -172,10 +172,10 @@ export default class InlangMessage extends LitElement {
 	];
 
 	@property()
-	message: Message;
+	message: MessageRow;
 
 	@property()
-	variants: Variant[];
+	variants: VariantRow[];
 
 	@property({ type: Object })
 	settings: ProjectSettings | undefined;
@@ -292,9 +292,9 @@ export default class InlangMessage extends LitElement {
 						? html`<p
 								part="new-variant"
 								@click=${() => {
-									const variant: Variant = {
+									const variant: VariantRow = {
 										id: uuidV7(),
-										messageId: this.message.id,
+										message_id: this.message.id,
 										// combine the matches that are already present with the new category -> like a matrix
 										matches: this.message.selectors.map((selector) => ({
 											type: "literal-match",

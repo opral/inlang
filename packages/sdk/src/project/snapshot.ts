@@ -5,6 +5,7 @@ import { initDb } from "../database/initDb.js";
 import type {
 	Bundle,
 	BundleNested,
+	VariantRow,
 	Message,
 	Variant,
 } from "../database/schema.js";
@@ -138,21 +139,23 @@ function snapshotLixId(
 }
 
 function nestLegacyBundles(snapshot: LegacySnapshot): BundleNested[] {
-	const variantsByMessage = new Map<string, Variant[]>();
-	for (const variant of snapshot.variants) {
-		const variants = variantsByMessage.get(variant.messageId) ?? [];
-		variants.push(variant);
-		variantsByMessage.set(variant.messageId, variants);
+	// Legacy snapshots persist the camelCase `bundleId` and `messageId`.
+	const variantsByMessage = new Map<string, VariantRow[]>();
+	for (const { messageId, ...variant } of snapshot.variants) {
+		const variants = variantsByMessage.get(messageId) ?? [];
+		variants.push({ ...variant, message_id: messageId });
+		variantsByMessage.set(messageId, variants);
 	}
 
 	const messagesByBundle = new Map<string, BundleNested["messages"]>();
-	for (const message of snapshot.messages) {
-		const messages = messagesByBundle.get(message.bundleId) ?? [];
+	for (const { bundleId, ...message } of snapshot.messages) {
+		const messages = messagesByBundle.get(bundleId) ?? [];
 		messages.push({
 			...message,
+			bundle_id: bundleId,
 			variants: variantsByMessage.get(message.id) ?? [],
 		});
-		messagesByBundle.set(message.bundleId, messages);
+		messagesByBundle.set(bundleId, messages);
 	}
 
 	return snapshot.bundles.map((bundle) => ({

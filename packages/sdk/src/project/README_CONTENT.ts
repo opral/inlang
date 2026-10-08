@@ -92,7 +92,7 @@ const project = await loadProjectFromDirectory({
   fs,
 });
 // Query messages with the SDK.
-const messages = await project.db.selectFrom("message").selectAll().execute();
+const messages = await project.db.selectFrom("inlang_message").selectAll().execute();
 
 // Use project.db to update messages.
 await saveProjectToDirectory({
@@ -146,10 +146,10 @@ bundle (a concept, e.g., "welcome_header")
 
 ## Common tasks
 
-- List bundles: \`project.db.selectFrom("bundle").selectAll().execute()\`
-- List messages for locale: \`project.db.selectFrom("message").where("locale", "=", "en").selectAll().execute()\`
+- List bundles: \`project.db.selectFrom("inlang_bundle").selectAll().execute()\`
+- List messages for locale: \`project.db.selectFrom("inlang_message").where("locale", "=", "en").selectAll().execute()\`
 - Find missing translations: compare message counts across locales
-- Update a message: \`project.db.updateTable("message").set({ ... }).where("id", "=", "...").execute()\`
+- Update a message: \`project.db.updateTable("inlang_message").set({ ... }).where("id", "=", "...").execute()\`
 
 ## Links
 

@@ -184,7 +184,7 @@ describe("Android resources plugin", () => {
         "%2$d / %1$.2f / %3$s",
       );
       expect(
-        await project.db.selectFrom("message").selectAll().execute(),
+        await project.db.selectFrom("inlang_message").selectAll().execute(),
       ).toHaveLength(1);
     } finally {
       await project.close();

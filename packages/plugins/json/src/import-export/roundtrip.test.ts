@@ -81,16 +81,16 @@ test("keeps literal dotted and nested keys distinct through SDK import", async (
 		await project.importFiles({ pluginKey: plugin.key, files });
 
 		const messages = await project.db
-			.selectFrom("message")
+			.selectFrom("inlang_message")
 			.selectAll()
 			.execute();
 		const variants = await project.db
-			.selectFrom("variant")
+			.selectFrom("inlang_variant")
 			.selectAll()
 			.execute();
 		expect(messages).toHaveLength(2);
 		expect(variants).toHaveLength(2);
-		expect(new Set(variants.map((variant) => variant.messageId))).toEqual(
+		expect(new Set(variants.map((variant) => variant.message_id))).toEqual(
 			new Set(messages.map((message) => message.id))
 		);
 

@@ -17,7 +17,7 @@ test("throws when message contains markup placeholders", () => {
 		declarations: [],
 		messages: [
 			{
-				bundleId: "hello_world",
+				bundle_id: "hello_world",
 				id: "hello_world_en",
 				locale: "en",
 				selectors: [],
@@ -25,7 +25,7 @@ test("throws when message contains markup placeholders", () => {
 					{
 						id: "hello_world_en_1",
 						matches: [],
-						messageId: "hello_world_en",
+						message_id: "hello_world_en",
 						pattern: [
 							{
 								type: "markup-start",
@@ -63,13 +63,13 @@ test("serializes nested selectors and matches", () => {
 		messages: [
 			{
 				id: "welcome_en",
-				bundleId: "welcome",
+				bundle_id: "welcome",
 				locale: "en",
 				selectors: [{ type: "variable-reference", name: "audience" }],
 				variants: [
 					{
 						id: "welcome_en_admin",
-						messageId: "welcome_en",
+						message_id: "welcome_en",
 						matches: [
 							{ type: "literal-match", key: "audience", value: "admin" },
 						],
@@ -77,7 +77,7 @@ test("serializes nested selectors and matches", () => {
 					},
 					{
 						id: "welcome_en_other",
-						messageId: "welcome_en",
+						message_id: "welcome_en",
 						matches: [{ type: "catchall-match", key: "audience" }],
 						pattern: [{ type: "text", value: "Welcome" }],
 					},
@@ -128,7 +128,7 @@ const bundle: BundleNested = {
 	declarations: [],
 	messages: [
 		{
-			bundleId: "hello_world",
+			bundle_id: "hello_world",
 			id: "hello_world" + "_en",
 			locale: "en",
 			selectors: [],
@@ -136,7 +136,7 @@ const bundle: BundleNested = {
 				{
 					id: "hello_world" + "_en_1",
 					matches: [],
-					messageId: "hello_world" + "_en",
+					message_id: "hello_world" + "_en",
 					pattern: [
 						{
 							type: "text",
@@ -147,7 +147,7 @@ const bundle: BundleNested = {
 			],
 		},
 		{
-			bundleId: "hello_world",
+			bundle_id: "hello_world",
 			id: "hello_world" + "_de",
 			locale: "de",
 			selectors: [],
@@ -155,7 +155,7 @@ const bundle: BundleNested = {
 				{
 					id: "hello_world" + "_de_1",
 					matches: [],
-					messageId: "hello_world" + "_de",
+					message_id: "hello_world" + "_de",
 					pattern: [
 						{
 							type: "text",

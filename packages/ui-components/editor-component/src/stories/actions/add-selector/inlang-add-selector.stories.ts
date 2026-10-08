@@ -15,9 +15,9 @@ const meta: Meta = {
 export default meta;
 
 const bundle = examplePlural.bundles[0];
-const message = examplePlural.messages.find((m) => m.bundleId === bundle.id);
+const message = examplePlural.messages.find((m) => m.bundle_id === bundle.id);
 const variants = examplePlural.variants.filter(
-  (v) => message?.id === v.messageId,
+  (v) => message?.id === v.message_id,
 );
 
 export const Example: StoryObj = {

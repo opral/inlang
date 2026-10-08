@@ -48,7 +48,7 @@ for (const bundle of ast) {
 	for (const message of bundle.messages) {
 		const newMessage = {};
 		newMessage["id"] = message.id;
-		newMessage["bundleId"] = bundle.id;
+		newMessage["bundle_id"] = bundle.id;
 		newMessage["locale"] = message.locale;
 		newMessage["selectors"] = [];
 		newMessage["declarations"] = [
@@ -69,7 +69,7 @@ for (const bundle of ast) {
 		for (const variant of message.variants) {
 			const newVariant = {};
 			newVariant["id"] = variant.id;
-			newVariant["messageId"] = message.id;
+			newVariant["message_id"] = message.id;
 			newVariant["match"] = {};
 			newVariant["pattern"] = variant.pattern;
 
@@ -103,7 +103,7 @@ for (const message of variantBundle.messages) {
 		});
 		message.variants = [
 			{
-				messageId: message.id,
+				message_id: message.id,
 				id: generateUUID(),
 				match: { numTodos: "one" },
 				pattern: [
@@ -121,7 +121,7 @@ for (const message of variantBundle.messages) {
 				],
 			},
 			{
-				messageId: message.id,
+				message_id: message.id,
 				id: generateUUID(),
 				match: { numTodos: "other" },
 				pattern: [
@@ -154,7 +154,7 @@ for (const message of variantBundle.messages) {
 		});
 		message.variants = [
 			{
-				messageId: message.id,
+				message_id: message.id,
 				id: generateUUID(),
 				match: { numTodos: "one" },
 				pattern: [
@@ -165,7 +165,7 @@ for (const message of variantBundle.messages) {
 				],
 			},
 			{
-				messageId: message.id,
+				message_id: message.id,
 				id: generateUUID(),
 				match: { numTodos: "other" },
 				pattern: [

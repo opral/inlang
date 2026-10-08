@@ -159,7 +159,7 @@ test("creates exporter target directories from pathPattern", async () => {
 	});
 
 	await project.db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({ id: "greeting", declarations: [] })
 		.execute();
 
@@ -508,8 +508,16 @@ test("a roundtrip should work", async () => {
 		providePlugins: [mockPlugin],
 	});
 
-	await project.db.insertInto("bundle").values(bundles).execute();
-	await project.db.insertInto("message").values(messages).execute();
+	await project.db.insertInto("inlang_bundle").values(bundles).execute();
+	await project.db
+		.insertInto("inlang_message")
+		.values(
+			messages.map(({ bundleId, ...message }) => ({
+				...message,
+				bundle_id: bundleId,
+			}))
+		)
+		.execute();
 
 	await saveProjectToDirectory({
 		fs: volume.promises as any,
@@ -540,15 +548,15 @@ test("a roundtrip should work", async () => {
 	expect(mockPlugin.importFiles).toHaveBeenCalled();
 
 	const bundlesAfter = await project2.db
-		.selectFrom("bundle")
+		.selectFrom("inlang_bundle")
 		.selectAll()
 		.execute();
 	const messagesAfter = await project2.db
-		.selectFrom("message")
+		.selectFrom("inlang_message")
 		.selectAll()
 		.execute();
 	const variantsAfter = await project2.db
-		.selectFrom("variant")
+		.selectFrom("inlang_variant")
 		.selectAll()
 		.execute();
 
@@ -633,7 +641,7 @@ test.todo(
 		]);
 
 		// await project.db
-		// 	.updateTable("variant")
+		// 	.updateTable("inlang_variant")
 		// 	.set({
 		// 		pattern: [{ type: "text", value: "Updated message" }],
 		// 	})
@@ -792,7 +800,7 @@ test("throws when saving translation data to a directory without an exporter plu
 	});
 
 	await project.db
-		.insertInto("bundle")
+		.insertInto("inlang_bundle")
 		.values({ id: "greeting", declarations: [] })
 		.execute();
 
