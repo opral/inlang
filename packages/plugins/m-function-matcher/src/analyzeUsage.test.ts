@@ -268,3 +268,44 @@ test.each([
 ])("destructured timer aliases withhold findings: %s", async (code) => {
 	expect((await analyze(code)).status).toBe("incomplete");
 });
+
+test("reports where each message is used, covering the whole call", async () => {
+	const result = await analyzeUsage({
+		files: [
+			{
+				path: "src/app.ts",
+				content:
+					"import { m } from './paraglide/messages.js';\nconst a = m.welcome({ name });\nconst b = m.bye;\n",
+			},
+			{
+				path: "src/Page.svelte",
+				content:
+					"<script>\n\timport { m } from '$lib/paraglide/messages';\n</script>\n<p>{m.hello()}</p>\n",
+			},
+		],
+		settings: {} as never,
+	});
+	expect(result.status).toBe("complete");
+	expect(result.references).toEqual(
+		expect.arrayContaining([
+			{
+				bundleId: "welcome",
+				path: "src/app.ts",
+				start: { line: 2, column: 10 },
+				end: { line: 2, column: 29 },
+			},
+			{
+				bundleId: "bye",
+				path: "src/app.ts",
+				start: { line: 3, column: 10 },
+				end: { line: 3, column: 15 },
+			},
+			{
+				bundleId: "hello",
+				path: "src/Page.svelte",
+				start: { line: 4, column: 4 },
+				end: { line: 4, column: 13 },
+			},
+		])
+	);
+});

@@ -1,6 +1,6 @@
 import { parse as parseSvelte } from "svelte/compiler";
 import { parse } from "@babel/parser";
-import type { AnalyzeUsage, UsageAnalysis } from "@inlang/sdk";
+import type { AnalyzeUsage, UsageAnalysis, UsageReference } from "@inlang/sdk";
 
 type Node = { type: string; [key: string]: unknown };
 const isNode = (value: unknown): value is Node =>
@@ -73,7 +73,46 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 	}
 	const used = new Set<string>();
 	const issues: { path: string; reason: string }[] = [];
+	const references: UsageReference[] = [];
 	for (const file of files) {
+		// Line starts for turning AST offsets into 1-based lines and 0-based columns.
+		let lineStarts: number[] | undefined;
+		const position = (offset: number) => {
+			lineStarts ??= [
+				0,
+				...[...file.content.matchAll(/\n/g)].map((match) => match.index! + 1),
+			];
+			let low = 0,
+				high = lineStarts.length - 1;
+			while (low < high) {
+				const middle = (low + high + 1) >> 1;
+				if (lineStarts[middle]! <= offset) low = middle;
+				else high = middle - 1;
+			}
+			return { line: low + 1, column: offset - lineStarts[low]! };
+		};
+		/** Records where a message is used: the whole call when the reference is called. */
+		const refer = (
+			bundleId: string,
+			node: Node,
+			parent?: Node,
+			key?: string
+		) => {
+			const target =
+				parent &&
+				(parent.type === "CallExpression" ||
+					parent.type === "OptionalCallExpression") &&
+				key === "callee"
+					? parent
+					: node;
+			if (typeof target.start === "number" && typeof target.end === "number")
+				references.push({
+					bundleId,
+					path: file.path,
+					start: position(target.start),
+					end: position(target.end),
+				});
+		};
 		const unresolved = new Set<string>();
 		if (!/\.(?:[jt]sx?|m[jt]s|svelte)$/i.test(file.path)) {
 			issues.push({
@@ -345,8 +384,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 			) {
 				const [namespace, member] = node.name.split(".");
 				if (namespace && namespaces.has(namespace)) {
-					if (member) used.add(member);
-					else
+					if (member) {
+						used.add(member);
+						refer(member, node);
+					} else
 						unresolved.add(
 							"A Svelte message namespace escapes through a component or directive."
 						);
@@ -358,7 +399,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				node.object.type === "JSXIdentifier" &&
 				namespaces.has(node.object.name as string)
 			) {
-				if (isNode(node.property)) used.add(node.property.name as string);
+				if (isNode(node.property)) {
+					used.add(node.property.name as string);
+					refer(node.property.name as string, node);
+				}
 			}
 			if (
 				node.type === "JSXIdentifier" &&
@@ -396,7 +440,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 					const id = propertyName;
 					if (id === undefined)
 						unresolved.add("Dynamic message access cannot be resolved.");
-					else used.add(id);
+					else {
+						used.add(id);
+						refer(id, node, parent, key);
+					}
 				}
 				// Nested/global message namespaces require binding graph analysis.
 				if (propertyName === "m" && (!object || !namespaces.has(object)))
@@ -443,5 +490,6 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 		usedBundleIds: [...used],
 		status: issues.length ? "incomplete" : "complete",
 		issues,
+		references,
 	} satisfies UsageAnalysis;
 };

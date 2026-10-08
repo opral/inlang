@@ -5,6 +5,7 @@ import type { InlangPlugin } from "../plugin/schema.js";
 import type { InlangProject } from "../project/api.js";
 import { checkProject } from "./checkProject.js";
 import { applyFix } from "./applyFix.js";
+import { findUsages } from "./findUsages.js";
 import type { CheckDiagnostic, SourceFile, UsageAnalysis } from "./types.js";
 
 const cleanup: (() => Promise<unknown>)[] = [];
@@ -48,7 +49,11 @@ async function setup(
 					message_id: "old-en",
 					pattern: [{ type: "text", value: "Old" }],
 				},
-				{ id: "old-de-v", message_id: "old-de", pattern: [] },
+				{
+					id: "old-de-v",
+					message_id: "old-de",
+					pattern: [{ type: "text", value: "Alt" }],
+				},
 			])
 			.execute();
 	});
@@ -557,4 +562,120 @@ test.each([
 	expect(result.diagnostics.some((d) => d.checkId === "unused-message")).toBe(
 		false
 	);
+});
+
+test("translation checks compare each locale with the reference locale", async () => {
+	const project = await setup();
+	await project.db.transaction().execute(async (tx) => {
+		await tx.insertInto("inlang_bundle").values({ id: "storage" }).execute();
+		await tx
+			.insertInto("inlang_message")
+			.values([
+				{ id: "storage-en", bundle_id: "storage", locale: "en" },
+				{ id: "storage-de", bundle_id: "storage", locale: "de" },
+			])
+			.execute();
+		await tx
+			.insertInto("inlang_variant")
+			.values([
+				{
+					id: "storage-en-v",
+					message_id: "storage-en",
+					pattern: [
+						{
+							type: "expression",
+							arg: { type: "variable-reference", name: "used" },
+						},
+						{ type: "text", value: " of " },
+						{
+							type: "expression",
+							arg: { type: "variable-reference", name: "total" },
+						},
+					],
+				},
+				{
+					id: "storage-de-v",
+					message_id: "storage-de",
+					pattern: [
+						{
+							type: "expression",
+							arg: { type: "variable-reference", name: "used" },
+						},
+						{ type: "text", value: " belegt" },
+					],
+				},
+			])
+			.execute();
+	});
+	const result = await checkProject({ project });
+	expect(result.diagnostics.filter((d) => d.bundleId === "storage")).toEqual([
+		{
+			checkId: "missing-variable",
+			bundleId: "storage",
+			locale: "de",
+			messageId: "storage-de",
+			variantId: "storage-de-v",
+			name: "total",
+			severity: "warning",
+			fixes: [],
+			message: 'Message "storage" is missing {total} in "de".',
+		},
+	]);
+	expect(result.checks.map((check) => check.id)).toEqual([
+		"missing-translation",
+		"unused-message",
+		"empty-translation",
+		"missing-variable",
+		"unknown-variable",
+		"missing-markup",
+		"missing-variant",
+	]);
+	// German as the reference: English now has a variable German doesn't use.
+	expect(
+		(
+			await checkProject({
+				project,
+				referenceLocale: "de",
+				bundleIds: ["storage"],
+			})
+		).diagnostics.map((d) => [d.checkId, d.locale])
+	).toEqual([["unknown-variable", "en"]]);
+	// Selected checks only; patterns aren't needed for these.
+	const selected = await checkProject({
+		project,
+		checks: ["missing-translation"],
+	});
+	expect(selected.checks.map((check) => check.id)).toEqual([
+		"missing-translation",
+	]);
+	expect(
+		selected.diagnostics.every((d) => d.checkId === "missing-translation")
+	).toBe(true);
+});
+
+test("findUsages returns analyzer references from the shared snapshot", async () => {
+	const references = [
+		{
+			bundleId: "used",
+			path: "src/app.ts",
+			start: { line: 1, column: 0 },
+			end: { line: 1, column: 8 },
+		},
+	];
+	const project = await setup([
+		{
+			key: "matcher",
+			analyzeUsage: async () => ({
+				usedBundleIds: ["used"],
+				status: "complete",
+				references,
+			}),
+		},
+	]);
+	const found = await findUsages({ project, files });
+	expect(found).toEqual({ status: "complete", references });
+	expect(
+		(await findUsages({ project, files, bundleIds: ["old"] })).references
+	).toEqual([]);
+	expect((await findUsages({ project, files: [] })).status).toBe("unavailable");
 });

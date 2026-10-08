@@ -1,26 +1,58 @@
 import type { Kysely } from "kysely";
 import type { InlangDatabaseSchema } from "../database/schema.js";
-import type { CheckProjectArgs, CheckResult } from "./types.js";
+import type {
+	CheckDiagnostic,
+	CheckId,
+	CheckProjectArgs,
+	CheckResult,
+} from "./types.js";
 import { projectUsage } from "./usage.js";
+import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
+import type { BundleNested } from "../database/schema.js";
+import { checkTranslation } from "./translations.js";
+
+// Results list checks in this order; unused-message stays second as in the first release.
+const ALL_CHECKS: readonly CheckId[] = [
+	"missing-translation",
+	"unused-message",
+	"empty-translation",
+	"missing-variable",
+	"unknown-variable",
+	"missing-markup",
+	"missing-variant",
+];
+/** Checks that compare translation patterns and therefore read them. */
+const PATTERN_CHECKS: readonly CheckId[] = [
+	"empty-translation",
+	"missing-variable",
+	"unknown-variable",
+	"missing-markup",
+	"missing-variant",
+];
 
 /** Checks derived project state without mutation, subscriptions or file I/O. */
 export async function checkProject(
 	args: CheckProjectArgs
 ): Promise<CheckResult> {
 	const settings = await args.project.settings.get();
-	const usage = await projectUsage(args.project, args.files, settings);
+	const enabled = new Set(args.checks ?? ALL_CHECKS);
+	const usage = enabled.has("unused-message")
+		? await projectUsage(args.project, args.files, settings)
+		: undefined;
 	const result: CheckResult = {
 		diagnostics: [],
-		checks: [
-			{ id: "missing-translation", status: "complete" },
-			{
-				...usage.check,
-				...(usage.check.issues
-					? { issues: usage.check.issues.map((issue) => ({ ...issue })) }
-					: {}),
-			},
-		],
+		checks: ALL_CHECKS.filter((id) => enabled.has(id)).map((id) =>
+			id === "unused-message" && usage
+				? {
+						...usage.check,
+						...(usage.check.issues
+							? { issues: usage.check.issues.map((issue) => ({ ...issue })) }
+							: {}),
+					}
+				: { id, status: "complete" as const }
+		),
 	};
+	const referenceLocale = args.referenceLocale ?? settings.baseLocale;
 	const ignored = new Map<string, Set<string>>();
 	for (const { bundleId, locale } of args.ignoreMissingTranslations ?? []) {
 		if (!ignored.has(bundleId)) ignored.set(bundleId, new Set());
@@ -50,14 +82,16 @@ export async function checkProject(
 			if (!bundles.has(row.bundle_id)) bundles.set(row.bundle_id, new Set());
 			if (row.locale !== null) bundles.get(row.bundle_id)!.add(row.locale);
 		}
-		const unused = [...bundles.keys()].filter(
-			(id) => usage.check.status === "complete" && !usage.used.has(id)
-		);
+		const unused = usage
+			? [...bundles.keys()].filter(
+					(id) => usage.check.status === "complete" && !usage.used.has(id)
+				)
+			: [];
 		const revisions = unused.length
 			? await bundleRevisions(args.project.db, unused)
 			: new Map<string, string>();
 		for (const [bundleId, present] of bundles) {
-			for (const locale of locales) {
+			for (const locale of enabled.has("missing-translation") ? locales : []) {
 				if (present.has(locale) || ignored.get(bundleId)?.has(locale)) continue;
 				result.diagnostics.push({
 					checkId: "missing-translation",
@@ -84,8 +118,115 @@ export async function checkProject(
 					],
 				});
 		}
+		if (PATTERN_CHECKS.some((id) => enabled.has(id)))
+			for (const bundle of await nestedBundles(args.project, scope, [
+				...bundles.keys(),
+			]))
+				result.diagnostics.push(
+					...translationDiagnostics(
+						bundle,
+						locales,
+						referenceLocale,
+						ignored
+					).filter((diagnostic) => enabled.has(diagnostic.checkId))
+				);
 	}
 	return result;
+}
+
+/** Bundles with patterns: one query for a full scan, per bundle for scoped refreshes. */
+async function nestedBundles(
+	project: CheckProjectArgs["project"],
+	scope: string[] | undefined,
+	ids: string[]
+): Promise<BundleNested[]> {
+	if (scope === undefined) return selectBundleNested(project.db).execute();
+	const result: BundleNested[] = [];
+	for (const id of ids) {
+		const bundle = await selectBundleNested(project.db)
+			.where("inlang_bundle.id", "=", id)
+			.executeTakeFirst();
+		if (bundle) result.push(bundle);
+	}
+	return result;
+}
+
+/** Compares every locale's message with the reference locale's message. */
+export function translationDiagnostics(
+	bundle: BundleNested,
+	locales: readonly string[],
+	referenceLocale: string,
+	ignored: Map<string, Set<string>> = new Map()
+): CheckDiagnostic[] {
+	const diagnostics: CheckDiagnostic[] = [];
+	const reference = bundle.messages.find(
+		(message) => message.locale === referenceLocale
+	);
+	const id = JSON.stringify(bundle.id);
+	const base = { bundleId: bundle.id, severity: "warning" as const, fixes: [] };
+	for (const locale of locales) {
+		if (locale === referenceLocale) continue;
+		const target = bundle.messages.find((message) => message.locale === locale);
+		if (!target) continue;
+		const where = JSON.stringify(locale);
+		const messageId = target.id;
+		for (const issue of checkTranslation({
+			reference,
+			target,
+			declarations: bundle.declarations,
+		})) {
+			if (issue.type === "missing-translation") {
+				if (!ignored.get(bundle.id)?.has(locale))
+					diagnostics.push({
+						...base,
+						locale,
+						checkId: "empty-translation",
+						messageId,
+						message: `Message ${id} has an empty translation for ${where}.`,
+					});
+			} else if (issue.type === "missing-variable")
+				diagnostics.push({
+					...base,
+					locale,
+					checkId: "missing-variable",
+					messageId,
+					variantId: issue.variantId!,
+					name: issue.name,
+					message: `Message ${id} is missing {${issue.name}} in ${where}.`,
+				});
+			else if (issue.type === "unknown-variable")
+				diagnostics.push({
+					...base,
+					locale,
+					checkId: "unknown-variable",
+					messageId,
+					variantId: issue.variantId!,
+					name: issue.name,
+					...(issue.suggestion ? { suggestion: issue.suggestion } : {}),
+					message: `Message ${id} uses {${issue.name}} in ${where}, which ${JSON.stringify(referenceLocale)} doesn't use${issue.suggestion ? `. Did you mean {${issue.suggestion}}?` : "."}`,
+				});
+			else if (issue.type === "missing-markup")
+				diagnostics.push({
+					...base,
+					locale,
+					checkId: "missing-markup",
+					messageId,
+					variantId: issue.variantId!,
+					name: issue.name,
+					message: `Message ${id} is missing the <${issue.name}> markup in ${where}.`,
+				});
+			else
+				diagnostics.push({
+					...base,
+					locale,
+					checkId: "missing-variant",
+					messageId,
+					matches: issue.matches,
+					message: `Message ${id} has no variant for ${issue.matches.map((match) => `${match.key}=${match.type === "literal-match" ? match.value : "*"}`).join(", ")} in ${where}.`,
+				});
+		}
+	}
+	return diagnostics;
 }
 
 /** Revision metadata includes every dependent row, including added/removed variants. */

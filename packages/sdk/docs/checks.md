@@ -10,7 +10,30 @@ import { checkProject } from "@inlang/sdk";
 const result = await checkProject({ project });
 ```
 
-`missing-translation` reports a bundle that has no message row for a configured locale, including the base locale. An existing empty pattern is not a missing translation. This release does not check empty patterns, syntax, duplicate text or plural coverage; parsing/import errors remain separate.
+`missing-translation` reports a bundle that has no message row for a configured locale, including the base locale. It reads IDs and locales only.
+
+The translation checks compare every locale's message with the reference locale's message (`settings.baseLocale`, or `referenceLocale`):
+
+| Check               | Reports                                                                                                                                                                                                                         | Extra fields                                    |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `empty-translation` | A message whose every variant has no text, variables or markup. Applications usually treat it like a missing translation.                                                                                                       | `messageId`                                     |
+| `missing-variable`  | A variable the reference uses is absent from a non-empty variant. Variants matching an exact number on a plural selector (e.g. `0`) may spell the number out and are exempt. Variables used only as selectors are not required. | `messageId`, `variantId`, `name`                |
+| `unknown-variable`  | A variant uses a variable no reference pattern uses, e.g. a typo.                                                                                                                                                               | `messageId`, `variantId`, `name`, `suggestion?` |
+| `missing-markup`    | A markup tag the reference uses (`<link>`, `<b>`, `<br/>`) is absent from a non-empty variant.                                                                                                                                  | `messageId`, `variantId`, `name`                |
+| `missing-variant`   | A match combination the locale needs has no variant: a plural category of the locale (Russian needs one, few, many and the catch-all as other), or a literal key another variant of that selector uses.                         | `messageId`, `matches`                          |
+
+Selectors belong to each locale's message, so one locale can split by a plural while another uses one text; coverage is checked against the locale's own selectors. Plural rules come from `Intl.PluralRules` and follow local-variable aliases; plurals whose type or options are only known at runtime, and unsupported locales, require only the catch-all. The same comparison is exported as `checkTranslation()` for editors that check unsaved input, with `requiredVariants()`, `selectorKeys()` and `pluralCategories()`.
+
+The translation checks read patterns. Select checks to skip them when only IDs matter:
+
+```ts
+const result = await checkProject({
+	project,
+	checks: ["missing-translation", "unused-message"],
+});
+```
+
+Syntax and parsing/import errors remain separate.
 
 Intentional fallback can exempt individual bundle/locale combinations:
 
@@ -21,7 +44,7 @@ const result = await checkProject({
 });
 ```
 
-These exclusions are supplied by the caller; the SDK does not persist them or change fallback behavior.
+These exclusions also cover `empty-translation`. They are supplied by the caller; the SDK does not persist them or change fallback behavior.
 
 ## Check application usage
 
@@ -85,6 +108,23 @@ Svelte files use the Svelte compiler parser. Both instance and module scripts (J
 This release does not implement TypeScript data-flow analysis or resolve all module graphs. Reexports with a source module, TypeScript import assignments, and all dynamic/CommonJS imports are incomplete. Vue and Astro files are unsupported and make the snapshot incomplete. Do not omit relevant unsupported files to obtain a complete result.
 
 The matcher also reports incomplete analysis for parse errors, a file over two million characters, or a snapshot over 10,000 files or 50 million characters. It does not silently skip these files.
+
+## Find usages
+
+`findUsages` returns where messages are used in the same snapshot, for code previews, "find references" and links to the source. It shares the analysis cache with `checkProject`:
+
+```ts
+import { findUsages } from "@inlang/sdk";
+
+const { status, references } = await findUsages({
+	project,
+	files,
+	bundleIds: ["welcome"],
+});
+// [{ bundleId: "welcome", path: "src/Welcome.tsx", start: { line: 2, column: 40 }, end: { line: 2, column: 52 } }]
+```
+
+Lines are 1-based, columns 0-based and `end` is exclusive; a called reference covers the whole call. References are only as complete as the analysis: with an `incomplete` status, a message without references may still be used.
 
 ## Read results
 
@@ -207,4 +247,4 @@ const plugin: InlangPlugin = {
 };
 ```
 
-Return canonical stored bundle IDs, including references passed as functions. Return `incomplete` with issues whenever parsing or unresolved usage prevents a conclusion. The SDK unions usages across all installed analyzers; every analyzer must complete before unused findings are emitted. Analyzers must treat inputs as immutable: the SDK supplies frozen source records and an isolated, deeply frozen settings copy. Malformed runtime results and rejected analyzers are reported as incomplete and retried on the next check. The SDK validates and copies indexed result entries, normalizes issue metadata to `path` and `reason`, and isolates public result objects from its cache.
+Return canonical stored bundle IDs, including references passed as functions. Analyzers can also return `references` (bundle ID, path, start and end positions) for `findUsages`; the m-function matcher does. Return `incomplete` with issues whenever parsing or unresolved usage prevents a conclusion. The SDK unions usages across all installed analyzers; every analyzer must complete before unused findings are emitted. Analyzers must treat inputs as immutable: the SDK supplies frozen source records and an isolated, deeply frozen settings copy. Malformed runtime results and rejected analyzers are reported as incomplete and retried on the next check. The SDK validates and copies indexed result entries, normalizes issue metadata to `path` and `reason`, and isolates public result objects from its cache.

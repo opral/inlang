@@ -1,0 +1,133 @@
+import { expect, test } from "vitest";
+import type { Declaration, Pattern } from "../json-schema/pattern.js";
+import type { Match } from "../database/schema.js";
+import { checkTranslation, requiredVariants } from "./translations.js";
+
+const v = (name: string) => ({
+	type: "expression" as const,
+	arg: { type: "variable-reference" as const, name },
+});
+const t = (value: string) => ({ type: "text" as const, value });
+const declarations: Declaration[] = [
+	{ type: "input-variable", name: "count" },
+	{
+		type: "local-variable",
+		name: "countPlural",
+		value: {
+			type: "expression",
+			arg: { type: "variable-reference", name: "count" },
+			annotation: { type: "function-reference", name: "plural", options: [] },
+		},
+	},
+];
+const key = (value: string): Match =>
+	value === "*"
+		? { type: "catchall-match", key: "countPlural" }
+		: { type: "literal-match", key: "countPlural", value };
+const message = (locale: string, forms: Record<string, Pattern>) => ({
+	id: `m-${locale}`,
+	locale,
+	selectors: [{ type: "variable-reference" as const, name: "countPlural" }],
+	variants: Object.entries(forms).map(([form, pattern]) => ({
+		id: `${locale}-${form}`,
+		matches: [key(form)],
+		pattern,
+	})),
+});
+const english = message("en", {
+	one: [v("count"), t(" file left")],
+	"*": [v("count"), t(" files left")],
+});
+
+test("plural forms follow the locale, with the catch-all as other", () => {
+	const values = (locale: string) =>
+		requiredVariants(
+			{ locale, selectors: english.selectors },
+			declarations
+		).map((matches) =>
+			matches.map((m) => (m.type === "literal-match" ? m.value : "*")).join()
+		);
+	expect(values("ru")).toEqual(["one", "few", "many", "*"]);
+	expect(values("en")).toEqual(["one", "*"]);
+	expect(values("ja")).toEqual(["*"]);
+	const russian = message("ru", {
+		one: [v("count"), t(" файл")],
+		"*": [v("count"), t(" файлов")],
+	});
+	expect(
+		checkTranslation({ reference: english, target: russian, declarations })
+	).toEqual([
+		{ type: "missing-variant", matches: [key("few")] },
+		{ type: "missing-variant", matches: [key("many")] },
+	]);
+	// An explicit "other" covers the catch-all.
+	const complete = message("ru", {
+		one: [v("count")],
+		few: [v("count")],
+		many: [v("count")],
+		other: [v("count")],
+	});
+	expect(
+		checkTranslation({ reference: english, target: complete, declarations })
+	).toEqual([]);
+});
+
+test("variables and markup are checked per variant, with suggestions", () => {
+	const reference = {
+		locale: "en",
+		selectors: [],
+		variants: [
+			{
+				id: "en",
+				matches: [],
+				pattern: [
+					v("used"),
+					t(" of "),
+					v("total"),
+					t(" used. "),
+					{ type: "markup-start" as const, name: "link" },
+					t("docs"),
+					{ type: "markup-end" as const, name: "link" },
+				],
+			},
+		],
+	};
+	const target = {
+		locale: "de",
+		selectors: [],
+		variants: [
+			{ id: "de", matches: [], pattern: [v("used"), t(" von "), v("totl")] },
+		],
+	};
+	expect(checkTranslation({ reference, target })).toEqual([
+		{ type: "missing-variable", name: "total", variantId: "de" },
+		{
+			type: "unknown-variable",
+			name: "totl",
+			variantId: "de",
+			suggestion: "total",
+		},
+		{ type: "missing-markup", name: "link", variantId: "de" },
+	]);
+});
+
+test("empty translations are missing, and exact numbers may spell the number out", () => {
+	expect(
+		checkTranslation({
+			reference: english,
+			target: message("de", { "*": [t("  ")] }),
+			declarations,
+		})
+	).toEqual([{ type: "missing-translation" }]);
+	expect(checkTranslation({ reference: english, target: undefined })).toEqual([
+		{ type: "missing-translation" },
+	]);
+	const zero = message("de", {
+		"0": [t("Keine Dateien")],
+		one: [v("count"), t(" Datei")],
+		"*": [v("count"), t(" Dateien")],
+	});
+	expect(
+		checkTranslation({ reference: english, target: zero, declarations })
+	).toEqual([]);
+});

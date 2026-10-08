@@ -5,9 +5,14 @@ import type {
 	CheckStatus,
 	SourceFile,
 	UsageAnalysis,
+	UsageReference,
 } from "./types.js";
 
-type Usage = { used: Set<string>; check: CheckStatus };
+type Usage = {
+	used: Set<string>;
+	check: CheckStatus;
+	references: UsageReference[];
+};
 type Cached = {
 	files: readonly SourceFile[];
 	settings: string;
@@ -25,6 +30,7 @@ export async function projectUsage(
 ): Promise<Usage> {
 	const unavailable = (reason: string): Usage => ({
 		used: new Set(),
+		references: [],
 		check: { id: "unused-message", status: "unavailable", reason },
 	});
 	if (files === undefined)
@@ -40,6 +46,7 @@ export async function projectUsage(
 	if (!analyzers.length && errors.length)
 		return {
 			used: new Set(),
+			references: [],
 			check: {
 				id: "unused-message",
 				status: "incomplete",
@@ -84,6 +91,7 @@ export async function projectUsage(
 	let failed = false;
 	const result = (async (): Promise<Usage> => {
 		const used = new Set<string>();
+		const references: UsageReference[] = [];
 		const issues: { path?: string; reason: string }[] = [];
 		if (errors.length)
 			issues.push({ reason: "Project plugin loading reported errors." });
@@ -100,6 +108,7 @@ export async function projectUsage(
 					})
 				);
 				for (const id of analysis.usedBundleIds) used.add(id);
+				references.push(...(analysis.references ?? []));
 				if (analysis.status !== "complete" || analysis.issues?.length) {
 					issues.push(
 						...(analysis.issues?.length
@@ -119,6 +128,7 @@ export async function projectUsage(
 		}
 		return {
 			used,
+			references,
 			check: issues.length
 				? {
 						id: "unused-message",
@@ -166,6 +176,30 @@ function normalizeAnalysis(value: UsageAnalysis): UsageAnalysis {
 		(rawIssues !== undefined && !Array.isArray(rawIssues))
 	)
 		return invalid();
+	const rawReferences = value.references;
+	if (rawReferences !== undefined && !Array.isArray(rawReferences))
+		return invalid();
+	const position = (point: unknown) => {
+		if (!point || typeof point !== "object") return invalid();
+		const { line, column } = point as { line: unknown; column: unknown };
+		if (!Number.isInteger(line) || !Number.isInteger(column)) return invalid();
+		return { line: line as number, column: column as number };
+	};
+	const references: UsageReference[] = [];
+	if (rawReferences)
+		for (let i = 0; i < rawReferences.length; i++) {
+			const reference = rawReferences[i];
+			if (!reference || typeof reference !== "object") return invalid();
+			const { bundleId, path } = reference;
+			if (typeof bundleId !== "string" || typeof path !== "string")
+				return invalid();
+			references.push({
+				bundleId,
+				path,
+				start: position(reference.start),
+				end: position(reference.end),
+			});
+		}
 	const usedBundleIds: string[] = [];
 	for (let i = 0; i < rawIds.length; i++) {
 		const id = rawIds[i];
@@ -186,7 +220,7 @@ function normalizeAnalysis(value: UsageAnalysis): UsageAnalysis {
 				return invalid();
 			issues.push({ reason, ...(path !== undefined ? { path } : {}) });
 		}
-	return { status, usedBundleIds, issues };
+	return { status, usedBundleIds, issues, references };
 }
 function errorMessage(error: unknown): string {
 	try {
