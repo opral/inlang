@@ -222,23 +222,79 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	// files that the export doesn't replace. This guarantees that no edit is
 	// lost, e.g. if a previous file has a shape that this function doesn't
 	// understand, or kept text of one file changes how another one is read.
-	const replaced = new Set(withExisting.map((pair) => pair.existing!));
-	const untouched = existingFiles.filter(
-		(existing) =>
-			!replaced.has(existing) &&
-			!args.exported.some((file) => isSameFile(file, existing))
-	);
-	const onDisk = () => [
-		...pairs.map((pair) => ({
-			locale: pair.existing?.locale ?? pair.file.locale,
-			metadata: pair.existing?.metadata ?? pair.file.metadata,
-			content:
-				pair.kept === undefined || pair.kept === pair.exportedText
-					? pair.file.content
-					: new TextEncoder().encode(pair.kept),
-		})),
-		...untouched,
-	];
+	//
+	// The files are read in the order a project load reads them, the order of
+	// `files` (`toBeImportedFiles`): when files have the same message (e.g.
+	// overlapping i18next namespaces), the one read last wins, so another
+	// order can accept kept text that loses an edit on the next load. An
+	// exported file goes to the place of the file it replaces (to every place,
+	// if it replaces several, like the host writes it to every file of a
+	// `pathPattern` array). The place of a new file isn't known: it goes before
+	// the next exported file of its locale that has a place (plugins like
+	// i18next export in the order of `toBeImportedFiles`), else last.
+	const onDisk = () => {
+		const contentOf = (pair: (typeof pairs)[number]) =>
+			pair.kept === undefined || pair.kept === pair.exportedText
+				? pair.file.content
+				: new TextEncoder().encode(pair.kept);
+		const placed = new Set<(typeof pairs)[number]>();
+		/** the first place of a placed pair in `result` */
+		const positions = new Map<(typeof pairs)[number], number>();
+		const result: Array<{
+			locale: string;
+			content: Uint8Array;
+			metadata?: Record<string, any>;
+		}> = [];
+		for (const existing of existingFiles) {
+			const pair =
+				pairs.find((candidate) => candidate.existing === existing) ??
+				pairs.find(
+					(candidate) =>
+						candidate.existing === undefined &&
+						isSameFile(candidate.file, existing)
+				);
+			if (pair === undefined) {
+				// untouched by the export
+				result.push(existing);
+				continue;
+			}
+			placed.add(pair);
+			if (!positions.has(pair)) positions.set(pair, result.length);
+			result.push({
+				locale: existing.locale,
+				metadata: existing.metadata,
+				content: contentOf(pair),
+			});
+		}
+		// New files: before the place of the next exported file of the locale
+		// that has one, so that the order of a plugin that exports in the order
+		// of `toBeImportedFiles` is kept, else last.
+		for (const [index, pair] of pairs.entries()) {
+			if (placed.has(pair)) continue;
+			const entry = {
+				locale: pair.file.locale,
+				metadata: pair.file.metadata,
+				content: contentOf(pair),
+			};
+			const next = pairs.slice(index + 1).find(
+				(candidate) =>
+					placed.has(candidate) &&
+					// emptied files come after the export, not in its order
+					candidate.emptiedFrom === undefined &&
+					candidate.file.locale === pair.file.locale
+			);
+			const at = next === undefined ? -1 : positions.get(next)!;
+			if (at === -1) {
+				result.push(entry);
+			} else {
+				result.splice(at, 0, entry);
+				for (const [other, position] of positions) {
+					if (position >= at) positions.set(other, position + 1);
+				}
+			}
+		}
+		return result;
+	};
 	const changed = () =>
 		pairs.filter(
 			(pair) => pair.kept !== undefined && pair.kept !== pair.exportedText

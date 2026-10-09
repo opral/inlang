@@ -196,7 +196,8 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	// (toBeImportedFiles): two namespaces can have the same bundle id (see
 	// namespaceOf), and of two files with the same message, the one read last
 	// wins. keepUnchangedJsonEntries checks what the files read as in the
-	// order of the exported files.
+	// order of the existing files, and places a new file before the next
+	// exported file of its locale that exists, i.e. in this order.
 	const withNamespace = Object.entries(resultNamespaces)
 		.sort(([a], [b]) => byPosition(a) - byPosition(b))
 		.flatMap(([namespace, locales]) =>
