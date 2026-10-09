@@ -296,8 +296,6 @@ async function exportKeepingEntries(args: ExportArgs) {
     (file) => file.locale === args.settings.baseLocale,
   );
   const previousStrings = previous && stringsOf(previous.content);
-  const exportFiles = (exportArgs: Omit<ExportArgs, "files">) =>
-    withUnimportedKeys(exportCatalog(exportArgs), previousStrings);
   let previousRows: ReturnType<typeof rowsOf> | undefined;
   try {
     previousRows =
@@ -312,7 +310,9 @@ async function exportKeepingEntries(args: ExportArgs) {
     previousStrings === undefined ||
     previousRows === undefined
   )
-    return exportFiles(args);
+    return exportCatalog(args);
+  const exportFiles = (exportArgs: Omit<ExportArgs, "files">) =>
+    withUnimportedKeys(exportCatalog(exportArgs), previousStrings);
   // New strings and locales are inserted where Xcode puts them.
   const exported = inXcodeOrder(exportFiles(args));
   const keep = (content: Uint8Array) =>
@@ -322,26 +322,42 @@ async function exportKeepingEntries(args: ExportArgs) {
       settings: args.settings,
       importFiles: ({ files, settings }) => importCatalogs(files, settings),
       exportFiles,
+      isEntry: isStringUnit,
       indent: "  ",
     });
   const result = await keep(previous.content);
-  if (result[0]?.content !== exported[0]?.content) return result;
-  // The result is the full export: either nothing of the previous catalog is
-  // kept, or the kept text doesn't import to the new data, e.g. because the
-  // plugin moves the text around `%#@name@` of a substitution into its
-  // variants. Writes the strings that changed as a whole instead of their
-  // changed values, and keeps the text of the other strings.
+  // the helper marks the files that keep the text of the previous file
+  if (result[0]?.verbatim === true) return result;
+  // The kept text doesn't import to the new data, e.g. because the plugin
+  // moves the text around `%#@name@` of a substitution into its variants.
+  // Writes the localizations that changed as a whole instead of their changed
+  // values, and keeps the text of the others.
   try {
-    const content = rewriteChangedStrings({
+    const content = rewriteChangedLocalizations({
       previous: previous.content,
       next: exported[0]!.content,
       canonical: exportFiles({ ...previousRows, settings: args.settings })[0]!
         .content,
     });
-    return content === undefined ? exported : await keep(content);
+    if (content !== undefined) {
+      const rewritten = await keep(content);
+      if (rewritten[0]?.verbatim === true) return rewritten;
+    }
   } catch {
-    return exported;
+    // the full export below
   }
+  // The full export as before, with the keys of strings that the plugin
+  // doesn't import (e.g. `comment`, `shouldTranslate`), which would be lost
+  // otherwise.
+  return exportFiles(args);
+}
+
+/**
+ * A `stringUnit` is written as a whole if it changed, so that an edited value
+ * gets the `state` that the plugin writes.
+ */
+function isStringUnit(path: string[]) {
+  return path[path.length - 1] === "stringUnit";
 }
 
 /**
@@ -382,11 +398,11 @@ function inXcodeOrder(
 }
 
 /**
- * The previous catalog with the strings replaced whose value in `next`
- * differs from the value the plugin writes for the previous string
- * (`canonical`).
+ * The previous catalog with the localizations replaced whose value in `next`
+ * differs from the value the plugin writes for the previous localization
+ * (`canonical`). Everything else of the previous catalog is kept.
  */
-function rewriteChangedStrings(args: {
+function rewriteChangedLocalizations(args: {
   previous: Uint8Array;
   next: Uint8Array;
   canonical: Uint8Array;
@@ -398,19 +414,40 @@ function rewriteChangedStrings(args: {
   const canonical = JSON.parse(decoder.decode(args.canonical)) as Catalog;
   const strings = Object.fromEntries(
     Object.entries(previous.strings).map(([id, entry]) => {
-      const nextEntry = own(next.strings, id);
+      const nextLocalizations = own(next.strings, id)?.localizations;
+      const canonicalLocalizations = own(canonical.strings, id)?.localizations;
+      if (nextLocalizations === undefined || entry?.localizations === undefined)
+        return [id, entry];
       return [
         id,
-        nextEntry !== undefined &&
-        !jsonEquals(own(canonical.strings, id), nextEntry)
-          ? nextEntry
-          : entry,
+        {
+          ...entry,
+          localizations: Object.fromEntries(
+            Object.entries(entry.localizations).map(
+              ([locale, localization]) => {
+                const nextLocalization = own(nextLocalizations, locale);
+                return [
+                  locale,
+                  nextLocalization !== undefined &&
+                  !jsonEquals(
+                    canonicalLocalizations &&
+                      own(canonicalLocalizations, locale),
+                    nextLocalization,
+                  )
+                    ? nextLocalization
+                    : localization,
+                ];
+              },
+            ),
+          ),
+        },
       ];
     }),
   );
   const result = stringifyJsonKeepingEntries({
     previous: text,
     next: { ...previous, strings },
+    isEntry: isStringUnit,
   });
   return result === undefined ? undefined : new TextEncoder().encode(result);
 }
