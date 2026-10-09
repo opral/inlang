@@ -150,6 +150,23 @@ async function withoutMessagesOfOtherFiles(args: {
       ),
     );
     if (remove.size === 0) return file;
+    // nothing left of the edit: the existing file as it is
+    const existing = args.existing.find((other) => other.path === file.name);
+    const existingJson = existing && parseObject(existing.content);
+    const kept = Object.keys(json).filter((key) => remove.has(key) === false);
+    if (
+      existing !== undefined &&
+      existingJson !== undefined &&
+      kept.length === Object.keys(existingJson).length &&
+      kept.every(
+        (key) =>
+          Object.prototype.hasOwnProperty.call(existingJson, key) &&
+          existingJson[key] === json[key],
+      )
+    ) {
+      changed = true;
+      return { ...file, content: existing.content };
+    }
     const text = stringifyJsonKeepingEntries({
       previous: decode(file.content),
       // the removed keys are messages, not keys that the plugin doesn't import

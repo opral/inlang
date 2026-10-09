@@ -734,3 +734,66 @@ test("saveProjectToDirectory only writes the edited entry", async () => {
     nodeFs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("a file of a pathPattern array that an edit doesn't touch keeps its bytes, also if it is empty", async () => {
+  const threeSettings = {
+    ...settings,
+    locales: ["en"],
+    [PLUGIN_KEY]: {
+      pathPattern: [
+        "./a/{locale}.json",
+        "./b/{locale}.json",
+        "./c/{locale}.json",
+      ],
+    },
+  };
+  const previous: Record<string, string> = {
+    "./a/en.json": '{\n  "x": "X"\n}\n',
+    "./b/en.json": '{\n  "y": "Y"\n}\n',
+    "./c/en.json": "{ }\n",
+  };
+  const toBeImported = await plugin.toBeImportedFiles!({
+    settings: threeSettings,
+  });
+  const imported = await plugin.importFiles!({
+    files: [
+      { locale: "en", content: new TextEncoder().encode('{"x": "X2"}') },
+      {
+        locale: "en",
+        content: new TextEncoder().encode(previous["./b/en.json"]),
+      },
+    ],
+    settings: threeSettings,
+  });
+  const exported = await plugin.exportFiles!({
+    bundles: imported.bundles as Bundle[],
+    messages: imported.messages.map((message) => ({
+      id: message.bundleId,
+      bundleId: message.bundleId,
+      locale: message.locale,
+      selectors: message.selectors ?? [],
+    })),
+    variants: imported.variants.map((variant) => ({
+      id: variant.messageBundleId!,
+      messageId: variant.messageBundleId!,
+      matches: [],
+      pattern: variant.pattern!,
+    })),
+    settings: threeSettings,
+    files: toBeImported.map((file) => ({
+      ...file,
+      content: new TextEncoder().encode(previous[file.path]),
+    })),
+  });
+  expect(
+    Object.fromEntries(
+      exported.map((file) => [
+        file.name,
+        new TextDecoder().decode(file.content),
+      ]),
+    ),
+  ).toStrictEqual({
+    ...previous,
+    "./a/en.json": '{\n  "x": "X2"\n}\n',
+  });
+});
