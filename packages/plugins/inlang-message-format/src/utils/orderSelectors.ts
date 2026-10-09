@@ -45,21 +45,44 @@ export function orderSelectors(
 			: undefined;
 	};
 
-	const result = [...selectors];
-	const paired = new Set<string>();
-	for (const plural of selectors) {
-		const local = localOf(plural);
-		if (local?.value.annotation?.name !== "plural") continue;
+	const plurals = selectors.filter(
+		(name) => localOf(name)?.value.annotation?.name === "plural"
+	);
+	const isExactOf = (name: string, plural: string) => {
 		const input = inputOf(plural);
+		return (
+			name !== plural &&
+			input !== undefined &&
+			localOf(name)?.value.annotation === undefined &&
+			inputOf(name) === input
+		);
+	};
+	// Pair every plural with its exact-number selector. A plural first gets
+	// the one named after it (`countPlural` → `countPluralExact`, how
+	// plugin-icu1 and editors name it), so that two plurals on the same input
+	// (`countPlural`, `countPlural1`) each get their own. The others pair in
+	// order.
+	const pairs = new Map<string, string>();
+	const paired = new Set<string>();
+	for (const plural of plurals) {
+		const named = `${plural}Exact`;
+		if (selectors.includes(named) && isExactOf(named, plural)) {
+			pairs.set(plural, named);
+			paired.add(named);
+		}
+	}
+	for (const plural of plurals) {
+		if (pairs.has(plural)) continue;
 		const exact = selectors.find(
-			(name) =>
-				name !== plural &&
-				!paired.has(name) &&
-				localOf(name)?.value.annotation === undefined &&
-				inputOf(name) === input
+			(name) => !paired.has(name) && isExactOf(name, plural)
 		);
 		if (exact === undefined) continue;
+		pairs.set(plural, exact);
 		paired.add(exact);
+	}
+
+	const result = [...selectors];
+	for (const [plural, exact] of pairs) {
 		// an exact number already before its plural keeps its place, also
 		// with other selectors in between (`countPluralExact, gender,
 		// countPlural`): it already wins over the plural

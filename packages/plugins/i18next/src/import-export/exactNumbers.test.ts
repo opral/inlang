@@ -371,6 +371,14 @@ test.each([
 		expect(t("item", { lng: locale, count: 1 })).toBe(
 			file.item_one.replace("{{count}}", "1")
 		);
+
+		// an edit of only the category form is not exported, as in earlier
+		// versions: i18next never shows it for this language
+		zeroForms[0]!.pattern = [{ type: "text", value: file.item_zero }];
+		zeroForms[1]!.pattern = [{ type: "text", value: "category edit" }];
+		expect(await runExport(withIds(imported))).toStrictEqual({
+			[locale]: file,
+		});
 	}
 );
 
@@ -539,6 +547,11 @@ test("locales with underscores resolve their plural rules", async () => {
 	expect(zeroCategorySelectsNonZero("pt_BR")).toBe(false);
 	expect(zeroCategorySelectsNonZero("lv_LV")).toBe(true);
 	expect(zeroCategorySelectsNonZero("lv-LV")).toBe(true);
+	// legacy tags and tags Intl has no rules for use the rules Intl resolves,
+	// like i18next
+	expect(zeroCategorySelectsNonZero("iw")).toBe(false);
+	expect(zeroCategorySelectsNonZero("dev")).toBe(false);
+	expect(zeroCategorySelectsNonZero("not a tag")).toBe(false);
 
 	// pt_BR has no "zero" category: an edit of only the exact form exports
 	const imported = await runImport({
