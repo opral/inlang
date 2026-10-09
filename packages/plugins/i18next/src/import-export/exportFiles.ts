@@ -10,11 +10,32 @@ import type {
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
 import { unflatten } from "flat";
+import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
+import { importFiles } from "./importFiles.js";
 import { matchSpecificity } from "./matchSpecificity.js";
 import { zeroCategorySelectsNonZero } from "./zeroCategory.js";
 import type { PluginSettings } from "../settings.js";
 
-export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
+/**
+ * Writes the files and keeps the text of the entries of the existing files
+ * (`files`) that didn't change, so that saving a project only changes the
+ * lines of edited messages in git.
+ */
+export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
+	args
+) =>
+	keepUnchangedJsonEntries({
+		exported: await exportWholeFiles(args),
+		files: args.files,
+		settings: args.settings,
+		importFiles,
+		exportFiles: exportWholeFiles,
+	});
+
+/**
+ * Writes whole files from the bundles, messages and variants.
+ */
+const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	bundles,
 	messages,
 	variants,
@@ -26,11 +47,27 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 		Record<string, Record<string, any>>
 	> = {};
 
+	// indexed once: exporting with the existing files exports up to three
+	// times, and a lookup per message is quadratic in the number of messages
+	const bundlesById = new Map<string, Bundle>();
+	for (const bundle of bundles) {
+		if (!bundlesById.has(bundle.id)) bundlesById.set(bundle.id, bundle);
+	}
+	const variantsByMessageId = new Map<string, Variant[]>();
+	for (const variant of variants) {
+		const group = variantsByMessageId.get(variant.messageId);
+		if (group === undefined) {
+			variantsByMessageId.set(variant.messageId, [variant]);
+		} else {
+			group.push(variant);
+		}
+	}
+
 	for (const message of messages) {
 		const serializedMessages = serializeMessage(
-			bundles.find((b) => b.id === message.bundleId)!,
+			bundlesById.get(message.bundleId)!,
 			message,
-			variants.filter((v) => v.messageId === message.id),
+			variantsByMessageId.get(message.id) ?? [],
 			settings?.["plugin.inlang.i18next"]
 		);
 
