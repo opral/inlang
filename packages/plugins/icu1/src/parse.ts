@@ -16,6 +16,7 @@ import type {
   VariableReference,
   VariantImport,
 } from "@inlang/sdk";
+import { escapeIcuText } from "./escape.js";
 
 export type ParsedMessage = {
   declarations: Declaration[];
@@ -582,12 +583,7 @@ function serializeTokens(
 }
 
 function escapeText(value: string, options: { inPlural: boolean }): string {
-  let escaped = value.replace(/'/g, "''");
-  escaped = escaped.replace(/\{/g, "'{'").replace(/\}/g, "'}'");
-  if (options.inPlural) {
-    escaped = escaped.replace(/#/g, "'#'");
-  }
-  return escaped;
+  return escapeIcuText(value, options.inPlural);
 }
 
 function cloneBranch(branch: Branch): Branch {

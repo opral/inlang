@@ -31,6 +31,7 @@
   "devDependencies": {
     "@inlang/tsconfig": "workspace:*",
     "esbuild": "^0.25.9",
+    "intl-messageformat": "10.7.16",
     "prettier": "3.3.3",
     "typescript": "^5.5.2",
     "vitest": "^4.0.6"
