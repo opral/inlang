@@ -1170,6 +1170,114 @@ test("a key with `:` in a namespace keeps everything after the first `:`", async
 	).toStrictEqual(json);
 });
 
+// A namespace is any key of the `pathPattern` record, `:` included (i18next
+// addresses such a namespace with `t("key", { ns: "app:errors" })`).
+test("a namespace with `:` in its name is exported to its own file", async () => {
+	const pathPattern = {
+		common: "./locales/{locale}/common.json",
+		"common:legacy": "./locales/{locale}/common-legacy.json",
+		"app:errors": "./locales/{locale}/app-errors.json",
+		"pages/home": "./locales/{locale}/pages/home.json",
+	};
+	const settings = {
+		baseLocale: "en",
+		locales: ["en"],
+		"plugin.inlang.i18next": { pathPattern },
+	};
+	const files: Record<string, Record<string, any>> = {
+		common: { title: "Common title" },
+		"common:legacy": {
+			title: "Legacy title",
+			"err:notFound": "Legacy not found",
+			nested: { a: "A" },
+		},
+		"app:errors": {
+			notFound: "Not found",
+			item_one: "One error",
+			item_other: "{{count}} errors",
+		},
+		"pages/home": { title: "Home" },
+	};
+	const imported = await importFiles({
+		settings,
+		files: Object.entries(files).map(([namespace, json]) => ({
+			locale: "en",
+			content: new TextEncoder().encode(JSON.stringify(json)),
+			toBeImportedFilesMetadata: { namespace },
+		})),
+	});
+	expect(imported.bundles.map((bundle) => bundle.id)).toStrictEqual([
+		"common:title",
+		"common:legacy:title",
+		"common:legacy:err:notFound",
+		"common:legacy:nested.a",
+		"app:errors:notFound",
+		"app:errors:item",
+		"pages/home:title",
+	]);
+	const exported = await runExportFiles(imported, settings);
+	expect(
+		Object.fromEntries(
+			exported.map((file) => [
+				file.metadata?.namespace,
+				JSON.parse(new TextDecoder().decode(file.content)),
+			])
+		)
+	).toStrictEqual(files);
+	expect(exported.map((file) => file.metadata)).toStrictEqual(
+		Object.keys(files).map((namespace) => ({ namespace }))
+	);
+});
+
+// Namespaces `a` and `a:b` both have the bundle id `a:b:c`: for the key `b:c`
+// of `a` and for the key `c` of `a:b`. The most specific namespace wins, so
+// that every key of `a:b` is written to its file. Only keys of `a` that start
+// with `b:` move to `a:b`.
+test("of two namespaces that a bundle id can belong to, the longest wins", async () => {
+	const settings = {
+		baseLocale: "en",
+		locales: ["en"],
+		"plugin.inlang.i18next": {
+			pathPattern: {
+				a: "./{locale}/a.json",
+				"a:b": "./{locale}/a-b.json",
+			},
+		},
+	};
+	const imported = await importFiles({
+		settings,
+		files: [
+			{
+				locale: "en",
+				content: new TextEncoder().encode(
+					JSON.stringify({ x: "X of a", "b:c": "C of a" })
+				),
+				toBeImportedFilesMetadata: { namespace: "a" },
+			},
+			{
+				locale: "en",
+				content: new TextEncoder().encode(JSON.stringify({ d: "D of a:b" })),
+				toBeImportedFilesMetadata: { namespace: "a:b" },
+			},
+		],
+	});
+	expect(imported.bundles.map((bundle) => bundle.id)).toStrictEqual([
+		"a:x",
+		"a:b:c",
+		"a:b:d",
+	]);
+	const exported = await runExportFiles(imported, settings);
+	expect(
+		exported.map((file) => [
+			file.metadata?.namespace,
+			JSON.parse(new TextDecoder().decode(file.content)),
+		])
+	).toStrictEqual([
+		["a", { x: "X of a" }],
+		["a:b", { c: "C of a", d: "D of a:b" }],
+	]);
+});
+
 function runImportFiles(json: Record<string, any>, settings?: any) {
 	return importFiles({
 		settings: settings ?? {},

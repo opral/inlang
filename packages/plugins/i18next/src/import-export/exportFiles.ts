@@ -66,38 +66,49 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	// Only a project with namespaces (`pathPattern` is a record) prefixes
 	// bundle ids with `namespace:`. In a project with one file per locale, a
 	// key like `err:notFound` is a key of that file, as importFiles reads it.
-	const namespaced =
-		typeof settings?.["plugin.inlang.i18next"]?.pathPattern !== "string";
+	const pathPattern = settings?.["plugin.inlang.i18next"]?.pathPattern;
+	const namespaced = typeof pathPattern !== "string";
+	const configuredNamespaces =
+		namespaced && typeof pathPattern === "object" && pathPattern !== null
+			? Object.keys(pathPattern)
+			: [];
+	// longest first: the most specific namespace wins, see splitBundleId
+	const namespaces = configuredNamespaces
+		.filter((namespace) => namespace.length > 0)
+		.sort((a, b) => b.length - a.length);
 
 	for (const message of messages) {
+		const bundle = bundlesById.get(message.bundleId)!;
 		const serializedMessages = serializeMessage(
-			bundlesById.get(message.bundleId)!,
+			bundle,
 			message,
 			variantsByMessageId.get(message.id) ?? [],
 			settings?.["plugin.inlang.i18next"]
 		);
+		const { namespace, key: bundleKey } = namespaced
+			? splitBundleId(bundle.id, namespaces)
+			: { namespace: undefined, key: bundle.id };
 
 		for (const message of serializedMessages) {
-			// `namespace:key`, see importFiles. The key itself may contain `:`.
-			const separator = namespaced ? message.key.indexOf(":") : -1;
+			// the key of the file: the key of the bundle and the suffixes
+			// (context, plural) that serializeMessage appends to the bundle id
+			const key = bundleKey + message.key.slice(bundle.id.length);
 			// no namespace
-			if (separator === -1) {
+			if (namespace === undefined) {
 				if (result[message.locale] === undefined) {
 					result[message.locale] = {};
 				}
-				result[message.locale]![message.key] = message.value;
+				result[message.locale]![key] = message.value;
 			}
 			// namespaces
 			else {
-				const namespace = message.key.slice(0, separator);
-				const key = message.key.slice(separator + 1);
-				if (resultNamespaces[namespace!] === undefined) {
-					resultNamespaces[namespace!] = {};
+				if (resultNamespaces[namespace] === undefined) {
+					resultNamespaces[namespace] = {};
 				}
-				if (resultNamespaces[namespace!]?.[message.locale] === undefined) {
-					resultNamespaces[namespace!]![message.locale] = {};
+				if (resultNamespaces[namespace]?.[message.locale] === undefined) {
+					resultNamespaces[namespace]![message.locale] = {};
 				}
-				resultNamespaces[namespace!]![message.locale]![key!] = message.value;
+				resultNamespaces[namespace]![message.locale]![key] = message.value;
 			}
 		}
 	}
@@ -109,8 +120,19 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 		),
 		name: `${locale}.json`,
 	}));
-	const withNamespace = Object.entries(resultNamespaces).flatMap(
-		([namespace, locales]) =>
+	// in the order of `pathPattern`, in which the files are read
+	// (toBeImportedFiles): two namespaces can have the same bundle id (see
+	// splitBundleId), and of two files with the same message, the one read
+	// last wins. keepUnchangedJsonEntries checks what the files read as in the
+	// order of the exported files.
+	const position = new Map(
+		configuredNamespaces.map((namespace, index) => [namespace, index])
+	);
+	const byPosition = (namespace: string) =>
+		position.get(namespace) ?? position.size;
+	const withNamespace = Object.entries(resultNamespaces)
+		.sort(([a], [b]) => byPosition(a) - byPosition(b))
+		.flatMap(([namespace, locales]) =>
 			Object.entries(locales).map(([locale, messages]) => ({
 				locale,
 				content: new TextEncoder().encode(
@@ -124,9 +146,37 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 					namespace,
 				},
 			}))
-	);
+		);
 	return [...withoutNamespace, ...withNamespace];
 };
+
+/**
+ * The namespace and the key of a bundle id `namespace:key` (see importFiles).
+ *
+ * Namespaces and keys can contain `:`, so the namespace is the longest of the
+ * configured `namespaces` that the id starts with, followed by `:`: the id
+ * `common:legacy:title` is the key `title` of the namespace `common:legacy`
+ * if that namespace exists, and the key `legacy:title` of `common` otherwise.
+ * If two namespaces match (`a` and `a:b` for `a:b:c`, i.e. the key `b:c` of
+ * `a` and the key `c` of `a:b`, which import to the same id), the longest one
+ * wins, so that every key of `a:b` is written to its file.
+ *
+ * An id that starts with no configured namespace is split at its first `:`,
+ * as before namespaces were looked up.
+ */
+function splitBundleId(
+	id: string,
+	namespaces: string[]
+): { namespace?: string; key: string } {
+	for (const namespace of namespaces) {
+		if (id.startsWith(`${namespace}:`)) {
+			return { namespace, key: id.slice(namespace.length + 1) };
+		}
+	}
+	const separator = id.indexOf(":");
+	if (separator === -1) return { key: id };
+	return { namespace: id.slice(0, separator), key: id.slice(separator + 1) };
+}
 
 function serializeMessage(
 	bundle: Bundle,

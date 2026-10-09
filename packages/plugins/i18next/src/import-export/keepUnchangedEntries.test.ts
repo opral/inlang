@@ -406,6 +406,53 @@ describe("namespaces", () => {
 	});
 });
 
+// Namespaces `a` and `a:b` both have the bundle id `a:b:c`: the key `b:c` of
+// `a` and the key `c` of `a:b`. The export writes it to `a:b`, the longest
+// namespace. Of two files with the same message, the one read last wins.
+describe("namespaces `a` and `a:b` and an edit of the key `b:c` of `a`", () => {
+	const files = (pathPattern: Record<string, string>) =>
+		Object.fromEntries(
+			Object.keys(pathPattern).map((namespace) => [
+				`${namespace}/en`,
+				namespace === "a"
+					? '{\n  "x": "X",\n  "b:c": "C"\n}\n'
+					: '{\n  "d": "D"\n}\n',
+			])
+		);
+	const edited = async (pathPattern: Record<string, string>) => {
+		const rows = await load(files(pathPattern), pathPattern);
+		// the order of the messages of a database is arbitrary: `a` first
+		rows.messages.sort(
+			(a, b) => Number(b.bundleId === "a:x") - Number(a.bundleId === "a:x")
+		);
+		setPattern(rows, "a:b:c", "en", [{ type: "text", value: "C edited" }]);
+		return save(rows, files(pathPattern), pathPattern);
+	};
+
+	test("`a` is read first: it keeps `b:c`, which `a:b` overrides", async () => {
+		const pathPattern = {
+			a: "./{locale}/a.json",
+			"a:b": "./{locale}/a-b.json",
+		};
+		expect(await edited(pathPattern)).toStrictEqual({
+			"a/en": files(pathPattern)["a/en"],
+			"a:b/en": '{\n  "c": "C edited",\n  "d": "D"\n}\n',
+		});
+	});
+
+	test("`a` is read last: it is written without `b:c`", async () => {
+		const pathPattern = {
+			"a:b": "./{locale}/a-b.json",
+			a: "./{locale}/a.json",
+		};
+		expect(await edited(pathPattern)).toStrictEqual({
+			// whole files: with `b:c`, `a` would override the edit
+			"a:b/en": '{\n\t"d": "D",\n\t"c": "C edited"\n}\n',
+			"a/en": '{\n\t"x": "X"\n}\n',
+		});
+	});
+});
+
 describe("without a usable previous file, the export writes whole files", () => {
 	test("a new locale", async () => {
 		const files = {
