@@ -96,6 +96,34 @@ test("plural categories follow the locale in CLDR order, ordinals too", () => {
 	expect(pluralRules("countPlural", ordinal, "en")?.type).toBe("ordinal");
 });
 
+test("an ICU offset keeps the plural rules known and is reported", () => {
+	const withOptions = (options: { name: string; value: string }[]) => {
+		const declarations = structuredClone(plural);
+		const local = declarations[1]!;
+		if (local.type === "local-variable")
+			local.value.annotation!.options = options.map(({ name, value }) => ({
+				name,
+				value: { type: "literal", value },
+			}));
+		return declarations;
+	};
+	const offset = pluralRules(
+		"countPlural",
+		withOptions([{ name: "offset", value: "1" }]),
+		"en"
+	);
+	expect(offset).toMatchObject({ offset: 1, categories: ["one", "other"] });
+	expect(pluralRules("countPlural", plural, "en")?.offset).toBe(0);
+	// an offset that is only known at runtime: unknown rules
+	expect(
+		pluralRules(
+			"countPlural",
+			withOptions([{ name: "offset", value: "n" }]),
+			"en"
+		)
+	).toBeUndefined();
+});
+
 test("the cartesian product uses the literal values of a select and the catch-all", () => {
 	const forms = requiredVariants(
 		message(
