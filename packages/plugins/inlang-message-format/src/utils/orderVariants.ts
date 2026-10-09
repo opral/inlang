@@ -7,9 +7,12 @@ import type { Declaration, Match, Variant } from "@inlang/sdk";
  * whose keys match. A variant that every input it matches also matches an
  * earlier variant is never displayed, e.g. an `=0` form that an editor added
  * after the catch-all `*`, or after the French `one` (which selects 0).
- * Only then are the variants sorted into MessageFormat 2 preference order:
- * selector by selector, an exact number or literal key before a plural
- * category before the catch-all; ties keep their order.
+ * Only such a variant moves: before the earlier variants that MessageFormat 2
+ * prefers less (selector by selector, an exact number or literal key before
+ * a plural category before the catch-all), but not before a variant that
+ * shares an input with it and is preferred over it. If that doesn't make
+ * every variant selectable, all variants are sorted into preference order;
+ * ties keep their order.
  *
  * Every other order is kept as it is, also if it differs from the
  * preference order, so that files don't change when the plugin is upgraded
@@ -28,26 +31,63 @@ export function orderVariants<V extends Pick<Variant, "matches">>(
 	const kinds = new Map(
 		selectors.map((selector) => [selector, kindOf(selector, declarations)])
 	);
-	if (hasUnreachableVariant(variants, selectors, kinds, locale) === false) {
-		return variants;
-	}
-	const rankOf = (variant: V) =>
+	const inputs = selectedVariants(variants, selectors, kinds, locale);
+	if (inputs === undefined) return variants;
+
+	const ranks = variants.map((variant) =>
 		selectors.map((selector) => {
 			const match = keyOf(variant, selector);
 			if (match === undefined || match.type === "catchall-match") return 2;
 			return kinds.get(selector)!.type === "plural" && !isNumber(match.value)
 				? 1
 				: 0;
-		});
-	return variants
-		.map((variant, index) => ({ variant, index, rank: rankOf(variant) }))
-		.sort((a, b) => {
-			for (let i = 0; i < selectors.length; i++) {
-				const diff = a.rank[i]! - b.rank[i]!;
-				if (diff !== 0) return diff;
-			}
-			return a.index - b.index;
 		})
+	);
+	const compare = (a: number, b: number) => {
+		for (let i = 0; i < selectors.length; i++) {
+			const diff = ranks[a]![i]! - ranks[b]![i]!;
+			if (diff !== 0) return diff;
+		}
+		return 0;
+	};
+	const overlap = (a: number, b: number) =>
+		inputs.some((selected) => selected.includes(a) && selected.includes(b));
+	// the first variant (by position in `order`) that is never displayed
+	const unreachable = (order: number[]): number | undefined => {
+		const position = new Map(order.map((index, at) => [index, at]));
+		const first = new Set(
+			inputs.map((selected) =>
+				selected.reduce((a, b) => (position.get(a)! < position.get(b)! ? a : b))
+			)
+		);
+		return order.find(
+			(index) =>
+				!first.has(index) && inputs.some((selected) => selected.includes(index))
+		);
+	};
+
+	const order = variants.map((_, index) => index);
+	for (let step = 0; step < variants.length; step++) {
+		const variant = unreachable(order);
+		if (variant === undefined) return order.map((index) => variants[index]!);
+		const at = order.indexOf(variant);
+		// the earliest place before variants it is preferred over, without
+		// passing a variant that shares an input and is preferred over it
+		let before = -1;
+		for (let position = at - 1; position >= 0; position--) {
+			const other = order[position]!;
+			const preferred = compare(variant, other) < 0;
+			if (!preferred && overlap(other, variant)) break;
+			if (preferred) before = position;
+		}
+		if (before === -1) break;
+		order.splice(at, 1);
+		order.splice(before, 0, variant);
+	}
+	// moving single variants doesn't make all of them selectable
+	return variants
+		.map((variant, index) => ({ variant, index }))
+		.sort((a, b) => compare(a.index, b.index) || a.index - b.index)
 		.map((entry) => entry.variant);
 }
 
@@ -58,11 +98,11 @@ export function orderVariants<V extends Pick<Variant, "matches">>(
  * or anything else, which is treated as an opaque value of its own.
  */
 type Kind =
-	| { type: "plural"; input: string; ordinal: boolean }
+	| { type: "plural"; input: string; ordinal: boolean; offset: number }
 	| { type: "value"; input: string };
 
 function kindOf(selector: string, declarations: Declaration[]): Kind {
-	let plural: { ordinal: boolean } | undefined;
+	let plural: { ordinal: boolean; offset: number } | undefined;
 	let name = selector;
 	const seen = new Set<string>();
 	while (!seen.has(name)) {
@@ -79,13 +119,16 @@ function kindOf(selector: string, declarations: Declaration[]): Kind {
 		if (local.value.arg.type !== "variable-reference") break;
 		const annotation = local.value.annotation;
 		if (annotation?.name === "plural" && plural === undefined) {
+			const option = (optionName: string) => {
+				const value = annotation.options.find(
+					(o) => o.name === optionName
+				)?.value;
+				return value?.type === "literal" ? value.value : undefined;
+			};
+			const offset = option("offset");
 			plural = {
-				ordinal: annotation.options.some(
-					(option) =>
-						option.name === "type" &&
-						option.value.type === "literal" &&
-						option.value.value === "ordinal"
-				),
+				ordinal: option("type") === "ordinal",
+				offset: offset !== undefined && isNumber(offset) ? Number(offset) : 0,
 			};
 		} else if (annotation !== undefined) {
 			break;
@@ -97,17 +140,17 @@ function kindOf(selector: string, declarations: Declaration[]): Kind {
 }
 
 /**
- * Whether some variant can be selected by an input but, for every input that
- * selects it, a variant before it is selected instead. Checked with concrete
- * inputs: per input variable its exact keys, a number of every plural
- * category not among them, and a value that matches no key.
+ * The indexes of the variants that match, for every input that matters, or
+ * undefined if every input selects its first matching variant already.
+ * Inputs are concrete values per input variable: its exact keys, a number
+ * of every plural category not among them, and a value that matches no key.
  */
-function hasUnreachableVariant<V extends Pick<Variant, "matches">>(
+function selectedVariants<V extends Pick<Variant, "matches">>(
 	variants: V[],
 	selectors: string[],
 	kinds: Map<string, Kind>,
 	locale: string
-): boolean {
+): number[][] | undefined {
 	const inputs = [...new Set([...kinds.values()].map((kind) => kind.input))];
 	const candidates = inputs.map((input) => {
 		const own = selectors.filter(
@@ -135,7 +178,7 @@ function hasUnreachableVariant<V extends Pick<Variant, "matches">>(
 			const covered = new Set<string>();
 			for (const number of SAMPLE_NUMBERS) {
 				if (exact.has(number)) continue;
-				const category = rules.select(number);
+				const category = rules.select(number - kind.offset);
 				if (covered.has(category)) continue;
 				covered.add(category);
 				values.add(number);
@@ -148,14 +191,14 @@ function hasUnreachableVariant<V extends Pick<Variant, "matches">>(
 	const combinations = candidates.reduce((n, values) => n * values.length, 1);
 	// too many to check: keep the order, which never changes a file
 	if (combinations * variants.length * selectors.length > 5_000_000) {
-		return false;
+		return undefined;
 	}
 	const keys = variants.map((variant) =>
 		selectors.map((selector) => keyOf(variant, selector))
 	);
 
 	const selected = new Set<number>();
-	const selectable = new Set<number>();
+	const matchingPerInput: number[][] = [];
 	const valueOf = new Map<string, string | number>();
 	const selectorKinds = selectors.map((selector) => kinds.get(selector)!);
 	const matches = (index: number) =>
@@ -169,7 +212,8 @@ function hasUnreachableVariant<V extends Pick<Variant, "matches">>(
 			if (kind.type === "plural") {
 				return (
 					typeof value === "number" &&
-					pluralRules(locale, kind.ordinal).select(value) === match.value
+					pluralRules(locale, kind.ordinal).select(value - kind.offset) ===
+						match.value
 				);
 			}
 			return value === match.value;
@@ -182,16 +226,17 @@ function hasUnreachableVariant<V extends Pick<Variant, "matches">>(
 			}
 			return;
 		}
-		let first = true;
-		variants.forEach((_, i) => {
-			if (!matches(i)) return;
-			selectable.add(i);
-			if (first) selected.add(i);
-			first = false;
-		});
+		const matching = variants.flatMap((_, i) => (matches(i) ? [i] : []));
+		if (matching.length === 0) return;
+		matchingPerInput.push(matching);
+		selected.add(matching[0]!);
 	};
 	visit(0);
-	return [...selectable].some((index) => !selected.has(index));
+	return matchingPerInput.some((matching) =>
+		matching.some((i) => !selected.has(i))
+	)
+		? matchingPerInput
+		: undefined;
 }
 
 /** 0–200, larger numbers and fractions, enough for every category of CLDR */
@@ -212,7 +257,8 @@ function pluralRules(locale: string, ordinal: boolean): Intl.PluralRules {
 	if (rules === undefined) {
 		const type = ordinal ? "ordinal" : "cardinal";
 		try {
-			rules = new Intl.PluralRules(locale, { type });
+			// `pt_BR` as `pt-BR`, like the SDK
+			rules = new Intl.PluralRules(locale.replace(/_/g, "-"), { type });
 		} catch {
 			rules = new Intl.PluralRules("en", { type });
 		}

@@ -234,3 +234,73 @@ test("ignores keys that aren't selectors", () => {
 	const keys = ["count=*"];
 	expect(order(keys, [], [input("count")])).toStrictEqual(keys);
 });
+
+test("moves only the variant that is never selected", () => {
+	// for (1, female) "She invited 1" stays first; only the =0 form moves
+	expect(
+		order(
+			[
+				"countPlural=*, countPluralExact=*, gender=female",
+				"countPlural=one, countPluralExact=*, gender=*",
+				"countPlural=*, countPluralExact=*, gender=*",
+				"countPlural=*, countPluralExact=0, gender=*",
+			],
+			["countPluralExact", "countPlural", "gender"],
+			[...exactPlural, input("gender")]
+		)
+	).toStrictEqual([
+		"countPlural=*, countPluralExact=0, gender=*",
+		"countPlural=*, countPluralExact=*, gender=female",
+		"countPlural=one, countPluralExact=*, gender=*",
+		"countPlural=*, countPluralExact=*, gender=*",
+	]);
+});
+
+test("a locale with an underscore uses its plural rules", () => {
+	expect(
+		order(
+			[
+				"countPlural=one, countPluralExact=*",
+				"countPlural=*, countPluralExact=0",
+				"countPlural=*, countPluralExact=*",
+			],
+			["countPluralExact", "countPlural"],
+			exactPlural,
+			"fr_FR"
+		)[0]
+	).toBe("countPlural=*, countPluralExact=0");
+});
+
+test("a plural with an offset selects its category after the offset", () => {
+	// with offset=1, `one` is 2: `=1` after `one` is selected
+	const keys = [
+		"countPlural=0",
+		"countPlural=one",
+		"countPlural=1",
+		"countPlural=*",
+	];
+	expect(
+		order(
+			keys,
+			["countPlural"],
+			[
+				input("count"),
+				{
+					type: "local-variable",
+					name: "countPlural",
+					value: {
+						type: "expression",
+						arg: { type: "variable-reference", name: "count" },
+						annotation: {
+							type: "function-reference",
+							name: "plural",
+							options: [
+								{ name: "offset", value: { type: "literal", value: "1" } },
+							],
+						},
+					},
+				},
+			]
+		)
+	).toStrictEqual(keys);
+});
