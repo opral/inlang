@@ -18,26 +18,48 @@ import { unflatten } from "flat";
 import { sortMessageKeys } from "../utils/sortKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
 import { orderVariants } from "../utils/orderVariants.js";
+import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
+import { importFiles } from "./importFiles.js";
 
-export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
-	bundles,
-	messages,
-	variants,
-	settings,
-}) => {
+/**
+ * Writes the files of all locales. A file that replaces one of `files` keeps
+ * the text of every message that didn't change, its key order and its
+ * formatting, so that only edited messages change in git.
+ */
+export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
+	args
+) =>
+	keepUnchangedJsonEntries({
+		exported: await exportWholeFiles(args),
+		files: args.files,
+		settings: args.settings,
+		importFiles,
+		exportFiles: exportWholeFiles,
+	});
+
+/**
+ * Writes the files of all locales from scratch.
+ */
+export const exportWholeFiles: NonNullable<
+	(typeof plugin)["exportFiles"]
+> = async ({ bundles, messages, variants, settings }) => {
 	const files: Record<string, FileSchema> = {};
 
-	const variantsByMessage = new Map<string, Variant[]>();
+	// one variant per matches, the last one wins
+	const variantsByMatches = new Map<string, Map<string, Variant>>();
 	for (const message of messages) {
-		variantsByMessage.set(message.id, [
-			...variants
-				.reduce((r, v) => {
-					if (v.messageId === message.id) r.set(JSON.stringify(v.matches), v);
-					return r;
-				}, new Map<string, (typeof variants)[number]>())
-				.values(),
-		]);
+		variantsByMatches.set(message.id, new Map());
 	}
+	for (const variant of variants) {
+		variantsByMatches
+			.get(variant.messageId)
+			?.set(JSON.stringify(variant.matches), variant);
+	}
+	const variantsByMessage = new Map<string, Variant[]>();
+	for (const [messageId, byMatches] of variantsByMatches) {
+		variantsByMessage.set(messageId, [...byMatches.values()]);
+	}
+	const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
 
 	// Bundles with a message that is written in the complex form. That message
 	// carries the bundle's declarations, so the other messages of the bundle
@@ -50,16 +72,16 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	}
 
 	for (const message of messages) {
-		const bundle = bundles.find((b) => b.id === message.bundleId);
-		files[message.locale] = {
-			...files[message.locale],
-			...serializeMessage(
+		const bundle = bundlesById.get(message.bundleId);
+		Object.assign(
+			(files[message.locale] ??= {}),
+			serializeMessage(
 				bundle!,
 				message,
 				variantsByMessage.get(message.id)!,
 				bundlesWithComplexMessage.has(message.bundleId)
-			),
-		};
+			)
+		);
 	}
 
 	const result: ExportFile[] = [];
