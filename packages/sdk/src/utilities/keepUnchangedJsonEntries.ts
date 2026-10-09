@@ -142,6 +142,17 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 		return result;
 	};
 
+	// files that the export writes as they are need no comparison
+	if (
+		withExisting.every(
+			(pair) => decodeUtf8(pair.existing!.content) === pair.exportedText
+		)
+	) {
+		return pairs.map((pair) =>
+			pair.existing === undefined ? pair.file : { ...pair.file, verbatim: true }
+		);
+	}
+
 	let previousCanonical: Map<string, unknown>;
 	try {
 		previousCanonical = await canonical(
