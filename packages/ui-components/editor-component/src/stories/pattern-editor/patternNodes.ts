@@ -14,6 +14,7 @@ import {
 	$createTextNode,
 	$getRoot,
 	$getEditor,
+	$getNodeByKey,
 	$getSelection,
 	$hasUpdateTag,
 	$isElementNode,
@@ -27,6 +28,7 @@ import {
 	type LexicalEditor,
 	type LexicalNode,
 	type NodeKey,
+	type PointType,
 	type SerializedTextNode,
 	type Spread,
 	type TextFormatType,
@@ -174,6 +176,8 @@ export function $isPatternTokenNode(
 /** Replaces the editor content with a pattern. Must run inside `editor.update`. */
 export function $setPattern(pattern: Pattern | undefined) {
 	$addUpdateTag(SET_PATTERN_UPDATE);
+	// the old selection points into the replaced content
+	$setSelection(null);
 	const root = $getRoot();
 	root.clear();
 	const paragraph = $createParagraphNode();
@@ -280,27 +284,63 @@ const VARIABLE_PATTERN = /\{\s*([A-Za-z_$][\w$.:-]*)\s*\}/g;
  */
 const SET_PATTERN_UPDATE = "inlang-pattern-set";
 
-type Occurrence = { key: NodeKey; start: number; end: number; text: string };
+/** A `{name}` written as text (not a token), with its offsets in the whole pattern. */
+type Occurrence = { key: NodeKey; start: number; end: number; at: number; text: string };
 
-/** `{name}` written as text (not a token), in document order. Must run inside `read` or `update`. */
+/** `{name}` texts in document order. Must run inside `read` or `update`. */
 function $textVariables(): Occurrence[] {
 	const occurrences: Occurrence[] = [];
-	for (const node of $getRoot().getAllTextNodes()) {
-		if ($isPatternTokenNode(node) || !node.isSimpleText()) continue;
-		const text = node.getTextContent();
-		for (const match of text.matchAll(VARIABLE_PATTERN))
-			occurrences.push({
-				key: node.getKey(),
-				start: match.index!,
-				end: match.index! + match[0].length,
-				text: match[0],
-			});
+	let offset = 0;
+	for (const node of $leaves()) {
+		const size = node.getTextContentSize();
+		if ($isTextNode(node) && !$isPatternTokenNode(node) && node.isSimpleText()) {
+			for (const match of node.getTextContent().matchAll(VARIABLE_PATTERN))
+				occurrences.push({
+					key: node.getKey(),
+					start: match.index!,
+					end: match.index! + match[0].length,
+					at: offset + match.index!,
+					text: match[0],
+				});
+		}
+		offset += size;
 	}
 	return occurrences;
 }
 
-/** Per editor: how often each `{name}` was text after the last update that was not composing. */
-const textBefore = new WeakMap<LexicalEditor, Map<string, number>>();
+/** Offset of a selection point in the whole pattern (as `$getCaretOffset`). */
+function $pointOffset(point: PointType): number {
+	// an element point ("before the n-th child") names the child instead
+	const element = point.type === "element" ? $getNodeByKey(point.key) : null;
+	let child = $isElementNode(element) ? element.getChildAtIndex(point.offset) : null;
+	// before a paragraph: before its first leaf
+	if ($isElementNode(child)) child = child.getFirstDescendant();
+	const key = child ? child.getKey() : point.key;
+	let offset = 0;
+	for (const node of $leaves()) {
+		if (node.getKey() === key) return offset + (!child && $isTextNode(node) ? point.offset : 0);
+		offset += node.getTextContentSize();
+	}
+	return offset;
+}
+
+/** The collapsed caret, or undefined. */
+function $caret(): number | undefined {
+	const selection = $getSelection();
+	return $isRangeSelection(selection) && selection.isCollapsed()
+		? $pointOffset(selection.anchor)
+		: undefined;
+}
+
+/**
+ * Per editor, as after the last update that did not compose: how often each
+ * `{name}` was text, and where the selection started (the text the user types
+ * next starts there, also when it replaces a selection).
+ */
+const textBefore = new WeakMap<
+	LexicalEditor,
+	{ counts: Map<string, number>; selectionStart: number | undefined }
+>();
 
 function countTexts(occurrences: Occurrence[]) {
 	const counts = new Map<string, number>();
@@ -315,64 +355,104 @@ function countTexts(occurrences: Occurrence[]) {
  * needs.
  */
 export function registerVariableText(editor: LexicalEditor): () => void {
-	const remember = (state: EditorState) =>
-		textBefore.set(editor, countTexts(state.read($textVariables)));
+	const remember = (state: EditorState, contentReplaced = false) =>
+		textBefore.set(
+			editor,
+			state.read(() => {
+				const selection = $getSelection();
+				return {
+					counts: countTexts($textVariables()),
+					// a selection left on nodes the update removed (content replaced) says nothing
+					// after the host replaced the content, the selection is where Lexical put it
+					selectionStart:
+						!contentReplaced &&
+						$isRangeSelection(selection) &&
+						[selection.anchor, selection.focus].every((point) =>
+							$getNodeByKey(point.key)?.isAttached()
+						)
+							? Math.min($pointOffset(selection.anchor), $pointOffset(selection.focus))
+							: undefined,
+				};
+			})
+		);
 	remember(editor.getEditorState());
 	return mergeRegister(
 		editor.registerNodeTransform(TextNode, $transformVariableText),
-		editor.registerUpdateListener(({ editorState }) => {
-			// a word an IME is still composing is converted when the composition ends
-			if (!editor.isComposing()) remember(editorState);
+		editor.registerUpdateListener(({ editorState, tags }) => {
+			// a word an IME is still composing is converted when the composition ends; content the
+			// host set replaces what was composed
+			const replaced = tags.has(SET_PATTERN_UPDATE);
+			if (!editor.isComposing() || replaced) remember(editorState, replaced);
 		})
 	);
 }
 
 /**
  * Node transform (see {@link registerVariableText}): converts the `{name}`
- * texts the update added. Texts are compared by content, not by node, so
- * Lexical splitting or merging text nodes (Enter, a token inserted or removed,
- * bold) never turns stored braces into variables, and neither does editing
- * inside or next to them. When the same `{name}` is text more than once, the
- * one(s) ending closest before the caret are the new ones.
+ * texts the user just typed or pasted - those whose `{` or `}` lies between
+ * where the selection started before the update and the caret now, in offsets
+ * of the whole pattern, so Lexical splitting or merging text nodes (Enter, a
+ * token inserted or removed, bold) does not matter. Stored braces stay text
+ * when the user edits next to or inside them, or deletes. Without a caret
+ * (programmatic edits) the `{name}` texts the update added are converted.
  */
 export function $transformVariableText(node: TextNode) {
 	if ($isPatternTokenNode(node) || !node.isSimpleText()) return;
 	if ($hasUpdateTag(SET_PATTERN_UPDATE)) return;
 	const key = node.getKey();
-	const before = textBefore.get($getEditor()) ?? new Map<string, number>();
 	const all = $textVariables();
 	if (!all.some((occurrence) => occurrence.key === key)) return;
-	let budget = all.length;
-	for (const count of before.values()) budget -= count;
-	// no {name} more than before: an existing text was edited (e.g. "{litera}")
-	if (budget <= 0) return;
-	const excess = countTexts(all);
-	for (const [text, count] of before) excess.set(text, (excess.get(text) ?? 0) - count);
-	const selection = $getSelection();
-	const caret =
-		$isRangeSelection(selection) && selection.isCollapsed()
-			? { key: selection.anchor.key, offset: selection.anchor.offset }
-			: undefined;
-	const closeness = (occurrence: Occurrence, index: number) =>
-		caret && occurrence.key === caret.key && occurrence.end <= caret.offset
-			? caret.offset - occurrence.end
-			: Number.MAX_SAFE_INTEGER - index;
-	const ranked = all
-		.map((occurrence, index) => ({ occurrence, rank: closeness(occurrence, index) }))
-		.sort((a, b) => a.rank - b.rank)
-		.map(({ occurrence }) => occurrence);
-	const mine: Occurrence[] = [];
-	for (const occurrence of ranked) {
-		if (budget <= 0) break;
-		const left = excess.get(occurrence.text) ?? 0;
-		if (left <= 0) continue;
-		excess.set(occurrence.text, left - 1);
-		budget--;
-		if (occurrence.key === key) mine.push(occurrence);
+	const before = textBefore.get($getEditor());
+	const caret = $caret();
+	let typed: Occurrence[];
+	if (caret !== undefined && before?.selectionStart !== undefined) {
+		const from = before.selectionStart;
+		// nothing was inserted (a deletion): nothing was typed
+		if (caret <= from) return;
+		const inserted = (offset: number) => offset >= from && offset < caret;
+		typed = all.filter(
+			(occurrence) =>
+				inserted(occurrence.at) ||
+				inserted(occurrence.at + occurrence.end - occurrence.start - 1)
+		);
+	} else {
+		const excess = countTexts(all);
+		for (const [text, count] of before?.counts ?? [])
+			excess.set(text, (excess.get(text) ?? 0) - count);
+		// the ones closest to the caret (ending before it, or containing it) are the new ones;
+		// without a caret the last ones
+		const distance = (occurrence: Occurrence, index: number) => {
+			if (caret === undefined) return -index;
+			const end = occurrence.at + occurrence.end - occurrence.start;
+			if (end <= caret) return caret - end;
+			return occurrence.at < caret ? 0 : occurrence.at - caret + 0.5;
+		};
+		const ranked = all
+			.map((occurrence, index) => ({ occurrence, rank: distance(occurrence, index) }))
+			.sort((a, b) => a.rank - b.rank)
+			.map(({ occurrence }) => occurrence);
+		// no more {name} texts than before: an existing one was edited (e.g. "{litera}")
+		let budget = all.length;
+		for (const count of before?.counts.values() ?? []) budget -= count;
+		typed = [];
+		for (const occurrence of ranked) {
+			if (budget <= 0) break;
+			const left = excess.get(occurrence.text) ?? 0;
+			if (left <= 0) continue;
+			excess.set(occurrence.text, left - 1);
+			typed.push(occurrence);
+			budget--;
+		}
 	}
+	const mine = typed
+		.filter((occurrence) => occurrence.key === key)
+		.sort((a, b) => a.start - b.start);
 	if (mine.length === 0) return;
-	mine.sort((a, b) => a.start - b.start);
-	const caretOffset = caret?.key === key ? caret.offset : undefined;
+	const selection = $getSelection();
+	const caretOffset =
+		$isRangeSelection(selection) && selection.isCollapsed() && selection.anchor.key === key
+			? selection.anchor.offset
+			: undefined;
 	const pieces = node.splitText(...mine.flatMap((match) => [match.start, match.end]));
 	let start = 0;
 	let next = 0;
@@ -382,12 +462,11 @@ export function $transformVariableText(node: TextNode) {
 		const match = mine[next];
 		if (match !== undefined && match.start === start) {
 			next++;
-			const text = piece.getTextContent();
 			const token = $createPatternTokenNode({
 				type: "expression",
 				arg: {
 					type: "variable-reference",
-					name: text.slice(1, -1).trim(),
+					name: piece.getTextContent().slice(1, -1).trim(),
 				},
 			});
 			token.setFormat(piece.getFormat());

@@ -242,6 +242,72 @@ it("tells typed braces from stored ones by their text, not by their node", () =>
 	expect(read(editor, $readPattern)).toEqual([text("It's {litera}")]);
 });
 
+/**
+ * Selects `from`…`to` of the text node at `index` in an update of its own (as a user does
+ * before typing), then types `text` over it. Without a DOM, Lexical does not carry the
+ * selection into the next update: it is set again there.
+ */
+const typeOver = (
+	editor: LexicalEditor,
+	index: number,
+	[from, to]: [number, number],
+	text: string,
+	commit = true
+) => {
+	const selectRange = () => {
+		const selection = caretAt(index, to);
+		selection.anchor.offset = from;
+		return selection;
+	};
+	update(editor, selectRange);
+	const type = () => selectRange().insertRawText(text);
+	if (commit) update(editor, type);
+	else editor.update(type);
+};
+
+it("converts {name} typed over a selection or next to the same stored {name}", () => {
+	const editor = setup();
+	// typed over a selection that contained stored braces
+	update(editor, () => $setPattern([text("It's {literal}")]));
+	typeOver(editor, 0, [0, 14], "Hello {name}");
+	expect(read(editor, $readPattern)).toEqual([text("Hello "), variable("name")]);
+	update(editor, () => $setPattern([text("Pay {amount} now")]));
+	typeOver(editor, 0, [4, 12], "{total}");
+	expect(read(editor, $readPattern)).toEqual([text("Pay "), variable("total"), text(" now")]);
+	// pasted before a stored {x}, with a line break
+	update(editor, () => $setPattern([text("a {x}")]));
+	typeOver(editor, 0, [0, 0], "{x}\nb");
+	expect(read(editor, $readPattern)).toEqual([variable("x"), text("\nba {x}")]);
+	// "{" typed in front of "x}" while a stored {x} follows
+	update(editor, () => $setPattern([text("x} and {x}")]));
+	typeOver(editor, 0, [0, 0], "{");
+	expect(read(editor, $readPattern)).toEqual([variable("x"), text(" and {x}")]);
+	// a stored {x} deleted and {y} typed in two updates before one commit
+	update(editor, () => $setPattern([text("a {x}")]));
+	typeOver(editor, 0, [2, 5], "", false);
+	editor.update(() => {
+		caretAt(0, 2).insertText(" {y}");
+	});
+	update(editor, () => {});
+	expect(read(editor, $readPattern)).toEqual([text("a  "), variable("y")]);
+});
+
+it("keeps stored braces text when the host replaces the content during a composition", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([text("Hi ")]));
+	update(editor, () => {
+		$setCompositionKey((children()[0] as TextNode).getKey());
+		caretAt(0, 3).insertText("x");
+	});
+	update(editor, () => $setPattern([text("Stored {lit} ")]));
+	// the keystroke that ends the composition
+	update(editor, () => {
+		$setCompositionKey(null);
+		caretAt(0, 13).insertText("!");
+	});
+	expect(read(editor, $readPattern)).toEqual([text("Stored {lit} !")]);
+});
+
 it("turns a {name} an IME composed into a token when the composition ends", () => {
 	const editor = setup();
 	update(editor, () => $setPattern([text("Hi ")]));
