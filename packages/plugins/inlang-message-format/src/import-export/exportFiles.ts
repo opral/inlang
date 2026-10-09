@@ -17,6 +17,7 @@ import type {
 import { unflatten } from "flat";
 import { sortMessageKeys } from "../utils/sortKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
+import { orderVariants } from "../utils/orderVariants.js";
 
 export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	bundles,
@@ -26,19 +27,38 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 }) => {
 	const files: Record<string, FileSchema> = {};
 
+	const variantsByMessage = new Map<string, Variant[]>();
 	for (const message of messages) {
-		const bundle = bundles.find((b) => b.id === message.bundleId);
-		const variantsOfMessage = [
+		variantsByMessage.set(message.id, [
 			...variants
 				.reduce((r, v) => {
 					if (v.messageId === message.id) r.set(JSON.stringify(v.matches), v);
 					return r;
 				}, new Map<string, (typeof variants)[number]>())
 				.values(),
-		];
+		]);
+	}
+
+	// Bundles with a message that is written in the complex form. That message
+	// carries the bundle's declarations, so the other messages of the bundle
+	// can be plain strings without losing them.
+	const bundlesWithComplexMessage = new Set<string>();
+	for (const message of messages) {
+		if (!isPlainMessage(message, variantsByMessage.get(message.id)!)) {
+			bundlesWithComplexMessage.add(message.bundleId);
+		}
+	}
+
+	for (const message of messages) {
+		const bundle = bundles.find((b) => b.id === message.bundleId);
 		files[message.locale] = {
 			...files[message.locale],
-			...serializeMessage(bundle!, message, variantsOfMessage),
+			...serializeMessage(
+				bundle!,
+				message,
+				variantsByMessage.get(message.id)!,
+				bundlesWithComplexMessage.has(message.bundleId)
+			),
 		};
 	}
 
@@ -72,34 +92,69 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	return result;
 };
 
+/**
+ * A message without selectors and with one variant that matches nothing is a
+ * plain string in the file, e.g. `"hello": "Hello {name}"`.
+ */
+function isPlainMessage(message: Message, variants: Variant[]): boolean {
+	return (
+		message.selectors.length === 0 &&
+		variants.length === 1 &&
+		variants[0]!.matches.length === 0
+	);
+}
+
 function serializeMessage(
 	bundle: Bundle,
 	message: Message,
-	variants: Variant[]
+	variants: Variant[],
+	bundleHasComplexMessage: boolean
 ): Record<string, SimpleMessage | ComplexMessage> {
 	const key = message.bundleId;
-	const value = serializeVariants(bundle, message, variants);
+	const value = serializeVariants(
+		bundle,
+		message,
+		variants,
+		bundleHasComplexMessage
+	);
 	return { [key]: value };
 }
 
 function serializeVariants(
 	bundle: Bundle,
 	message: Message,
-	variants: Variant[]
+	variants: Variant[],
+	bundleHasComplexMessage: boolean
 ): SimpleMessage | ComplexMessage {
-	// single variant
-	if (variants.length === 1) {
-		if (
-			message.selectors.length === 0 &&
-			bundle.declarations.some((d) => d.type !== "input-variable") === false
-		) {
-			// eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-			return serializePattern(variants[0]!.pattern);
-		}
+	// A plain string is written as it was imported, also if another locale of
+	// the bundle has a plural or select: the declarations are in that locale's
+	// file. Only if no locale of the bundle is written in the complex form, a
+	// bundle with local declarations is written in the complex form, which is
+	// the only form that keeps them.
+	if (
+		isPlainMessage(message, variants) &&
+		(bundleHasComplexMessage ||
+			bundle.declarations.some((d) => d.type !== "input-variable") === false)
+	) {
+		return serializePattern(variants[0]!.pattern);
 	}
 
+	// alphabetical, as every earlier version wrote them, so that files
+	// don't change when the plugin is upgraded. Only an exact number
+	// (ICU `=0`) moves directly before its plural, where it has to be
+	// to win over a plural category that also selects the number.
+	const selectors = orderSelectors(
+		message.selectors.map((s) => s.name).sort(),
+		bundle.declarations
+	);
+
 	const entries = [];
-	for (const variant of variants) {
+	for (const variant of orderVariants(
+		variants,
+		selectors,
+		bundle.declarations,
+		message.locale
+	)) {
 		const matches = [...variant.matches];
 		if (matches.length === 0) {
 			for (const part of variant.pattern) {
@@ -130,14 +185,7 @@ function serializeVariants(
 					.filter((declaration) => declaration.type === "local-variable")
 					.map(serializeDeclaration),
 			],
-			// alphabetical, as every earlier version wrote them, so that files
-			// don't change when the plugin is upgraded. Only an exact number
-			// (ICU `=0`) moves directly before its plural, where it has to be
-			// to win over a plural category that also selects the number.
-			selectors: orderSelectors(
-				message.selectors.map((s) => s.name).sort(),
-				bundle.declarations
-			),
+			selectors,
 			match: Object.fromEntries(entries),
 		},
 	];

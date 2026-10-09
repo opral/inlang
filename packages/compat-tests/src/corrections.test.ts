@@ -29,6 +29,7 @@ import {
 	readSourceFiles,
 	settingsFor,
 	upgrades,
+	withVariantOrder,
 } from "./fixtures.js";
 import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
 
@@ -110,13 +111,267 @@ describe("message-format", () => {
 				JSON.parse(after).cart[0].selectors,
 				`${source}, ${sdk} SDK with the ${plugin} plugin`
 			).toEqual(["countPluralExact", "countPlural"]);
-			// nothing else changes
+			// The published plugin also wrote the "one" form after the catch-all,
+			// where runtimes that try the forms in file order never select it.
+			// Nothing else changes.
+			const [corrected] = withVariantOrder(
+				[{ locale: "en", name: "en.json", content: before }],
+				{
+					"cart/en": [
+						"countPlural=*, countPluralExact=0",
+						"countPlural=one, countPluralExact=*",
+						"countPlural=*, countPluralExact=*",
+					],
+				}
+			);
 			expect(
 				after.replace(
 					'"countPluralExact",\n\t\t\t\t"countPlural"',
 					'"countPlural",\n\t\t\t\t"countPluralExact"'
-				)
-			).toBe(before);
+				),
+				`${source}, ${sdk} SDK with the ${plugin} plugin`
+			).toBe(corrected!.content);
+		}
+	});
+
+	test("an exact number (=0) that an editor adds to a plural: written before the catch-all, after which the published plugin wrote it because it is the newest variant", async () => {
+		// `addExactNumber` in Fink: the catch-all `countPluralExact=*` for the
+		// existing forms, then a new `=0` form with a later uuid (v7)
+		const id = (n: number) => `0199c3a0-0000-7000-8000-00000000000${n}`;
+		const rows = {
+			bundles: [
+				{
+					id: "files_deleted",
+					declarations: [
+						{ type: "input-variable", name: "count" },
+						{
+							type: "local-variable",
+							name: "countPlural",
+							value: {
+								type: "expression",
+								arg: { type: "variable-reference", name: "count" },
+								annotation: {
+									type: "function-reference",
+									name: "plural",
+									options: [],
+								},
+							},
+						},
+						{
+							type: "local-variable",
+							name: "countPluralExact",
+							value: {
+								type: "expression",
+								arg: { type: "variable-reference", name: "count" },
+							},
+						},
+					],
+				},
+			],
+			messages: [
+				{
+					id: id(1),
+					bundleId: "files_deleted",
+					locale: "en",
+					selectors: [
+						{ type: "variable-reference", name: "countPluralExact" },
+						{ type: "variable-reference", name: "countPlural" },
+					],
+				},
+			],
+			variants: [
+				{
+					id: id(2),
+					messageId: id(1),
+					matches: [
+						{ type: "catchall-match", key: "countPluralExact" },
+						{ type: "literal-match", key: "countPlural", value: "one" },
+					],
+					pattern: [{ type: "text", value: "One file deleted" }],
+				},
+				{
+					id: id(3),
+					messageId: id(1),
+					matches: [
+						{ type: "catchall-match", key: "countPluralExact" },
+						{ type: "catchall-match", key: "countPlural" },
+					],
+					pattern: [
+						{
+							type: "expression",
+							arg: { type: "variable-reference", name: "count" },
+						},
+						{ type: "text", value: " files deleted" },
+					],
+				},
+				{
+					id: id(4),
+					messageId: id(1),
+					matches: [
+						{ type: "literal-match", key: "countPluralExact", value: "0" },
+						{ type: "catchall-match", key: "countPlural" },
+					],
+					pattern: [{ type: "text", value: "No files deleted" }],
+				},
+			],
+		};
+		const published = await open(f, "published", "published");
+		await insertRows(published, rows);
+		const before = JSON.parse(await exportLocale(published, f));
+		await published.close();
+		expect(Object.keys(before.files_deleted[0].match)).toEqual([
+			"countPlural=one, countPluralExact=*",
+			"countPlural=*, countPluralExact=*",
+			// never selected: the catch-all before it matches 0
+			"countPlural=*, countPluralExact=0",
+		]);
+
+		for (const { sdk, plugin } of upgrades) {
+			const current = await open(f, sdk, plugin);
+			await insertRows(current, rows);
+			const after = await exportLocale(current, f);
+			await current.close();
+			expect(
+				JSON.parse(after).files_deleted,
+				`${sdk} SDK with the ${plugin} plugin`
+			).toStrictEqual([
+				{
+					declarations: [
+						"input count",
+						"local countPlural = count: plural",
+						"local countPluralExact = count",
+					],
+					selectors: ["countPluralExact", "countPlural"],
+					match: {
+						"countPlural=*, countPluralExact=0": "No files deleted",
+						"countPlural=one, countPluralExact=*": "One file deleted",
+						"countPlural=*, countPluralExact=*": "{count} files deleted",
+					},
+				},
+			]);
+
+			// the written file stays as it is
+			const reopened = await open(f, sdk, plugin);
+			await reopened.importFiles({
+				pluginKey: f.key,
+				files: [{ locale: "en", content: encode(after) }],
+			});
+			expect(
+				await exportLocale(reopened, f),
+				`${sdk} SDK with the ${plugin} plugin`
+			).toBe(after);
+			await reopened.close();
+		}
+	});
+
+	test('a plain string next to a plural in another locale: the published plugin rewrote it into the complex form, with `selectors: []` and on the next export `selectors: ["count"]`; it stays a plain string, and files in either complex form stay as they are', async () => {
+		const file = (messages: Record<string, unknown>) =>
+			JSON.stringify(
+				{
+					$schema: "https://inlang.com/schema/inlang-message-format",
+					...messages,
+				},
+				undefined,
+				"\t"
+			);
+		const handWritten: Record<string, string> = {
+			en: file({
+				hello: "Hello",
+				files_deleted: [
+					{
+						declarations: ["input count", "local countPlural = count: plural"],
+						selectors: ["countPlural"],
+						match: {
+							"countPlural=one": "One file deleted",
+							"countPlural=*": "{count} files deleted",
+						},
+					},
+				],
+			}),
+			de: file({ hello: "Hallo", files_deleted: "{count} Dateien gelöscht" }),
+			fr: file({ hello: "Bonjour", files_deleted: "Fichiers supprimés" }),
+		};
+		const asImport = (files: Record<string, string>) =>
+			Object.entries(files).map(([locale, content]) => ({
+				locale,
+				content: encode(content),
+			}));
+		const exportAll = async (project: Project) =>
+			Object.fromEntries(
+				(await project.exportFiles({ pluginKey: f.key })).map((exported) => [
+					exported.locale,
+					decode(exported.content),
+				])
+			);
+
+		// the published plugin: the first export rewrites the plain strings,
+		// the second the German one again
+		const published = await open(f, "published", "published");
+		await published.importFiles({
+			pluginKey: f.key,
+			files: asImport(handWritten),
+		});
+		const firstExport = await exportAll(published);
+		const blob = await published.toBlob();
+		await published.close();
+		expect(firstExport.en).toBe(handWritten.en);
+		expect(JSON.parse(firstExport.de!).files_deleted).toEqual([
+			{
+				declarations: ["input count", "local countPlural = count: plural"],
+				selectors: [],
+				match: { "count=*": "{count} Dateien gelöscht" },
+			},
+		]);
+		expect(JSON.parse(firstExport.fr!).files_deleted).toEqual([
+			{
+				declarations: ["input count", "local countPlural = count: plural"],
+				selectors: [],
+				// `{ "": … }`, which flat's unflatten turns into an array
+				match: ["Fichiers supprimés"],
+			},
+		]);
+		const republished = await open(f, "published", "published");
+		await republished.importFiles({
+			pluginKey: f.key,
+			files: asImport(firstExport),
+		});
+		const secondExport = await exportAll(republished);
+		await republished.close();
+		expect(JSON.parse(secondExport.de!).files_deleted[0].selectors).toEqual([
+			"count",
+		]);
+		expect(secondExport.fr).toBe(firstExport.fr);
+
+		for (const { sdk, plugin } of upgrades) {
+			const label = `${sdk} SDK with the ${plugin} plugin`;
+			const roundtrip = async (files: Record<string, string>) => {
+				const current = await open(f, sdk, plugin);
+				await current.importFiles({
+					pluginKey: f.key,
+					files: asImport(files),
+				});
+				const exported = await exportAll(current);
+				await current.close();
+				return exported;
+			};
+			// hand-written files stay as they are
+			expect(await roundtrip(handWritten), label).toEqual(handWritten);
+			// so do the complex forms the published plugin wrote, except the one
+			// without a placeholder: `"match": ["Fichiers supprimés"]` is the
+			// same message as the plain string, which it is written as again
+			expect(await roundtrip(firstExport), label).toEqual({
+				...firstExport,
+				fr: handWritten.fr,
+			});
+			expect(await roundtrip(secondExport), label).toEqual({
+				...secondExport,
+				fr: handWritten.fr,
+			});
+			// a database the published plugin imported the hand-written files
+			// into exports them as they were written
+			const fromDatabase = await open(f, sdk, plugin, blob);
+			expect(await exportAll(fromDatabase), label).toEqual(handWritten);
+			await fromDatabase.close();
 		}
 	});
 

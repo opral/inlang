@@ -154,6 +154,52 @@ test("exports the exact-number selector directly before its plural", async () =>
 	]);
 });
 
+test("an =0 form an editor added after the catch-all is written before it", async () => {
+	// `addExactNumber` adds the form as the newest variant, which the stored
+	// order puts last. Runtimes that try the forms in file order (Paraglide JS
+	// 2.26) would never select it after the catch-all.
+	const exported = await runExport({
+		bundles: [{ id: "items", declarations: exactPluralDeclarations }],
+		messages: [
+			{
+				id: "items-en",
+				bundleId: "items",
+				locale: "en",
+				selectors: [
+					{ type: "variable-reference", name: "countPluralExact" },
+					{ type: "variable-reference", name: "countPlural" },
+				],
+			},
+		],
+		variants: [
+			variant(
+				"items-en",
+				{ countPluralExact: "*", countPlural: "one" },
+				"One item"
+			),
+			variant(
+				"items-en",
+				{ countPluralExact: "*", countPlural: "*" },
+				"Some items"
+			),
+			variant(
+				"items-en",
+				{ countPluralExact: "0", countPlural: "*" },
+				"No items"
+			),
+		],
+	});
+
+	expect(Object.entries(exported.en.items[0].match)).toStrictEqual([
+		["countPlural=*, countPluralExact=0", "No items"],
+		["countPlural=one, countPluralExact=*", "One item"],
+		["countPlural=*, countPluralExact=*", "Some items"],
+	]);
+	// and stays so
+	const reexported = await runExport(withIds(await runImport(exported)));
+	expect(reexported).toStrictEqual(exported);
+});
+
 test("other selectors stay alphabetical around an exact-number pair", async () => {
 	const exported = await runExport({
 		bundles: [

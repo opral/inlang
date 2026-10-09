@@ -28,6 +28,9 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	const bundlesById = new Map<string, Bundle>();
 	const messages: MessageImport[] = [];
 	const variants: VariantImport[] = [];
+	// inputs that only plain strings declare, by bundle
+	const plainInputs = new Map<string, Set<string>>();
+	const declaredInputs = new Map<string, Set<string>>();
 
 	for (const file of files) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
@@ -40,6 +43,13 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 			const result = parseBundle(key, file.locale, flattened[key]!);
 			messages.push(result.message);
 			variants.push(...result.variants);
+			const inputs =
+				typeof flattened[key] === "string" ? plainInputs : declaredInputs;
+			for (const declaration of result.bundle.declarations) {
+				if (declaration.type !== "input-variable") continue;
+				if (!inputs.has(key)) inputs.set(key, new Set());
+				inputs.get(key)!.add(declaration.name);
+			}
 
 			const existingBundle = bundlesById.get(result.bundle.id);
 			if (existingBundle === undefined) {
@@ -53,6 +63,24 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				]);
 			}
 		}
+	}
+
+	// A plain string reads its placeholders as inputs. If another locale
+	// declares a local of that name, e.g. `local formattedAmount = amount:
+	// number`, the placeholder is that local, not an input.
+	for (const bundle of bundles) {
+		const locals = new Set(
+			bundle.declarations
+				.filter((declaration) => declaration.type === "local-variable")
+				.map((declaration) => declaration.name)
+		);
+		bundle.declarations = bundle.declarations.filter(
+			(declaration) =>
+				declaration.type !== "input-variable" ||
+				locals.has(declaration.name) === false ||
+				plainInputs.get(bundle.id)?.has(declaration.name) !== true ||
+				declaredInputs.get(bundle.id)?.has(declaration.name) === true
+		);
 	}
 
 	return { bundles, messages, variants };
@@ -213,10 +241,30 @@ function parseVariants(
 			pattern: parsed.pattern,
 		});
 	}
+	// A key of the match that the file doesn't list as a selector is one, as
+	// it always was. Except if the file lists the selectors and the key only
+	// matches `*`: it selects nothing then, and listing it would change the
+	// file on export. Earlier versions wrote a plain string next to a plural
+	// in another locale as `"selectors": [], "match": { "count=*": … }`.
+	const listsSelectors = Array.isArray(complexMessage["selectors"]);
+	const selectsSomething = (name: string) =>
+		variants.some((variant) =>
+			(variant.matches ?? []).some(
+				(match) => match.key === name && match.type === "literal-match"
+			)
+		);
 	return {
 		variants,
 		declarations: Array.from(declarations),
-		selectors: unique([...selectors, ...Array.from(detectedSelectors)]),
+		selectors: unique([
+			...selectors,
+			...Array.from(detectedSelectors).filter(
+				(selector) =>
+					listsSelectors === false ||
+					selectors.some((listed) => listed.name === selector.name) ||
+					selectsSomething(selector.name)
+			),
+		]),
 	};
 }
 
