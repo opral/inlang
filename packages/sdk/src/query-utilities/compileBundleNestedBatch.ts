@@ -1,4 +1,5 @@
 import type { CompiledQuery, Kysely } from "kysely";
+import { v7 } from "uuid";
 import type {
 	InlangDatabaseSchema,
 	NewBundleNested,
@@ -6,12 +7,21 @@ import type {
 
 type NestedWriteMode = "insert" | "upsert";
 
+/**
+ * Compiles the inserts of a nested bundle.
+ *
+ * New ids are uuid v7, like the ids the database creates: messages and
+ * variants are ordered by id (`selectBundleNested`, exports), so an id that
+ * sorts after the ones created before keeps the order in which they were
+ * created, e.g. the variants a person adds in an editor. Random (v4) ids put
+ * them in a random order, and runtimes select the first matching variant.
+ */
 export function compileBundleNestedBatch(
 	db: Kysely<InlangDatabaseSchema>,
 	bundle: NewBundleNested,
 	mode: NestedWriteMode
 ): readonly CompiledQuery[] {
-	const bundleId = bundle.id ?? crypto.randomUUID();
+	const bundleId = bundle.id ?? v7();
 	const queries: CompiledQuery[] = [];
 
 	const bundleInsert = db
@@ -29,7 +39,7 @@ export function compileBundleNestedBatch(
 	);
 
 	for (const message of bundle.messages) {
-		const messageId = message.id ?? crypto.randomUUID();
+		const messageId = message.id ?? v7();
 		const messageInsert = db.insertInto("inlang_message").values({
 			id: messageId,
 			bundle_id: bundleId,
@@ -50,7 +60,7 @@ export function compileBundleNestedBatch(
 		);
 
 		for (const variant of message.variants) {
-			const variantId = variant.id ?? crypto.randomUUID();
+			const variantId = variant.id ?? v7();
 			const variantInsert = db.insertInto("inlang_variant").values({
 				id: variantId,
 				message_id: messageId,

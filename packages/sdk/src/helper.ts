@@ -1,4 +1,6 @@
-import { v4 as uuid } from "uuid";
+// uuid v7: messages and variants are ordered by id, so ids created later
+// sort after the ones created before (see compileBundleNestedBatch)
+import { v7 as uuid } from "uuid";
 import type { ProjectSettings } from "./json-schema/settings.js";
 import { humanId } from "./human-id/human-id.js";
 import type {

@@ -65,6 +65,7 @@
     "esbuild": "^0.19.2",
     "prompts": "^2.4.2",
     "typescript": "5.2.2",
+    "uuid": "^14.0.0",
     "vitest": "2.1.8"
   },
   "license": "Apache-2.0"

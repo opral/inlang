@@ -1,4 +1,6 @@
-import { randomUUID } from "node:crypto";
+// uuid v7: variants are ordered by id, so the translated variants keep the
+// order of the source message
+import { v7 as randomUUID } from "uuid";
 import {
   Text,
   type BundleNested,
