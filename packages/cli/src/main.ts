@@ -6,6 +6,8 @@ import { initErrorMonitoring } from "./services/error-monitoring/implementation.
 import { silenceKnownShutdownNoise } from "./services/error-monitoring/silenceKnownShutdownNoise.js";
 import { validate } from "./commands/validate/index.js";
 import { capture } from "./telemetry/capture.js";
+import { commandTelemetryProperties } from "./telemetry/commandProperties.js";
+import { isTelemetryDisabled } from "./telemetry/isTelemetryDisabled.js";
 import { lastUsedProject } from "./utilities/getInlangProject.js";
 import { lint } from "./commands/lint/index.js";
 import { check } from "./commands/check/index.js";
@@ -40,19 +42,16 @@ export const cli = new Command()
   .addCommand(validate, { hidden: true })
   .addCommand(lint, { hidden: true })
   // Hooks
-  .hook("postAction", async (command) => {
-    // name enables better grouping in the telemetry dashboard
-    const name = command.args.filter(
-      // shouldn't start with a flag and the previous arg shouldn't be a flag
-      (arg, i) => !arg.startsWith("-") && !command.args[i - 1]?.startsWith("-"),
-    );
-
+  .hook("postAction", async (_cli, actionCommand) => {
+    // don't even read the project id if the user opted out
+    if (isTelemetryDisabled()) return;
     await capture({
       event: `CLI command executed`,
-      projectId: await lastUsedProject?.id.get(),
+      projectId: await lastUsedProject?.id.get().catch(() => undefined),
       properties: {
-        name: name.join(" "),
-        args: command.args.join(" "),
+        // the command's name and the names of the flags used, never their
+        // values or arguments: those can be paths, globs, locales or keys
+        ...commandTelemetryProperties(actionCommand),
         node_version: process.versions.node,
         platform: process.platform,
         version,

@@ -426,6 +426,16 @@ npx @inlang/cli plugin build --entry ./path/to/index.ts --outdir ./path/to/dist
 
 See how there is also a `--watch` flag, which enables a watch mode to monitor for changes and automatically rebuild the module when changes are detected. This command runs with `esbuild` under the hood. -->
 
+## Telemetry
+
+The CLI sends anonymous usage data to improve inlang: the command's name (e.g. `check`), the names of the flags you passed (e.g. `--project`, `--locales`), the CLI version, Node.js version and platform, and a random ID of the inlang project. It never sends flag values or arguments: no paths, globs, locales, file names or message keys. Error reports leave out the hostname and console output, and replace local paths.
+
+To turn off telemetry and error reports, set `DO_NOT_TRACK=1` or `INLANG_TELEMETRY=off`:
+
+```sh
+DO_NOT_TRACK=1 npx @inlang/cli check --project ./project.inlang
+```
+
 ## Troubleshoot
 
 If something isn't working as expected or you are getting errors, make sure to run on the latest version of the CLI.
