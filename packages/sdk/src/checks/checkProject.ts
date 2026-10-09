@@ -164,7 +164,7 @@ async function allBundlesNested(
 	type Variant = BundleNested["messages"][number]["variants"][number];
 	type Message = BundleNested["messages"][number];
 	const byId = (a: { id: string }, b: { id: string }) =>
-		a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+		compareBinary(a.id, b.id);
 	const variants = new Map<string, Variant[]>();
 	const variantRows = await db
 		.selectFrom("inlang_variant")
@@ -248,6 +248,23 @@ export async function bundleRevisions(
 			JSON.stringify([...revision].sort()),
 		])
 	);
+}
+/**
+ * SQLite's BINARY order (UTF-8 bytes), which `ORDER BY id` uses: code point
+ * order. JavaScript's `<` compares UTF-16 units, which differs for characters
+ * above U+FFFF.
+ */
+export function compareBinary(a: string, b: string): number {
+	let i = 0;
+	let j = 0;
+	while (i < a.length && j < b.length) {
+		const x = a.codePointAt(i)!;
+		const y = b.codePointAt(j)!;
+		if (x !== y) return x - y;
+		i += x > 0xffff ? 2 : 1;
+		j += y > 0xffff ? 2 : 1;
+	}
+	return a.length - i - (b.length - j);
 }
 export function chunks<T>(items: readonly T[], size: number): T[][] {
 	const result: T[][] = [];

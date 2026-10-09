@@ -6,10 +6,12 @@ import type {
 import type { Match } from "../database/schema.js";
 import {
 	isNumericKey,
+	isPluralSelector,
 	isSingleNumberCategory,
 	matchValue,
 	missingVariants,
 	pluralRules,
+	resolveAnnotation,
 	resolveInputVariable,
 	selectorGroups,
 } from "./selectors.js";
@@ -49,6 +51,8 @@ export type TranslationIssue =
 			selector: string;
 			/** The input it reads ("count"). */
 			input: string;
+			/** The reference's select values or exact numbers the translation can't express. */
+			values: string[];
 	  };
 
 /** True when a pattern has no visible text, variables or markup. */
@@ -176,7 +180,13 @@ export function checkTranslation(args: {
 		variant.matches.flatMap((match) => {
 			if (match.type !== "literal-match") return [];
 			const group = groups.find((value) => value.names.includes(match.key));
-			if (!group?.isPlural) return [];
+			if (!group) return [];
+			// an exact-number selector on its own (`count=0`) also selects one number
+			if (!group.isPlural)
+				return isNumericKey(match.value) &&
+					resolveAnnotation(match.key, declarations) === undefined
+					? [group.input]
+					: [];
 			return isNumericKey(match.value) ||
 				(match.key === group.selector &&
 					isSingleNumberCategory(
@@ -188,18 +198,25 @@ export function checkTranslation(args: {
 				? [group.input]
 				: [];
 		});
-	// The reference form with the same matches, else every reference form.
-	const sameForm = (variant: VariantLike) => {
+	// The reference forms with the same exact numbers and select values. Plural categories are
+	// not compared: they mean different numbers in each locale (Russian "one" is 1, 21, 31…).
+	const sameForms = (variant: VariantLike) => {
 		const keys = [
 			...new Set([
 				...variant.matches.map((match) => match.key),
 				...(reference?.selectors ?? []).map((selector) => selector.name),
 			]),
-		];
-		return referenceForms.find((form) =>
+		].filter((key) => !isPluralSelector(key, declarations));
+		return referenceForms.filter((form) =>
 			keys.every((key) => matchValue(form, key) === matchValue(variant, key))
 		);
 	};
+	// A plural's input ("count") is needed in every form of the plural that is not one number.
+	const pluralInputs = [
+		...new Set(
+			groups.filter((group) => group.isPlural).map((group) => group.input)
+		),
+	].filter((input) => variables.includes(input));
 	for (const variant of target.variants) {
 		if (isEmptyPattern(variant.pattern)) {
 			issues.push({
@@ -211,9 +228,16 @@ export function checkTranslation(args: {
 		}
 		if (!reference || referenceForms.length === 0) continue;
 		const variantId = variant.id;
-		const form = sameForm(variant);
-		const expected = form ? variableNames(form.pattern) : variables;
+		const forms = sameForms(variant);
 		const exempt = spelledOut(variant);
+		const expected = forms.length
+			? [
+					...new Set([
+						...forms.flatMap((form) => variableNames(form.pattern)),
+						...pluralInputs,
+					]),
+				]
+			: variables;
 		const own = variableNames(variant.pattern);
 		const missing = expected.filter(
 			(name) =>
@@ -236,27 +260,45 @@ export function checkTranslation(args: {
 				});
 			}
 		const tags = markupNames(variant.pattern);
-		for (const name of form ? markupNames(form.pattern) : markup)
+		const expectedMarkup = forms.length
+			? [...new Set(forms.flatMap((form) => markupNames(form.pattern)))]
+			: markup;
+		for (const name of expectedMarkup)
 			if (!tags.includes(name))
 				issues.push({ type: "missing-markup", name, variantId });
 	}
 	if (reference)
 		for (const group of selectorGroups(reference, declarations)) {
-			if (groups.some((value) => value.input === group.input)) continue;
-			// select values and exact numbers; a plural's categories follow each locale
-			const values = group.keys.filter(
-				(key) => key !== "*" && (!group.isPlural || isNumericKey(key))
-			);
-			const pluralNeeded =
-				group.isPlural &&
-				(pluralRules(group.selector, declarations, target.locale)
-					?.requiredCategories.length ?? 1) > 1;
-			if (values.length || pluralNeeded)
+			const own = groups.filter((value) => value.input === group.input);
+			const report = (selector: string, values: string[]) =>
 				issues.push({
 					type: "missing-selector",
-					selector: group.selector,
+					selector,
 					input: group.input,
+					values,
 				});
+			if (!group.isPlural) {
+				const values = group.keys.filter((key) => key !== "*");
+				if (values.length && !own.length) report(group.selector, values);
+				continue;
+			}
+			// the reference's exact numbers (ICU =0) and whether the locale needs the plural
+			const numbers = group.requiredKeys.filter(isNumericKey);
+			const needsPlural =
+				(pluralRules(group.selector, declarations, target.locale)
+					?.requiredCategories.length ?? 1) > 1;
+			if (!own.length) {
+				if (numbers.length || needsPlural) report(group.selector, numbers);
+				continue;
+			}
+			if (needsPlural && !own.some((value) => value.isPlural))
+				report(group.selector, []);
+			// a number on the plural selector can't stand in: it selects a category at runtime
+			if (
+				numbers.length &&
+				!own.some((value) => value.exactSelector || !value.isPlural)
+			)
+				report(group.exactSelector ?? group.selector, numbers);
 		}
 	for (const matches of missingVariants(target, declarations, {
 		referenceVariants: reference?.variants,

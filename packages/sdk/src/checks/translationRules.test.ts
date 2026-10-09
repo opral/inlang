@@ -156,7 +156,12 @@ test("a translation that drops the reference's selector is reported", () => {
 			declarations: plural,
 		})
 	).toEqual([
-		{ type: "missing-selector", selector: "gender", input: "gender" },
+		{
+			type: "missing-selector",
+			selector: "gender",
+			input: "gender",
+			values: ["female"],
+		},
 	]);
 	// a plural: Russian needs it, Japanese doesn't
 	const files = message("en", ["countPlural"], {
@@ -179,37 +184,111 @@ test("a translation that drops the reference's selector is reported", () => {
 			declarations: plural,
 		})
 	).toEqual([]);
+	// Russian with only an exact number on the input still needs the plural
+	expect(
+		checkTranslation({
+			reference: files,
+			target: message("ru", ["countPluralExact"], {
+				"countPluralExact=0": [t("Нет файлов")],
+				"countPluralExact=*": [v("count"), t(" файлов")],
+			}),
+			declarations: plural,
+		})
+	).toEqual([
+		{
+			type: "missing-selector",
+			selector: "countPlural",
+			input: "count",
+			values: [],
+		},
+	]);
 });
 
-test("the reference's exact number is needed on a translation's plural without the exact selector", () => {
+test("the reference's exact number needs an exact-number selector; a number on the plural never matches", () => {
 	const reference = message("en", ["countPluralExact", "countPlural"], {
 		"countPluralExact=0,countPlural=*": [t("No files")],
 		"countPluralExact=*,countPlural=one": [v("count"), t(" file")],
 		"countPluralExact=*,countPlural=*": [v("count"), t(" files")],
 	});
-	const target = message("de", ["countPlural"], {
-		"countPlural=one": [t("Eine Datei")],
-		"countPlural=*": [v("count"), t(" Dateien")],
-	});
-	expect(checkTranslation({ reference, target, declarations: plural })).toEqual(
-		[{ type: "missing-variant", matches: [match("countPlural", "0")] }]
-	);
-	// `countPlural=0` covers it, and covers the exact selector's 0 too
-	const covered = message("de", ["countPlural"], {
-		"countPlural=0": [t("Keine Dateien")],
-		"countPlural=one": [t("Eine Datei")],
-		"countPlural=*": [v("count"), t(" Dateien")],
-	});
-	expect(
-		checkTranslation({ reference, target: covered, declarations: plural })
-	).toEqual([]);
+	// `countPlural` selects a category at runtime, so `countPlural=0` can't stand for =0
+	for (const target of [
+		message("de", ["countPlural"], {
+			"countPlural=one": [t("Eine Datei")],
+			"countPlural=*": [v("count"), t(" Dateien")],
+		}),
+		message("de", ["countPlural"], {
+			"countPlural=0": [t("Keine Dateien")],
+			"countPlural=one": [t("Eine Datei")],
+			"countPlural=*": [v("count"), t(" Dateien")],
+		}),
+	])
+		expect(
+			checkTranslation({ reference, target, declarations: plural })
+		).toEqual([
+			{
+				type: "missing-selector",
+				selector: "countPluralExact",
+				input: "count",
+				values: ["0"],
+			},
+		]);
 	expect(
 		variantCovers(
 			{ matches: [match("countPluralExact", "*"), match("countPlural", "0")] },
 			[match("countPluralExact", "0"), match("countPlural", "*")],
 			plural
 		)
-	).toBe(true);
+	).toBe(false);
+	// with the exact selector, the 0 form is a missing variant as before
+	expect(
+		checkTranslation({
+			reference,
+			target: message("de", ["countPluralExact", "countPlural"], {
+				"countPluralExact=*,countPlural=one": [t("Eine Datei")],
+				"countPluralExact=*,countPlural=*": [v("count"), t(" Dateien")],
+			}),
+			declarations: plural,
+		})
+	).toEqual([
+		{
+			type: "missing-variant",
+			matches: [match("countPluralExact", "0"), match("countPlural", "*")],
+		},
+	]);
+});
+
+test("plural categories are not matched by name across locales: the input is needed unless the category is one number", () => {
+	const reference = message("en", ["countPlural"], {
+		"countPlural=one": [t("One file")],
+		"countPlural=*": [v("count"), t(" files")],
+	});
+	const one = (locale: string, text: string) =>
+		checkTranslation({
+			reference,
+			target: message(locale, ["countPlural"], {
+				"countPlural=one": [t(text)],
+				"countPlural=few": [v("count"), t(" x")],
+				"countPlural=many": [v("count"), t(" x")],
+				"countPlural=*": [v("count"), t(" x")],
+			}),
+			declarations: plural,
+		}).filter((issue) => issue.type === "missing-variable");
+	// Russian one is 1, 21, 31…; French one is 0 and 1; German one is only 1
+	expect(one("ru", "файл")).toEqual([
+		{
+			type: "missing-variable",
+			name: "count",
+			variantId: "ru:countPlural=one",
+		},
+	]);
+	expect(one("fr", "fichier")).toEqual([
+		{
+			type: "missing-variable",
+			name: "count",
+			variantId: "fr:countPlural=one",
+		},
+	]);
+	expect(one("de", "Eine Datei")).toEqual([]);
 });
 
 test("categories only for millions (French many) are offered, not required", () => {
@@ -249,54 +328,25 @@ test("categories only for millions (French many) are offered, not required", () 
 	).toEqual([]);
 });
 
-test("locales with underscores and number selectors get plural rules", () => {
+test("locales with underscores get plural rules; :number and :integer select by value", () => {
 	expect(pluralRules("countPlural", plural, "pt_BR")?.categories).toEqual(
 		pluralRules("countPlural", plural, "pt-BR")?.categories
 	);
+	// Paraglide's registry.number returns a formatted string: `countNumber=1` matches, `one` never
 	const number: Declaration[] = [
 		{ type: "input-variable", name: "count" },
 		local("countNumber", "count", "number"),
 		local("countInteger", "count", "integer"),
-		{
-			type: "local-variable",
-			name: "countExact",
-			value: {
-				type: "expression",
-				arg: { type: "variable-reference", name: "count" },
-				annotation: {
-					type: "function-reference",
-					name: "number",
-					options: [
-						{ name: "select", value: { type: "literal", value: "exact" } },
-					],
-				},
-			},
-		},
-		{
-			type: "local-variable",
-			name: "countOrdinal",
-			value: {
-				type: "expression",
-				arg: { type: "variable-reference", name: "count" },
-				annotation: {
-					type: "function-reference",
-					name: "number",
-					options: [
-						{ name: "select", value: { type: "literal", value: "ordinal" } },
-					],
-				},
-			},
-		},
 	];
-	expect(isPluralSelector("countNumber", number)).toBe(true);
-	expect(pluralRules("countInteger", number, "ru")?.categories).toEqual([
-		"one",
-		"few",
-		"many",
-		"other",
-	]);
-	expect(pluralRules("countOrdinal", number, "en")?.type).toBe("ordinal");
-	expect(isPluralSelector("countExact", number)).toBe(false);
+	expect(isPluralSelector("countNumber", number)).toBe(false);
+	expect(pluralRules("countInteger", number, "ru")).toBeUndefined();
+	const english = message("en", ["countNumber"], {
+		"countNumber=1": [t("One file")],
+		"countNumber=*": [v("count"), t(" files")],
+	});
+	expect(
+		missingVariants(english, number, { referenceVariants: english.variants })
+	).toEqual([]);
 });
 
 test("checkBundle reports a dropped selector against the reference", async () => {
@@ -325,10 +375,19 @@ test("checkBundle reports a dropped selector against the reference", async () =>
 			messageId: "m-de",
 			name: "gender",
 			selector: "gender",
+			values: ["female"],
 			severity: "warning",
 			fixes: [],
 			message:
 				'Message "invite" doesn\'t choose by {gender} in "de" like "en" does.',
 		},
 	]);
+});
+
+test("full scans order bundles like SQLite's BINARY collation", async () => {
+	const { compareBinary } = await import("./checkProject.js");
+	// U+FF5E (3 UTF-8 bytes) sorts before U+1F600 (4 bytes); UTF-16 units say the opposite
+	const ids = ["😀", "～", "a"];
+	expect([...ids].sort(compareBinary)).toEqual(["a", "～", "😀"]);
+	expect([...ids].sort()).not.toEqual(["a", "～", "😀"]);
 });

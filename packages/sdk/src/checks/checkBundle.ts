@@ -163,6 +163,7 @@ export function checkBundle(args: CheckBundleArgs): CheckDiagnostic[] {
 					messageId,
 					name: issue.input,
 					selector: issue.selector,
+					values: [...issue.values],
 					message: `Message ${id} doesn't choose by {${issue.input}} in ${where} like ${JSON.stringify(referenceLocale)} does.`,
 				});
 			else
