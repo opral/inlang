@@ -194,7 +194,7 @@ When addressing nested messages, use dot notation (e.g. `navigation.items.count`
 
 ### Formatted placeholders
 
-A placeholder can call a function on its variable, with the same syntax as a local declaration: `{variable: function option=value}`. Option values are a literal (`style=percent`), a quoted literal for values with whitespace or special characters (`skeleton=|yyyy MMM d|`), or a variable (`currency=$priceCurrency`).
+A placeholder can call a function on its variable, written like a local declaration: `{variable: function option=value}`, with a space after the colon. Option values are a literal (`style=percent`), a variable (`currency=$priceCurrency`), or, unlike in declarations, a quoted literal for values with whitespace or special characters (`skeleton=|yyyy MMM d|`, escape `|`, `\` and `}` with `\`).
 
 ```json
 {

@@ -303,8 +303,8 @@ function parsePattern(value: string): {
 }
 
 /**
- * Parses an annotated expression `name: function option=value …`, the syntax
- * of local declarations, e.g. `count: icu:pound offset=1`. Option values are
+ * Parses an annotated expression `name: function option=value …`, like a local
+ * declaration, e.g. `count: icu:pound offset=1`. Option values are
  * `$variable`, `|quoted literal|` or a literal without whitespace.
  *
  * Returns undefined for anything else, which stays a plain `{name}`
@@ -313,7 +313,9 @@ function parsePattern(value: string): {
 function parseExpressionPlaceholder(
 	placeholder: string
 ): Expression | undefined {
-	const match = placeholder.match(/^([^\s:|{}]+):\s*([^\s=|{}]+)(.*)$/s);
+	// `name: function`, with whitespace after the colon as export writes it.
+	// Without it, `{user:name}` stays a variable named `user:name` as before.
+	const match = placeholder.match(/^([^\s:|{}]+):\s+([^\s=|{}]+)(.*)$/s);
 	if (match === null) return undefined;
 	const [, name, functionName, rest] = match as unknown as [
 		string,

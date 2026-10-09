@@ -190,8 +190,8 @@ function serializePattern(pattern: Variant["pattern"]): string {
 }
 
 /**
- * `{name}`, or `{name: function option=value}` with the same syntax as a local
- * declaration, e.g. `{count: icu:pound offset=1}`.
+ * `{name}`, or `{name: function option=value}` like a local declaration, e.g.
+ * `{count: icu:pound offset=1}`.
  */
 function serializeExpression(
 	name: string,

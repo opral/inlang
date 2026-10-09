@@ -230,6 +230,7 @@ test("placeholders that are not annotated expressions stay byte-stable", async (
 	const files = {
 		spaced: "Hi { name }!",
 		colonOnly: "{a:b c}",
+		colonWithoutSpace: "Hi {user:name}, {t:count}",
 		trailingColon: "{a:}",
 		dangling: "{x: f opt=}",
 		plain: "Hello {name}",
