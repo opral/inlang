@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs/promises";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, lstatSync, realpathSync, statSync } from "node:fs";
 import nodePath from "node:path";
 import type { SourceFile } from "@inlang/sdk";
 
@@ -53,6 +53,16 @@ export async function collectSourceFiles(args: {
 }): Promise<SourceSnapshot> {
   const paths = new Set<string>();
   const isOutput = paraglideOutputDetector();
+  // Real directories already read, so symlinks and cycles are read once.
+  const visited = new Set<string>();
+  const directoryRoots = args.roots
+    .map((root) => nodePath.resolve(args.cwd, root))
+    .filter((root) => statSync(root, { throwIfNoEntry: false })?.isDirectory())
+    .map((root) => realpathSync(root));
+  const insideRoot = (directory: string) =>
+    directoryRoots.some(
+      (root) => directory === root || directory.startsWith(root + nodePath.sep),
+    );
   for (const root of args.roots) {
     const absolute = nodePath.resolve(args.cwd, root);
     const stat = statSync(absolute, { throwIfNoEntry: false });
@@ -63,18 +73,25 @@ export async function collectSourceFiles(args: {
     }
     const listed = gitFiles(absolute);
     const candidates: string[] = [];
-    if (listed === undefined) candidates.push(...(await walk(absolute, true)));
+    if (listed === undefined)
+      candidates.push(...(await walk(absolute, true, visited)));
     else
       for (const relative of listed) {
         const file = nodePath.join(absolute, relative);
         // A symlinked directory or a submodule: git lists it as one entry.
-        if (statSync(file, { throwIfNoEntry: false })?.isDirectory())
+        // Its files are read unless it points into a root, which git listed.
+        if (statSync(file, { throwIfNoEntry: false })?.isDirectory()) {
+          if (
+            lstatSync(file).isSymbolicLink() &&
+            insideRoot(realpathSync(file))
+          )
+            continue;
           candidates.push(
-            ...(await walk(file, false)).map((path) =>
+            ...(await walk(file, false, visited)).map((path) =>
               nodePath.join(relative, path),
             ),
           );
-        else candidates.push(relative);
+        } else candidates.push(relative);
       }
     for (const relative of candidates) {
       const segments = relative.split(/[\\/]/);
@@ -156,9 +173,9 @@ function gitFiles(directory: string): string[] | undefined {
 async function walk(
   directory: string,
   skipBuildOutput: boolean,
+  visited: Set<string>,
 ): Promise<string[]> {
   const result: string[] = [];
-  const visited = new Set<string>();
   const pending = [""];
   while (pending.length) {
     const relative = pending.pop()!;

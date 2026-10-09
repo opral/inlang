@@ -113,8 +113,7 @@ test.each([false, true])(
     const snapshot = await collectSourceFiles({ roots: ["."], cwd: root });
     if (snapshot.status !== "complete") throw new Error(snapshot.status);
     const paths = snapshot.files.map((file) => file.path);
-    expect(paths).toContain("src/App.tsx");
-    expect(paths).toContain("src/shared/Shared.ts");
+    expect(paths).toEqual(["src/App.tsx", "src/shared/Shared.ts"]);
   },
 );
 
