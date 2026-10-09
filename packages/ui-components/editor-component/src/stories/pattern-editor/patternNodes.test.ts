@@ -23,7 +23,7 @@ import {
 	$readPattern,
 	$setCaretOffset,
 	$setPattern,
-	isDeletion,
+	deletedAt,
 	registerVariableText,
 	typedRange,
 	PatternTokenNode,
@@ -474,11 +474,12 @@ it("reads a {query before the caret and replaces it with a variable", () => {
 });
 
 it("tells what an edit typed from the text alone, not from a selection", () => {
-	// a deletion, wherever the caret is, also one that joins "{na" and "me}"
-	expect(isDeletion("Hi {name}!", "Hi {name}")).toBe(true);
-	expect(isDeletion("{na-me}", "{name}")).toBe(true);
-	expect(isDeletion("ab", "ab")).toBe(false);
-	expect(isDeletion("Hi {name}", "Hi {name}!")).toBe(false);
+	// a deletion, also one that joins "{na" and "me}": the last offset the removed run can start at
+	expect(deletedAt("Hi {name}!", "Hi {name}")).toBe(9);
+	expect(deletedAt("{na-me}", "{name}")).toBe(3);
+	expect(deletedAt("aab", "ab")).toBe(1);
+	expect(deletedAt("ab", "ab")).toBeUndefined();
+	expect(deletedAt("Hi {name}", "Hi {name}!")).toBeUndefined();
 	// typed text ends at the caret
 	expect(typedRange("Hi {name}", "Hi {name}!", 10)).toEqual([9, 10]);
 	// "{" typed before stored "{lit}" is the one before the caret, not the stored one
@@ -489,4 +490,32 @@ it("tells what an edit typed from the text alone, not from a selection", () => {
 	expect(typedRange("ab", "ab", 1)).toEqual([1, 1]);
 	// the caret is not where the edit ended
 	expect(typedRange("abc", "abXc", 1)).toBeUndefined();
+});
+
+it("converts {name} typed or pasted over a selection that reads as a deletion", () => {
+	const editor = setup();
+	// pasted over "{name foo}"
+	update(editor, () => $setPattern([text("Hi {name foo} bye")]));
+	typeOver(editor, 0, [3, 13], "{name}");
+	expect(read(editor, $readPattern)).toEqual([text("Hi "), variable("name"), text(" bye")]);
+	// "}" typed over " foo}"
+	update(editor, () => $setPattern([text("Hi {name foo}")]));
+	typeOver(editor, 0, [8, 13], "}");
+	expect(read(editor, $readPattern)).toEqual([text("Hi "), variable("name")]);
+	// a real deletion with the same result keeps the braces text
+	update(editor, () => $setPattern([text("Hi {name foo}")]));
+	typeOver(editor, 0, [8, 12], "");
+	expect(read(editor, $readPattern)).toEqual([text("Hi {name}")]);
+});
+
+it("converts every {name} of a paste, also when an earlier one in the update was { spaced }", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([text("{a}\n{ b }")]));
+	update(editor, () => {
+		// all of it selected
+		const selection = caretAt(0, 0);
+		selection.focus.set((children()[2] as TextNode).getKey(), "{ b }".length, "text");
+		selection.insertRawText("{ a }\n{ b }");
+	});
+	expect(read(editor, $readPattern)).toEqual([variable("a"), text("\n"), variable("b")]);
 });

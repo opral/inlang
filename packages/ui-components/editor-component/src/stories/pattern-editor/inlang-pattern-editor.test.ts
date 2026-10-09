@@ -206,6 +206,8 @@ async function fastKeys(
 	};
 	try {
 		window.getSelection()!.collapse(text, movedTo);
+		// a task passes, as between key presses: only the held-back selectionchange is missing
+		await new Promise((resolve) => setTimeout(resolve));
 		keys(editable);
 		await new Promise((resolve) => setTimeout(resolve));
 	} finally {
