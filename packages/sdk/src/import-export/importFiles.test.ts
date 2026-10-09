@@ -740,3 +740,170 @@ test("a fresh import upserts variants whose matches differ only in order", async
 	expect(variants).toHaveLength(1);
 	expect(variants[0]?.pattern).toEqual(text("last"));
 });
+
+describe("variants that exist with ids the import doesn't create", () => {
+	/** A plural `en` message with variants of the given ids, in DB order. */
+	async function projectWith(variants: Array<{ id: string; value: string }>) {
+		const project = await loadProjectInMemory({ blob: await newProject() });
+		await project.db
+			.insertInto("inlang_bundle")
+			.values({ id: "bundle" })
+			.execute();
+		await project.db
+			.insertInto("inlang_message")
+			.values({
+				id: "message",
+				bundle_id: "bundle",
+				locale: "en",
+				selectors: [{ type: "variable-reference", name: "count" }],
+			})
+			.execute();
+		for (const variant of variants) {
+			await project.db
+				.insertInto("inlang_variant")
+				.values({
+					id: variant.id,
+					message_id: "message",
+					matches:
+						variant.value === "*"
+							? [catchall("count")]
+							: [literal("count", variant.value)],
+					pattern: text(variant.value),
+				})
+				.execute();
+		}
+		return project;
+	}
+
+	const pluralPlugin: InlangPlugin = {
+		key: "mock",
+		importFiles: async () => ({
+			bundles: [{ id: "bundle" }],
+			messages: [
+				{
+					bundleId: "bundle",
+					locale: "en",
+					selectors: [{ type: "variable-reference", name: "count" }],
+				},
+			],
+			variants: [
+				{
+					messageBundleId: "bundle",
+					messageLocale: "en",
+					matches: [literal("count", "one")],
+					pattern: text("one"),
+				},
+				{
+					messageBundleId: "bundle",
+					messageLocale: "en",
+					matches: [catchall("count")],
+					pattern: text("*"),
+				},
+			],
+		}),
+	};
+
+	const variantRows = async (
+		project: Awaited<ReturnType<typeof loadProjectInMemory>>
+	) =>
+		(
+			await selectBundleNested(project.db).execute()
+		)[0]!.messages[0]!.variants.map((variant) => ({
+			id: variant.id,
+			pattern: variant.pattern,
+		}));
+
+	test.each([
+		// uuid v4, as `insertBundleNested` creates them
+		[
+			"uuid v4",
+			"f0000000-0000-4000-8000-000000000000",
+			"a0000000-0000-4000-8000-000000000000",
+		],
+		// ids an app or a plugin chose
+		["custom", "greeting_other", "greeting_one"],
+	])(
+		"%s ids out of order take the order of the import and keep it",
+		async (_, oneId, otherId) => {
+			const project = await projectWith([
+				{ id: otherId, value: "*" },
+				{ id: oneId, value: "one" },
+			]);
+
+			await importWith(project, pluralPlugin);
+			const first = await variantRows(project);
+			expect(first.map((variant) => variant.pattern)).toEqual([
+				text("one"),
+				text("*"),
+			]);
+
+			await importWith(project, pluralPlugin);
+			expect(await variantRows(project)).toEqual(first);
+		}
+	);
+
+	test("custom ids that are in order are kept", async () => {
+		const project = await projectWith([
+			{ id: "greeting_a_one", value: "one" },
+			{ id: "greeting_b_other", value: "*" },
+		]);
+
+		await importWith(project, pluralPlugin);
+
+		expect(await variantRows(project)).toEqual([
+			{ id: "greeting_a_one", pattern: text("one") },
+			{ id: "greeting_b_other", pattern: text("*") },
+		]);
+	});
+
+	test("duplicates that earlier re-imports created are removed", async () => {
+		const project = await projectWith([
+			{ id: "01900000-0000-7000-8000-000000000001", value: "one" },
+			{ id: "01900000-0000-7000-8000-000000000002", value: "*" },
+			{ id: "01900000-0000-7000-8000-000000000003", value: "one" },
+			{ id: "01900000-0000-7000-8000-000000000004", value: "*" },
+		]);
+
+		await importWith(project, pluralPlugin);
+
+		expect(await variantRows(project)).toEqual([
+			{ id: "01900000-0000-7000-8000-000000000001", pattern: text("one") },
+			{ id: "01900000-0000-7000-8000-000000000002", pattern: text("*") },
+		]);
+	});
+
+	test("variants of a message with ids from the plugin keep their ids", async () => {
+		const project = await projectWith([
+			{ id: "v-other", value: "*" },
+			{ id: "v-one", value: "one" },
+		]);
+		const plugin: InlangPlugin = {
+			key: "mock",
+			importFiles: async () => ({
+				bundles: [],
+				messages: [],
+				variants: [
+					{
+						id: "v-other",
+						messageId: "message",
+						matches: [catchall("count")],
+						pattern: text("*"),
+					},
+					{
+						id: "v-one",
+						messageId: "message",
+						matches: [literal("count", "one")],
+						pattern: text("one"),
+					},
+				],
+			}),
+		};
+
+		await importWith(project, plugin);
+
+		expect((await variantRows(project)).map((v) => v.id)).toEqual([
+			"v-one",
+			"v-other",
+		]);
+	});
+});

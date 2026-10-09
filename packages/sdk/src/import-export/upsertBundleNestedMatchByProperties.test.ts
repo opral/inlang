@@ -74,3 +74,22 @@ test("upserted variants take the order of the bundle", async () => {
 		text("Many items"),
 	]);
 });
+
+test("variants of a message with the same matches are upserted into one", async () => {
+	const project = await loadProjectInMemory({ blob: await newProject() });
+
+	await upsertBundleNestedMatchByProperties(
+		project.db,
+		bundle([
+			["one", "first"],
+			["one", "last"],
+		])
+	);
+
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
+	expect(variants).toHaveLength(1);
+	expect(variants[0]!.pattern).toEqual(text("last"));
+});

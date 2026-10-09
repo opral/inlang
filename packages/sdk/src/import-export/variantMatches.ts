@@ -1,5 +1,7 @@
 import type { Kysely } from "kysely";
+import { v7 } from "uuid";
 import type { InlangDatabaseSchema } from "../database/schema.js";
+import { compareBinary } from "../checks/checkProject.js";
 
 /**
  * A key for the `matches` of a variant that two variants share if and only if
@@ -42,18 +44,47 @@ function canonicalJson(value: unknown): string {
 }
 
 /**
+ * The existing variant of a message with the given matches, and the other
+ * variants with the same matches.
+ *
+ * A message has at most one variant per matches. Earlier SDK versions
+ * duplicated variants with matches on every re-import (see
+ * `variantMatchesKey`); an import of those matches keeps the first one (the
+ * oldest) and the caller deletes the duplicates, so the project is repaired
+ * by the next import.
+ */
+export function findExistingVariant<T extends { id: string; matches: unknown }>(
+	existingVariants: readonly T[],
+	matches: unknown
+): { existing: T | undefined; duplicates: T[] } {
+	const key = variantMatchesKey(matches);
+	const [existing, ...duplicates] = existingVariants
+		.filter((variant) => variantMatchesKey(variant.matches) === key)
+		.sort((a, b) => compareBinary(a.id, b.id));
+	return { existing, duplicates };
+}
+
+const UUID_V7 =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
  * Makes the variants `ids` of a message follow each other in the given
  * order, the order of the import.
  *
  * The database has no position column: variants are ordered by id
- * (`selectBundleNested`, exports), and ids are uuid v7, so a variant
- * inserted later sorts after the ones inserted before. An import that matches
- * existing variants by their matches updates them in place, which keeps their
- * old position. If the file lists them in another order (a person reordered
- * them, or a plugin now reads a file in a different order), the variants from
- * the first one that is out of order on are inserted again, with new ids, in
- * the order of the import. Variants that are in order keep their ids, so a
- * re-import of unchanged files changes nothing.
+ * (`selectBundleNested`, exports), and the database creates uuid v7 ids, so a
+ * variant inserted later sorts after the ones inserted before. An import that
+ * matches existing variants by their matches updates them in place, which
+ * keeps their old position. If the file lists them in another order (a person
+ * reordered them, or a plugin now reads a file in a different order), the
+ * variants from the first one that is out of order on are inserted again,
+ * with new ids, in the order of the import. Variants that are in order keep
+ * their ids, so a re-import of unchanged files changes nothing.
+ *
+ * A new id only sorts after a uuid v7 of the past. Variants before the first
+ * one out of order with other ids (uuid v4 of `insertBundleNested`, ids a
+ * plugin or app chose) are inserted again as well, so that the order is
+ * right after one import and stays as it is on the next.
  *
  * Runtimes like Paraglide JS select the first variant that matches, so the
  * order is part of the meaning of a message.
@@ -64,10 +95,20 @@ export async function orderVariantsLikeImport(
 ): Promise<void> {
 	const ids = [...new Set(idsInImportOrder)];
 	const firstOutOfOrder = ids.findIndex(
-		(id, index) => index > 0 && id < ids[index - 1]!
+		(id, index) => index > 0 && compareBinary(id, ids[index - 1]!) < 0
 	);
 	if (firstOutOfOrder === -1) return;
-	const toReinsert = ids.slice(firstOutOfOrder);
+	const newId = v7();
+	let start = firstOutOfOrder;
+	while (
+		start > 0 &&
+		!(
+			UUID_V7.test(ids[start - 1]!) && compareBinary(ids[start - 1]!, newId) < 0
+		)
+	) {
+		start--;
+	}
+	const toReinsert = ids.slice(start);
 	const rows = await trx
 		.selectFrom("inlang_variant")
 		.where("id", "in", toReinsert)

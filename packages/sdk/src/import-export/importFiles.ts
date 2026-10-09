@@ -17,6 +17,7 @@ import type { InlangPlugin } from "../plugin/schema.js";
 import type { ImportFile } from "../project/api.js";
 import { v7 } from "uuid";
 import {
+	findExistingVariant,
 	orderVariantsLikeImport,
 	variantMatchesKey,
 } from "./variantMatches.js";
@@ -305,10 +306,20 @@ export async function importFiles(args: {
 					.selectAll()
 					.execute();
 
-				const matchesKey = variantMatchesKey(variant.matches);
-				const existingVariant = existingVariants.find(
-					(v) => variantMatchesKey(v.matches) === matchesKey
+				const { existing: existingVariant, duplicates } = findExistingVariant(
+					existingVariants,
+					variant.matches
 				);
+				if (duplicates.length > 0) {
+					await trx
+						.deleteFrom("inlang_variant")
+						.where(
+							"id",
+							"in",
+							duplicates.map((duplicate) => duplicate.id)
+						)
+						.execute();
+				}
 
 				// need to reset typescript's type narrowing
 				(variant as ImportedVariant).id = existingVariant?.id;

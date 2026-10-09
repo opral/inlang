@@ -4,8 +4,8 @@ import type {
 	NewBundleNested,
 } from "../database/schema.js";
 import {
+	findExistingVariant,
 	orderVariantsLikeImport,
-	variantMatchesKey,
 } from "./variantMatches.js";
 
 export const upsertBundleNestedMatchByProperties = async (
@@ -52,7 +52,7 @@ export const upsertBundleNestedMatchByProperties = async (
 				.returning("id")
 				.executeTakeFirstOrThrow();
 
-			const existingVariants = await trx
+			let existingVariants = await trx
 				.selectFrom("inlang_variant")
 				.where("message_id", "=", insertedMessage.id)
 				.selectAll()
@@ -61,10 +61,23 @@ export const upsertBundleNestedMatchByProperties = async (
 			const idsInImportOrder: string[] = [];
 			for (const variant of message.variants) {
 				// match by matches
-				const matchesKey = variantMatchesKey(variant.matches);
-				const existingVariant = existingVariants.find(
-					(v) => variantMatchesKey(v.matches) === matchesKey
+				const { existing: existingVariant, duplicates } = findExistingVariant(
+					existingVariants,
+					variant.matches
 				);
+				if (duplicates.length > 0) {
+					await trx
+						.deleteFrom("inlang_variant")
+						.where(
+							"id",
+							"in",
+							duplicates.map((duplicate) => duplicate.id)
+						)
+						.execute();
+					existingVariants = existingVariants.filter(
+						(v) => !duplicates.includes(v)
+					);
+				}
 
 				const variantToInsert = {
 					id: existingVariant?.id,
@@ -76,8 +89,10 @@ export const upsertBundleNestedMatchByProperties = async (
 					const inserted = await trx
 						.insertInto("inlang_variant")
 						.values(variantToInsert)
-						.returning("id")
+						.returningAll()
 						.executeTakeFirstOrThrow();
+					// a later variant of the message with the same matches updates it
+					existingVariants.push(inserted);
 					idsInImportOrder.push(inserted.id);
 				} else {
 					await trx
