@@ -530,3 +530,105 @@ test("saveProjectToDirectory only writes the edited entry, also with sourceLangu
 		nodeFs.rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("a deleted message of overlapping namespaces stays deleted after saving and loading", async () => {
+	const dir = nodeFs.mkdtempSync(
+		nodePath.join(nodeOs.tmpdir(), "next-intl-keep-overlap-")
+	);
+	const projectPath = nodePath.join(dir, "project.inlang");
+	const initial: Files = {
+		// `auth.SignUp.title` is defined in the file of the `auth` namespace
+		"messages/en/auth.json":
+			'{\n  "login": "Log in",\n  "SignUp": { "title": "Sign up" }\n}\n',
+		"messages/en/sign-up.json": '{\n  "button": "Create account"\n}\n',
+	};
+	const load = () =>
+		loadProjectFromDirectory({
+			path: projectPath,
+			fs: nodeFs,
+			providePlugins: [plugin as unknown as InlangPlugin],
+		});
+	const bundleIds = async (project: Awaited<ReturnType<typeof load>>) =>
+		(
+			await project.db
+				.selectFrom("inlang_message")
+				.select("bundle_id")
+				.where("locale", "=", "en")
+				.execute()
+		)
+			.map((row) => row.bundle_id)
+			.sort();
+	try {
+		for (const [path, text] of Object.entries(initial)) {
+			nodeFs.mkdirSync(nodePath.dirname(nodePath.join(dir, path)), {
+				recursive: true,
+			});
+			nodeFs.writeFileSync(nodePath.join(dir, path), text);
+		}
+		nodeFs.mkdirSync(projectPath, { recursive: true });
+		nodeFs.writeFileSync(
+			nodePath.join(projectPath, "settings.json"),
+			JSON.stringify({
+				baseLocale: "en",
+				locales: ["en"],
+				[PLUGIN_KEY]: {
+					pathPattern: {
+						auth: "./messages/{locale}/auth.json",
+						"auth.SignUp": "./messages/{locale}/sign-up.json",
+					},
+				},
+			})
+		);
+
+		const project = await load();
+		try {
+			expect(await bundleIds(project)).toStrictEqual([
+				"auth.SignUp.button",
+				"auth.SignUp.title",
+				"auth.login",
+			]);
+			const message = await project.db
+				.selectFrom("inlang_message")
+				.select("id")
+				.where("bundle_id", "=", "auth.SignUp.title")
+				.executeTakeFirstOrThrow();
+			await project.db
+				.deleteFrom("inlang_variant")
+				.where("message_id", "=", message.id)
+				.execute();
+			await project.db
+				.deleteFrom("inlang_message")
+				.where("id", "=", message.id)
+				.execute();
+			await saveProjectToDirectory({
+				project,
+				path: projectPath,
+				fs: nodeFs,
+			});
+		} finally {
+			await project.close();
+		}
+
+		expect(
+			nodeFs.readFileSync(nodePath.join(dir, "messages/en/auth.json"), "utf-8")
+		).toBe('{\n  "login": "Log in"\n}\n');
+		expect(
+			nodeFs.readFileSync(
+				nodePath.join(dir, "messages/en/sign-up.json"),
+				"utf-8"
+			)
+		).toBe(initial["messages/en/sign-up.json"]);
+
+		const reloaded = await load();
+		try {
+			expect(await bundleIds(reloaded)).toStrictEqual([
+				"auth.SignUp.button",
+				"auth.login",
+			]);
+		} finally {
+			await reloaded.close();
+		}
+	} finally {
+		nodeFs.rmSync(dir, { recursive: true, force: true });
+	}
+});
