@@ -3,6 +3,10 @@ import type {
 	InlangDatabaseSchema,
 	NewBundleNested,
 } from "../database/schema.js";
+import {
+	orderVariantsLikeImport,
+	variantMatchesKey,
+} from "./variantMatches.js";
 
 export const upsertBundleNestedMatchByProperties = async (
 	db: Kysely<InlangDatabaseSchema>,
@@ -54,10 +58,12 @@ export const upsertBundleNestedMatchByProperties = async (
 				.selectAll()
 				.execute();
 
+			const idsInImportOrder: string[] = [];
 			for (const variant of message.variants) {
 				// match by matches
+				const matchesKey = variantMatchesKey(variant.matches);
 				const existingVariant = existingVariants.find(
-					(v) => JSON.stringify(v.matches) === JSON.stringify(variant.matches)
+					(v) => variantMatchesKey(v.matches) === matchesKey
 				);
 
 				const variantToInsert = {
@@ -66,12 +72,23 @@ export const upsertBundleNestedMatchByProperties = async (
 					matches: variant.matches,
 					pattern: variant.pattern,
 				};
-				await trx
-					.insertInto("inlang_variant")
-					.values(variantToInsert)
-					.onConflict((oc) => oc.column("id").doUpdateSet(variantToInsert))
-					.execute();
+				if (variantToInsert.id === undefined) {
+					const inserted = await trx
+						.insertInto("inlang_variant")
+						.values(variantToInsert)
+						.returning("id")
+						.executeTakeFirstOrThrow();
+					idsInImportOrder.push(inserted.id);
+				} else {
+					await trx
+						.insertInto("inlang_variant")
+						.values(variantToInsert)
+						.onConflict((oc) => oc.column("id").doUpdateSet(variantToInsert))
+						.execute();
+					idsInImportOrder.push(variantToInsert.id);
+				}
 			}
+			await orderVariantsLikeImport(trx, idsInImportOrder);
 		}
 	});
 };
