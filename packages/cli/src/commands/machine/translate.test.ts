@@ -1,14 +1,20 @@
 import { afterEach, test, expect, vi } from "vitest";
 import {
   PartialMachineTranslateError,
+  translateAndSave,
   translateCommandAction,
 } from "./translate.js";
 import {
   retryWait,
   SERVICE_UNAVAILABLE_ERROR,
 } from "./providers/demosjarco.js";
+import fs from "node:fs";
+import os from "node:os";
+import nodePath from "node:path";
+import { createRequire } from "node:module";
 import {
   insertBundleNested,
+  loadProjectFromDirectory,
   loadProjectInMemory,
   newProject,
   selectBundleNested,
@@ -311,3 +317,88 @@ test.runIf(process.env.INLANG_DEEPL_API_KEY)(
   },
   { timeout: 10000 },
 );
+
+/** A project on disk with the message-format plugin and the given message files. */
+async function projectOnDisk(messages: Record<string, string>) {
+  const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "inlang-translate-"));
+  const path = nodePath.join(root, "project.inlang");
+  fs.mkdirSync(nodePath.join(path, "plugins"), { recursive: true });
+  fs.copyFileSync(
+    createRequire(import.meta.url).resolve("@inlang/plugin-message-format"),
+    nodePath.join(path, "plugins/message-format.js"),
+  );
+  fs.writeFileSync(
+    nodePath.join(path, "settings.json"),
+    JSON.stringify({
+      baseLocale: "en",
+      locales: ["en", "de"],
+      modules: ["./project.inlang/plugins/message-format.js"],
+      "plugin.inlang.messageFormat": {
+        pathPattern: "./messages/{locale}.json",
+      },
+    }),
+  );
+  fs.mkdirSync(nodePath.join(root, "messages"));
+  for (const [locale, content] of Object.entries(messages))
+    fs.writeFileSync(nodePath.join(root, `messages/${locale}.json`), content);
+  const project = await loadProjectFromDirectory({ path, fs });
+  const read = (locale: string) =>
+    fs.readFileSync(nodePath.join(root, `messages/${locale}.json`), "utf8");
+  return {
+    project,
+    path,
+    read,
+    cleanup: async () => {
+      await project.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    },
+  };
+}
+
+test("doesn't rewrite translation files when nothing was translated", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "demosjarco");
+  // formatting the exporter wouldn't reproduce: key order, spacing, no trailing newline
+  const en = `{"zeta": "Zeta",   "alpha": "Alpha"}`;
+  const de = `{\n    "alpha": "Alpha (de)",\n    "zeta": "Zeta (de)"\n}`;
+  const { project, path, read, cleanup } = await projectOnDisk({ en, de });
+  const fetch = vi.fn();
+  vi.stubGlobal("fetch", fetch);
+  try {
+    await translateAndSave({ project, path });
+    expect(fetch).not.toHaveBeenCalled();
+    expect(read("en")).toBe(en);
+    expect(read("de")).toBe(de);
+  } finally {
+    await cleanup();
+  }
+});
+
+test("writes the translation files when something was translated", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "demosjarco");
+  const { project, path, read, cleanup } = await projectOnDisk({
+    en: `{"alpha": "Alpha", "zeta": "Zeta"}`,
+    de: `{"alpha": "Alpha (de)"}`,
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(async (url: string) => {
+      const query = new URL(url).searchParams;
+      return Response.json({
+        data: {
+          translations: [
+            { translatedText: `${query.get("q")} (${query.get("target")})` },
+          ],
+        },
+      });
+    }),
+  );
+  try {
+    await translateAndSave({ project, path });
+    expect(JSON.parse(read("de"))).toMatchObject({
+      alpha: "Alpha (de)",
+      zeta: "Zeta (de)",
+    });
+  } finally {
+    await cleanup();
+  }
+});
