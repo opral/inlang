@@ -15,7 +15,7 @@ export const toBeImportedFiles: NonNullable<
 		for (const locale of settings.locales) {
 			result.push({
 				locale,
-				path: pathPattern.replace(/{(locale|languageTag)}/, locale),
+				path: pathPattern.replace(/{(locale|languageTag)}/g, locale),
 			});
 		}
 		return result;
@@ -25,7 +25,10 @@ export const toBeImportedFiles: NonNullable<
 		for (const namespace in pathPattern) {
 			result.push({
 				locale,
-				path: pathPattern[namespace]!.replace(/{(locale|languageTag)}/, locale),
+				path: pathPattern[namespace]!.replace(
+					/{(locale|languageTag)}/g,
+					locale
+				),
 				metadata: {
 					namespace,
 				},

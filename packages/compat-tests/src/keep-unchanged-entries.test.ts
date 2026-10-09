@@ -1,14 +1,20 @@
-import { describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vitest";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
 	type Project,
+	type Version,
 	contentOf,
 	decode,
 	encode,
 	importPlugin,
 	insertRows,
+	loadFromDirectory,
+	plugins,
+	saveToDirectory,
 	selectRows,
+	servePlugins,
 	tables,
 } from "./harness.js";
 import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
@@ -565,3 +571,168 @@ async function setPattern(
 		.where(t.messageId, "=", message.id)
 		.execute();
 }
+
+/**
+ * i18next namespaces are the keys of a `pathPattern` record and can contain
+ * `:`, the separator of the namespace and the key in bundle ids
+ * (`common:legacy:title` is `title` of `common:legacy`). Saving a project
+ * writes every namespace to its own file, on the current SDK and on the
+ * published SDK, which loads the current plugin from `settings.modules`.
+ */
+describe("i18next namespaces with `:`", () => {
+	const translationFiles: Record<string, string> = {
+		"locales/en/common.json": '{\n  "title": "Common"\n}\n',
+		"locales/en/common-legacy.json":
+			'{\n    "title":  "Legacy",\n    "err:notFound": "Not found",\n    "item_one": "One item",\n    "item_other": "{{count}} items"\n}\n',
+		"locales/de/common-legacy.json":
+			'{\n\t"title": "Alt",\n\t"err:notFound": "Nicht gefunden"\n}\n',
+		"locales/en/app-errors.json": '{\n  "notFound": "App not found"\n}\n',
+	};
+	const settingsJson = JSON.stringify(
+		{
+			baseLocale: "en",
+			locales: ["en", "de"],
+			modules: [plugins["plugin.inlang.i18next"].url],
+			"plugin.inlang.i18next": {
+				pathPattern: {
+					common: "./locales/{locale}/common.json",
+					"common:legacy": "./locales/{locale}/common-legacy.json",
+					"app:errors": "./locales/{locale}/app-errors.json",
+				},
+			},
+		},
+		undefined,
+		2
+	);
+
+	const roots: string[] = [];
+	afterAll(() => {
+		for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+	});
+
+	function createDirectory() {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-compat-ns-"));
+		roots.push(root);
+		for (const [file, text] of Object.entries(translationFiles)) {
+			fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+			fs.writeFileSync(path.join(root, file), text);
+		}
+		fs.mkdirSync(path.join(root, "project.inlang"));
+		fs.writeFileSync(
+			path.join(root, "project.inlang/settings.json"),
+			settingsJson
+		);
+		return { root, projectPath: path.join(root, "project.inlang") };
+	}
+
+	/** the files outside the project directory */
+	function translationFilesIn(root: string): Record<string, string> {
+		return Object.fromEntries(
+			(fs.readdirSync(root, { recursive: true }) as string[])
+				.filter(
+					(file) =>
+						!file.startsWith("project.inlang") &&
+						fs.statSync(path.join(root, file)).isFile()
+				)
+				.sort()
+				.map((file) => [file, fs.readFileSync(path.join(root, file), "utf8")])
+		);
+	}
+
+	async function open(sdk: Version, projectPath: string) {
+		servePlugins("current");
+		const project = await loadFromDirectory(sdk, { path: projectPath, fs });
+		expect(await project.errors.get()).toEqual([]);
+		return project;
+	}
+
+	test("the current plugin reads them like the published plugin", async () => {
+		const { projectPath } = createDirectory();
+		const current = await open("current", projectPath);
+		servePlugins("published");
+		const published = await loadFromDirectory("published", {
+			path: projectPath,
+			fs,
+		});
+		expect(contentOf(await selectRows(current))).toEqual(
+			contentOf(await selectRows(published))
+		);
+		expect(
+			(await selectRows(current)).bundles.map((bundle) => bundle.id).sort()
+		).toEqual([
+			"app:errors:notFound",
+			"common:legacy:err:notFound",
+			"common:legacy:item",
+			"common:legacy:title",
+			"common:title",
+		]);
+		await current.close();
+		await published.close();
+	});
+
+	test.each(["current", "published"] as const)(
+		"saving without edits writes each namespace to its own file (%s SDK)",
+		async (sdk) => {
+			const { root, projectPath } = createDirectory();
+			const project = await open(sdk, projectPath);
+			const before = contentOf(await selectRows(project));
+			await saveToDirectory(sdk, { path: projectPath, fs, project });
+			await project.close();
+			const after = translationFilesIn(root);
+			if (sdk === "current") {
+				// the current SDK passes the files: byte-identical
+				expect(after).toEqual(translationFiles);
+			} else {
+				// the published SDK doesn't: whole files, the same JSON
+				expect(Object.keys(after)).toEqual(
+					Object.keys(translationFiles).sort()
+				);
+				for (const [file, text] of Object.entries(translationFiles)) {
+					expect(JSON.parse(after[file]!), file).toEqual(JSON.parse(text));
+				}
+			}
+			const reopened = await open(sdk, projectPath);
+			expect(contentOf(await selectRows(reopened))).toEqual(before);
+			await reopened.close();
+		}
+	);
+
+	test.each(["current", "published"] as const)(
+		"an edit is written to the file of its namespace (%s SDK)",
+		async (sdk) => {
+			const { root, projectPath } = createDirectory();
+			const project = await open(sdk, projectPath);
+			const t = tables(sdk);
+			const message = await project.db
+				.selectFrom(t.message)
+				.where(t.bundleId, "=", "common:legacy:title")
+				.where("locale", "=", "de")
+				.selectAll()
+				.executeTakeFirstOrThrow();
+			await project.db
+				.updateTable(t.variant)
+				.set({ pattern: [{ type: "text", value: "Veraltet" }] })
+				.where(t.messageId, "=", message.id)
+				.execute();
+			await saveToDirectory(sdk, { path: projectPath, fs, project });
+			await project.close();
+			const after = translationFilesIn(root);
+			expect(Object.keys(after)).toEqual(Object.keys(translationFiles).sort());
+			const legacyDe = "locales/de/common-legacy.json";
+			if (sdk === "current") {
+				expect(after).toEqual({
+					...translationFiles,
+					[legacyDe]: translationFiles[legacyDe]!.replace(
+						'"Alt"',
+						'"Veraltet"'
+					),
+				});
+			} else {
+				expect(JSON.parse(after[legacyDe]!)).toEqual({
+					title: "Veraltet",
+					"err:notFound": "Nicht gefunden",
+				});
+			}
+		}
+	);
+});
