@@ -112,3 +112,41 @@ test("should work with languageTag as setting for backward compatibility", async
 		},
 	]);
 });
+
+// saveProjectToDirectory replaces every `{locale}` of the pattern when it
+// writes a file, so the file that is read must be the same
+test("every `{locale}` of a pattern is replaced", async () => {
+	const result = await toBeImportedFiles({
+		settings: {
+			baseLocale: "en",
+			locales: ["en"],
+			"plugin.inlang.i18next": {
+				pathPattern: {
+					common: "./{locale}/common.{locale}.json",
+					"app:errors": "./{languageTag}/app-errors.{locale}.json",
+				},
+			} satisfies PluginSettings,
+		},
+	});
+	expect(result).toStrictEqual([
+		{
+			locale: "en",
+			path: "./en/common.en.json",
+			metadata: { namespace: "common" },
+		},
+		{
+			locale: "en",
+			path: "./en/app-errors.en.json",
+			metadata: { namespace: "app:errors" },
+		},
+	]);
+	expect(
+		await toBeImportedFiles({
+			settings: {
+				baseLocale: "en",
+				locales: ["en"],
+				"plugin.inlang.i18next": { pathPattern: "./{locale}/{locale}.json" },
+			},
+		})
+	).toStrictEqual([{ locale: "en", path: "./en/en.json" }]);
+});

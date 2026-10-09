@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type {
 	Bundle,
+	ExistingFile,
 	Expression,
 	FunctionReference,
 	LiteralMatch,
@@ -29,7 +30,10 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 		files: args.files,
 		settings: args.settings,
 		importFiles,
-		exportFiles: exportWholeFiles,
+		// with the existing files, which decide the namespace of a bundle id
+		// that two namespaces have (see namespaceOf), so that what the plugin
+		// writes for the previous files is what it writes for the edits
+		exportFiles: (rows) => exportWholeFiles({ ...rows, files: args.files }),
 	});
 
 /**
@@ -40,6 +44,7 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	messages,
 	variants,
 	settings,
+	files,
 }) => {
 	const result: Record<string, Record<string, any>> = {};
 	const resultNamespaces: Record<
@@ -66,38 +71,116 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	// Only a project with namespaces (`pathPattern` is a record) prefixes
 	// bundle ids with `namespace:`. In a project with one file per locale, a
 	// key like `err:notFound` is a key of that file, as importFiles reads it.
-	const namespaced =
-		typeof settings?.["plugin.inlang.i18next"]?.pathPattern !== "string";
+	const pathPattern = settings?.["plugin.inlang.i18next"]?.pathPattern;
+	const namespaced = typeof pathPattern !== "string";
+	const configuredNamespaces =
+		namespaced && typeof pathPattern === "object" && pathPattern !== null
+			? Object.keys(pathPattern)
+			: [];
+	// longest first, see namespaceOf
+	const namespaces = configuredNamespaces
+		.filter((namespace) => namespace.length > 0)
+		.sort((a, b) => b.length - a.length);
+	const position = new Map(
+		configuredNamespaces.map((namespace, index) => [namespace, index])
+	);
+	const byPosition = (namespace: string) =>
+		position.get(namespace) ?? position.size;
+	const overlapping = overlappingNamespaces(namespaces);
+	const read =
+		overlapping.length > 0
+			? await bundleIdsOfExistingFiles(files, overlapping, settings)
+			: undefined;
+	/** of `namespaces`, the one read last: its text is the one a project shows */
+	const readLast = (namespaces: string[]) =>
+		namespaces.sort((a, b) => byPosition(b) - byPosition(a))[0];
+
+	/**
+	 * The namespace and the key of a bundle id `namespace:key` (see
+	 * importFiles) of a message of `locale`.
+	 *
+	 * Namespaces and keys can contain `:`, so the namespace is one of the
+	 * configured namespaces that the id starts with, followed by `:`: the id
+	 * `common:legacy:title` is the key `title` of the namespace `common:legacy`
+	 * if that namespace exists, and the key `legacy:title` of `common`
+	 * otherwise.
+	 *
+	 * Two namespaces can match: the key `b:c` of `a` and the key `c` of `a:b`
+	 * both import to `a:b:c`. Then the message is written to the namespace
+	 * whose existing files have the bundle (as importFiles reads them, so
+	 * changing its plural or context forms doesn't move it): the file of its
+	 * locale, else a file of another locale (a new translation goes where the
+	 * others are). If both namespaces have it, the one read last wins, whose
+	 * text a project load keeps; the other file keeps its text. A bundle that
+	 * no existing file has, e.g. a new one or without existing files, is
+	 * written to the longest namespace, so that a key of `a:b` is written to
+	 * its file.
+	 *
+	 * An id that starts with no configured namespace is split at its first
+	 * `:`, as before namespaces were looked up.
+	 */
+	const namespaceOf = (
+		id: string,
+		locale: string
+	): { namespace?: string; key: string } => {
+		const candidates = namespaces.filter((namespace) =>
+			id.startsWith(`${namespace}:`)
+		);
+		if (candidates.length > 0) {
+			const namespace =
+				(candidates.length > 1 && read !== undefined
+					? (readLast(
+							candidates.filter((namespace) =>
+								read.get(namespace)?.get(id)?.has(locale)
+							)
+						) ??
+						readLast(
+							candidates.filter((namespace) => read.get(namespace)?.has(id))
+						))
+					: undefined) ?? candidates[0]!;
+			return { namespace, key: id.slice(namespace.length + 1) };
+		}
+		const separator = id.indexOf(":");
+		if (separator === -1) return { key: id };
+		return { namespace: id.slice(0, separator), key: id.slice(separator + 1) };
+	};
 
 	for (const message of messages) {
+		const bundle = bundlesById.get(message.bundleId)!;
 		const serializedMessages = serializeMessage(
-			bundlesById.get(message.bundleId)!,
+			bundle,
 			message,
 			variantsByMessageId.get(message.id) ?? [],
 			settings?.["plugin.inlang.i18next"]
 		);
+		// the suffixes (context, plural) that serializeMessage appends to the
+		// bundle id
+		const suffixes = serializedMessages.map((serialized) =>
+			serialized.key.slice(bundle.id.length)
+		);
+		const { namespace, key: bundleKey } = namespaced
+			? namespaceOf(bundle.id, message.locale)
+			: { namespace: undefined, key: bundle.id };
 
-		for (const message of serializedMessages) {
-			// `namespace:key`, see importFiles. The key itself may contain `:`.
-			const separator = namespaced ? message.key.indexOf(":") : -1;
+		for (const [index, message] of serializedMessages.entries()) {
+			// the key of the file
+			const key = bundleKey + suffixes[index];
 			// no namespace
-			if (separator === -1) {
+			if (namespace === undefined) {
 				if (result[message.locale] === undefined) {
 					result[message.locale] = {};
 				}
-				result[message.locale]![message.key] = message.value;
+				result[message.locale]![key] = message.value;
 			}
 			// namespaces
 			else {
-				const namespace = message.key.slice(0, separator);
-				const key = message.key.slice(separator + 1);
-				if (resultNamespaces[namespace!] === undefined) {
-					resultNamespaces[namespace!] = {};
+				if (resultNamespaces[namespace] === undefined) {
+					resultNamespaces[namespace] = {};
 				}
-				if (resultNamespaces[namespace!]?.[message.locale] === undefined) {
-					resultNamespaces[namespace!]![message.locale] = {};
+				if (resultNamespaces[namespace]?.[message.locale] === undefined) {
+					resultNamespaces[namespace]![message.locale] = {};
 				}
-				resultNamespaces[namespace!]![message.locale]![key!] = message.value;
+				resultNamespaces[namespace]![message.locale]![key] = message.value;
 			}
 		}
 	}
@@ -109,8 +192,14 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 		),
 		name: `${locale}.json`,
 	}));
-	const withNamespace = Object.entries(resultNamespaces).flatMap(
-		([namespace, locales]) =>
+	// in the order of `pathPattern`, in which the files are read
+	// (toBeImportedFiles): two namespaces can have the same bundle id (see
+	// namespaceOf), and of two files with the same message, the one read last
+	// wins. keepUnchangedJsonEntries checks what the files read as in the
+	// order of the exported files.
+	const withNamespace = Object.entries(resultNamespaces)
+		.sort(([a], [b]) => byPosition(a) - byPosition(b))
+		.flatMap(([namespace, locales]) =>
 			Object.entries(locales).map(([locale, messages]) => ({
 				locale,
 				content: new TextEncoder().encode(
@@ -124,9 +213,97 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 					namespace,
 				},
 			}))
-	);
+		);
 	return [...withoutNamespace, ...withNamespace];
 };
+
+/**
+ * The namespaces that can have the same bundle id as another one: `a` and
+ * `a:b` (the key `b:c` of `a` and the key `c` of `a:b` are both `a:b:c`).
+ */
+function overlappingNamespaces(namespaces: string[]): string[] {
+	return namespaces.filter((namespace) =>
+		namespaces.some(
+			(other) =>
+				other.startsWith(`${namespace}:`) || namespace.startsWith(`${other}:`)
+		)
+	);
+}
+
+/**
+ * Results of bundleIdsOfExistingFiles by `files`: an export with the
+ * existing files exports several times with the same files (see
+ * keepUnchangedJsonEntries).
+ */
+const bundleIdsCache = new WeakMap<
+	readonly ExistingFile[],
+	Map<string, Promise<Map<string, Map<string, Set<string>>>>>
+>();
+
+/**
+ * The bundle ids of the existing files of `namespaces` and their locales, by
+ * namespace, as importFiles reads the files of each namespace. Files that
+ * aren't valid JSON are left out.
+ */
+function bundleIdsOfExistingFiles(
+	files: readonly ExistingFile[] | undefined,
+	namespaces: string[],
+	settings: Parameters<typeof importFiles>[0]["settings"]
+): Promise<Map<string, Map<string, Set<string>>>> {
+	if (files === undefined) return Promise.resolve(new Map());
+	const byFiles = bundleIdsCache.get(files) ?? new Map();
+	bundleIdsCache.set(files, byFiles);
+	const key = JSON.stringify([namespaces, settings?.["plugin.inlang.i18next"]]);
+	let result = byFiles.get(key);
+	if (result === undefined) {
+		result = readBundleIds(files, namespaces, settings);
+		byFiles.set(key, result);
+	}
+	return result;
+}
+
+async function readBundleIds(
+	files: readonly ExistingFile[],
+	namespaces: string[],
+	settings: Parameters<typeof importFiles>[0]["settings"]
+): Promise<Map<string, Map<string, Set<string>>>> {
+	const byNamespace = new Map<string, ExistingFile[]>();
+	for (const file of files) {
+		const namespace = file.metadata?.namespace;
+		if (typeof namespace !== "string" || !namespaces.includes(namespace)) {
+			continue;
+		}
+		try {
+			JSON.parse(new TextDecoder().decode(file.content));
+		} catch {
+			continue;
+		}
+		byNamespace.set(namespace, [...(byNamespace.get(namespace) ?? []), file]);
+	}
+	const result = new Map<string, Map<string, Set<string>>>();
+	for (const [namespace, files] of byNamespace) {
+		const locales = new Map<string, Set<string>>();
+		try {
+			const imported = await importFiles({
+				files: files.map((file) => ({
+					locale: file.locale,
+					content: file.content,
+					toBeImportedFilesMetadata: file.metadata,
+				})),
+				settings,
+			});
+			for (const message of imported.messages) {
+				const group = locales.get(message.bundleId) ?? new Set<string>();
+				group.add(message.locale);
+				locales.set(message.bundleId, group);
+			}
+		} catch {
+			// e.g. a value that isn't a string
+		}
+		result.set(namespace, locales);
+	}
+	return result;
+}
 
 function serializeMessage(
 	bundle: Bundle,
