@@ -18,6 +18,8 @@ const POUND_FUNCTION = "icu:pound";
 type PluralContext = {
   arg: string;
   offset: number;
+  /** The plural this one is nested in, if any */
+  outer: PluralContext | undefined;
 };
 
 export function serializeMessage(args: {
@@ -120,7 +122,11 @@ function serializeVariants(
       restSelectors,
       declarations,
       isPluralContext
-        ? { arg: selectorConfig.arg, offset: selectorConfig.offset ?? 0 }
+        ? {
+            arg: selectorConfig.arg,
+            offset: selectorConfig.offset ?? 0,
+            outer: plural,
+          }
         : plural,
     );
     return `${caseKey} {${tokens}}`;
@@ -357,6 +363,7 @@ function serializePluralSelectorPair(
       const tokens = serializeVariants(groupVariants, selectors, declarations, {
         arg: pair.config.arg,
         offset: pair.config.offset ?? 0,
+        outer: plural,
       });
       return `${key} {${tokens}}`;
     });
@@ -467,29 +474,45 @@ function serializePound(
 ): string {
   if (arg.type !== "variable-reference") return "#";
   const offsetOption = optionValue(annotation, "offset");
-  const offset = offsetOption === undefined ? undefined : Number(offsetOption);
-  if (
-    options.plural &&
-    options.plural.arg === arg.name &&
-    // imports before the offset was kept on `#` have no offset option
-    (offset === undefined || offset === options.plural.offset)
-  ) {
-    return "#";
+  const plural = options.plural;
+  if (plural && plural.arg === arg.name) {
+    if (offsetOption !== undefined) {
+      if (Number(offsetOption) === plural.offset) return "#";
+    } else if (
+      plural.offset === 0 ||
+      // A `#` without an offset option is an offset-0 `#`, or one imported
+      // before the offset was kept on `#`, which belongs to the plural it
+      // sits in. If an enclosing plural on the same argument has no offset,
+      // the `#` can be that plural's: the export moves a `#` that is not
+      // shared by all cases into the nested plural's cases.
+      !hasEnclosingPluralWithoutOffset(plural.outer, arg.name)
+    ) {
+      return "#";
+    }
   }
+  const offset = offsetOption === undefined ? 0 : Number(offsetOption);
   if (!offset) return `{${arg.name}, number}`;
   return `{${arg.name}, plural, offset:${offset} other {#}}`;
+}
+
+function hasEnclosingPluralWithoutOffset(
+  plural: PluralContext | undefined,
+  arg: string,
+): boolean {
+  for (let current = plural; current; current = current.outer) {
+    if (current.arg === arg && current.offset === 0) return true;
+  }
+  return false;
 }
 
 function escapeText(
   value: string,
   options: { plural: PluralContext | undefined },
 ): string {
-  let escaped = value.replace(/'/g, "''");
-  escaped = escaped.replace(/\{/g, "'{'").replace(/\}/g, "'}'");
-  if (options.plural) {
-    escaped = escaped.replace(/#/g, "'#'");
-  }
-  return escaped;
+  // Quote each run of special characters as one segment: quoting them one
+  // by one gives `'#''#'`, where `''` reads as an apostrophe.
+  const special = options.plural ? /[{}#]+/g : /[{}]+/g;
+  return value.replace(/'/g, "''").replace(special, (run) => `'${run}'`);
 }
 
 export const _private = {

@@ -582,12 +582,10 @@ function serializeTokens(
 }
 
 function escapeText(value: string, options: { inPlural: boolean }): string {
-  let escaped = value.replace(/'/g, "''");
-  escaped = escaped.replace(/\{/g, "'{'").replace(/\}/g, "'}'");
-  if (options.inPlural) {
-    escaped = escaped.replace(/#/g, "'#'");
-  }
-  return escaped;
+  // Quote each run of special characters as one segment: quoting them one
+  // by one gives `'#''#'`, where `''` reads as an apostrophe.
+  const special = options.inPlural ? /[{}#]+/g : /[{}]+/g;
+  return value.replace(/'/g, "''").replace(special, (run) => `'${run}'`);
 }
 
 function cloneBranch(branch: Branch): Branch {
