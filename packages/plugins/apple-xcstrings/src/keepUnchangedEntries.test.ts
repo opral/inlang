@@ -962,6 +962,125 @@ describe("catalogs of Xcode 26 and format strings in keys", () => {
     expect(await reexport(output)).toBe(output);
   });
 
+  test("Xcode's %arg placeholder is one argument, a translation of it compiles", async () => {
+    const output = await reexport(version12, (data) => {
+      addMessage(data, "Hello, %arg!", "de", "");
+      setText(data, "Hello, %arg!", "de", "Hallo, %1$arg!");
+    });
+    expect(output).toBe(
+      version12.replace(
+        '    "Hello, %arg!" : {\n\n    }',
+        [
+          '    "Hello, %arg!" : {',
+          '      "localizations" : {',
+          '        "de" : {',
+          '          "stringUnit" : {',
+          '            "state" : "translated",',
+          '            "value" : "Hallo, %1$arg!"',
+          "          }",
+          "        }",
+          "      }",
+          "    }",
+        ].join("\n"),
+      ),
+    );
+    compileWithXcode(output);
+  });
+
+  test("the version of a catalog the plugin can't import is kept by the full export", async () => {
+    // e.g. a locale that is not in the settings
+    const data = await importCatalog(version12);
+    const previous = version12.replace(
+      '"en" : {\n          "stringUnit" : {\n            "state" : "new"',
+      '"fr" : {\n          "stringUnit" : {\n            "state" : "new"',
+    );
+    expect(previous).not.toBe(version12);
+    await expect(importCatalog(previous)).rejects.toThrow("not declared");
+    const [file] = await plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [{ path, locale: "en", content: encode(previous) }],
+    });
+    expect(JSON.parse(decode(file!.content)).version).toBe("1.2");
+  });
+
+  test("empty objects are only written like Xcode in catalogs that Xcode wrote", async () => {
+    // a value with `" : ` in a catalog that isn't written like Xcode
+    const previous =
+      '{"sourceLanguage":"en","strings":{"a":{"localizations":{"de":{"stringUnit":{"state":"translated","value":"x\\" : y"}}}},' +
+      '"b":{"localizations":{"de":{"stringUnit":{"state":"translated","value":"B"}}}}},"version":"1.0"}';
+    const output = await reexport(previous, (data) => {
+      removeMessage(data, "b", "de");
+    });
+    expect(output).toBe(
+      previous.replace(
+        '"b":{"localizations":{"de":{"stringUnit":{"state":"translated","value":"B"}}}}',
+        '"b":{}',
+      ),
+    );
+  });
+
+  test("a substitution variant that isn't a readable format string keeps what it displays when its localization is rewritten", async () => {
+    const substitution = (other: string) =>
+      [
+        "{",
+        '  "sourceLanguage" : "en",',
+        '  "strings" : {',
+        '    "cart" : {',
+        '      "localizations" : {',
+        '        "de" : {',
+        '          "stringUnit" : {',
+        '            "state" : "translated",',
+        '            "value" : "%1$@ hat %#@items@"',
+        "          },",
+        '          "substitutions" : {',
+        '            "items" : {',
+        '              "argNum" : 2,',
+        '              "formatSpecifier" : "lld",',
+        '              "variations" : {',
+        '                "plural" : {',
+        '                  "one" : {',
+        '                    "stringUnit" : {',
+        '                      "state" : "translated",',
+        '                      "value" : "%lld Artikel"',
+        "                    }",
+        "                  },",
+        '                  "other" : {',
+        '                    "stringUnit" : {',
+        '                      "state" : "translated",',
+        `                      "value" : "${other}"`,
+        "                    }",
+        "                  }",
+        "                }",
+        "              }",
+        "            }",
+        "          }",
+        "        }",
+        "      }",
+        "    }",
+        "  },",
+        '  "version" : "1.0"',
+        "}",
+      ].join("\n");
+    // implicit and positional arguments mixed
+    const previous = substitution("%lld Artikel und %2$lld");
+    expect(await reexport(previous)).toBe(previous);
+    const output = await reexport(previous, (data) => {
+      setText(data, "cart", "de", "%1$@ hat %2$lld Stück", "one");
+    });
+    const catalog = JSON.parse(output);
+    const de = catalog.strings.cart.localizations.de;
+    // the text around `%#@items@` is moved into the variants, the unreadable
+    // variant as it is: it displays the same
+    expect(de.stringUnit.value).toBe("%#@items@");
+    expect(
+      de.substitutions.items.variations.plural.other.stringUnit.value,
+    ).toBe("%1$@ hat %lld Artikel und %2$lld");
+    expect(de.substitutions.items.variations.plural.one.stringUnit.value).toBe(
+      "%1$@ hat %2$lld Stück",
+    );
+  });
+
   test("a key the plugin can't read as a format string is text, and a translation of it reads the same again", async () => {
     // positional and implicit arguments mixed
     const previous = xcodeCatalog.replace(

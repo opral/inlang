@@ -137,7 +137,12 @@ function importCatalogs(
         throw new Error(
           `Apple .xcstrings locale "${locale}" in "${id}" is not declared in project settings`,
         );
-      add(locale, importLocalization(id, localization));
+      add(
+        locale,
+        importLocalization(id, localization, () =>
+          directPluralFormatOf(id, localizations),
+        ),
+      );
     }
     // Strings without a localization of the source language, e.g. strings
     // extracted from code that nobody translated yet (`"key" : { }`), strings
@@ -149,6 +154,36 @@ function importCatalogs(
       add(catalog.sourceLanguage, importKeyAsSourceValue(id));
   }
   return { bundles: [...bundles.values()], messages, variants };
+}
+
+/**
+ * The plural argument of a direct plural of the first localization of a
+ * string whose key or variants have a numeric argument, e.g. `%lld` of
+ * `"%lld items"` in `en` for `de` variants that a translator wrote as text
+ * ("Ein Artikel", "Viele Artikel"). Otherwise `%lld` as the first argument.
+ * Before, such a translation failed the next import of the catalog.
+ */
+function directPluralFormatOf(
+  id: string,
+  localizations: Record<string, Localization>,
+): { position: number; specifier: string } {
+  for (const localization of Object.values(localizations)) {
+    const units = localization?.variations?.plural;
+    if (!units || typeof units !== "object") continue;
+    try {
+      const format = inferDirectPluralFormat(
+        id,
+        parseFormat(id).pattern,
+        Object.values(units).map((unit) => ({
+          parsed: parseFormat(unit.stringUnit.value),
+        })),
+      );
+      if (format) return format;
+    } catch {
+      // the import of that localization reports it
+    }
+  }
+  return { position: 1, specifier: "lld" };
 }
 
 /**
@@ -213,7 +248,15 @@ function isKeyAsSourceValue(
   return localization.stringUnit?.value === keyValue;
 }
 
-function importLocalization(id: string, localization: Localization) {
+function importLocalization(
+  id: string,
+  localization: Localization,
+  /** the argument of a direct plural whose key and variants have none */
+  directPluralFormat: () => { position: number; specifier: string } = () => ({
+    position: 1,
+    specifier: "lld",
+  }),
+) {
   assertObject(localization, `localization for "${id}"`);
   const hasPlain = localization.stringUnit !== undefined;
   const substitutions = localization.substitutions ?? {};
@@ -258,7 +301,9 @@ function importLocalization(id: string, localization: Localization) {
       key,
       parsed: parseFormat(unit.stringUnit.value),
     }));
-    const format = inferDirectPluralFormat(id, sourcePattern.pattern, parsed);
+    const format =
+      inferDirectPluralFormat(id, sourcePattern.pattern, parsed) ??
+      directPluralFormat();
     const inputName = `arg${format.position}`;
     const selector = "countPlural";
     return {
@@ -318,16 +363,47 @@ function importLocalization(id: string, localization: Localization) {
       throw new Error(
         `Apple .xcstrings substitution template in "${id}" cannot mix implicit printf arguments with positional argNum`,
       );
-    const parsedPrefix = parseFormat(prefix!);
-    const parsedSuffix = parseFormat(
-      suffix!,
-      Math.max(argNum + 1, parsedPrefix.nextImplicit),
-    );
+    // A variant that isn't a format string the plugin can read is text
+    // together with the text around `%#@name@`, which the export writes as
+    // it is in the variant. Escaping it next to the variables of the
+    // template would change what it displays.
+    const tryParse = (value: string, implicitStart?: number) => {
+      try {
+        return parsePattern(value, implicitStart);
+      } catch {
+        return undefined;
+      }
+    };
+    const parsedPrefix = tryParse(prefix!);
+    const parsedSuffix =
+      parsedPrefix &&
+      tryParse(suffix!, Math.max(argNum + 1, parsedPrefix.nextImplicit));
     const parsed = Object.entries(substitution.variations.plural).map(
-      ([key, unit]) => ({
-        key,
-        parsed: parseFormat(unit.stringUnit.value, argNum),
-      }),
+      ([key, unit]) => {
+        const variant = parsedSuffix && tryParse(unit.stringUnit.value, argNum);
+        return {
+          key,
+          variables: variant
+            ? [
+                ...parsedPrefix!.variables,
+                ...variant.variables,
+                ...parsedSuffix.variables,
+              ]
+            : [],
+          pattern: variant
+            ? [
+                ...parsedPrefix!.pattern,
+                ...variant.pattern,
+                ...parsedSuffix.pattern,
+              ]
+            : ([
+                {
+                  type: "text",
+                  value: prefix + unit.stringUnit.value + suffix,
+                },
+              ] as Pattern),
+        };
+      },
     );
     return {
       declarations: [
@@ -338,22 +414,14 @@ function importLocalization(id: string, localization: Localization) {
           applePluralStyle: "substitution",
         }),
         ...inputDeclarations(
-          [
-            ...parsedPrefix.variables,
-            ...parsed.flatMap(({ parsed }) => parsed.variables),
-            ...parsedSuffix.variables,
-          ],
+          parsed.flatMap(({ variables }) => variables),
           [inputName, name],
         ),
       ],
       selectors: [{ type: "variable-reference" as const, name }],
-      variants: parsed.map(({ key, parsed }) => ({
+      variants: parsed.map(({ key, pattern }) => ({
         matches: [match(name, key)],
-        pattern: [
-          ...parsedPrefix.pattern,
-          ...parsed.pattern,
-          ...parsedSuffix.pattern,
-        ],
+        pattern,
       })),
     };
   }
@@ -394,7 +462,7 @@ async function exportKeepingEntries(args: ExportArgs) {
     previousStrings === undefined ||
     previousRows === undefined
   )
-    return exportCatalog(args);
+    return exportCatalog(args, { version: previousCatalog?.version });
   const options: CatalogOptions = {
     sourceLocalizations: new Set(
       Object.entries(previousStrings).flatMap(([id, entry]) => {
@@ -623,7 +691,8 @@ function catalogOf(
 
 /**
  * Writes the empty objects of the kept catalog like Xcode, `{`, a blank line
- * and `}`, if the previous catalog is written like Xcode (` : ` and no `{}`),
+ * and `}`, if the previous catalog is written like Xcode (`"sourceLanguage" : `
+ * and no `{}`),
  * e.g. a string whose only translation was removed.
  */
 function withXcodeEmptyObjects(
@@ -633,7 +702,7 @@ function withXcodeEmptyObjects(
   const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
   const previousText = decoder.decode(previous);
   if (
-    !previousText.includes('" : ') ||
+    !previousText.includes('"sourceLanguage" : ') ||
     xcodeEmptyObjects(previousText) !== previousText
   )
     return files;
@@ -914,7 +983,7 @@ function inferDirectPluralFormat(
   id: string,
   sourcePattern: Pattern,
   variants: Array<{ parsed: { pattern: Pattern } }>,
-) {
+): { position: number; specifier: string } | undefined {
   const sourceExpressions = sourcePattern.filter(
     (part) => part.type === "expression",
   );
@@ -925,10 +994,6 @@ function inferDirectPluralFormat(
   const candidates = sourceNumeric.length
     ? sourceExpressions
     : variantExpressions;
-  if (!candidates.length)
-    throw new Error(
-      `Direct Apple plural "${id}" must contain a numeric printf argument in its key or variants`,
-    );
   const formats = candidates.map((expression) => {
     if (expression.arg.type !== "variable-reference")
       throw new Error(`Invalid direct Apple plural argument in "${id}"`);
@@ -938,11 +1003,12 @@ function inferDirectPluralFormat(
     );
   });
   const numericFormats = formats.filter((format) =>
-    /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(format.specifier),
+    isNumericSpecifier(format.specifier),
   );
-  const first = numericFormats[0]!;
+  const first = numericFormats[0];
+  // e.g. variants translated as text, see `importCatalogs`
+  if (first === undefined) return undefined;
   if (
-    !first ||
     numericFormats.some(
       (format) =>
         format.position !== first.position ||
@@ -964,8 +1030,16 @@ function numericExpressionFormats(
       expression.annotation,
       argumentPosition(expression.arg.name),
     );
-    return /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(format.specifier);
+    return isNumericSpecifier(format.specifier);
   });
+}
+
+/** `%lld`, `%.2f`, …, but not `%@` or Xcode's `%arg` (any type). */
+function isNumericSpecifier(specifier: string) {
+  return (
+    specifier !== "arg" &&
+    /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(specifier)
+  );
 }
 
 function parseCatalog(content: Uint8Array): Catalog {
@@ -994,9 +1068,12 @@ function parsePattern(value: string, implicitStart = 1) {
   const pattern: Pattern = [];
   const variables: string[] = [];
   const regex =
-    // Implicit specifiers take flags, width and precision like positional
-    // ones (`%.2f`, `%5d`), except the space flag: `50% off` is text.
-    /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])|([-+#0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]))/;
+    // `%arg` (`%1$arg`) is the placeholder that Xcode 26 extracts for an
+    // interpolation whose type it doesn't know, read before `%a`. Implicit
+    // specifiers take width and precision like positional ones (`%.2f`,
+    // `%5d`), but no flags: `50% off`, `50%-off`, `10%-ige`, `100%'s` are
+    // text.
+    /^%(?:(\d+)\$(arg|[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])|(arg|\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]))/;
   if (!hasPrintfExpression(value, regex))
     return {
       pattern: [{ type: "text", value }] as Pattern,
@@ -1268,7 +1345,7 @@ function assertVariationUnits(
 }
 function assertPrintfSpecifier(value: string, id: string) {
   if (
-    !/^[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]$/.test(
+    !/^(?:arg|[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])$/.test(
       value,
     )
   )
@@ -1294,7 +1371,7 @@ function hasPrintfExpression(source: string, regex: RegExp) {
 
 function hasImplicitPrintfExpression(source: string) {
   const implicit =
-    /^%(?!\d+\$)(?:[-+#0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])/;
+    /^%(?!\d+\$)(?:arg|\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])/;
   for (let cursor = 0; cursor < source.length; cursor++) {
     if (source.startsWith("%%", cursor)) {
       cursor++;

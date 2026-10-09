@@ -545,7 +545,63 @@ describe("Apple String Catalog plugin", () => {
     }
   });
 
-  test("reads implicit printf arguments with flags, width and precision", async () => {
+  test("reads implicit printf arguments with width and precision, and percent signs in text", async () => {
+    const strings: Record<string, unknown> = {
+      price: {
+        localizations: {
+          en: { stringUnit: translated("%@ costs %.2f (%5d)") },
+        },
+      },
+    };
+    // flags are not read for implicit arguments: prose with a percent sign
+    const prose = [
+      "50% off",
+      "50%-off",
+      "10%-ige Ermäßigung",
+      "20%-discount",
+      "100%'s",
+      "a +5%+bonus",
+    ];
+    for (const [index, value] of prose.entries())
+      strings[`prose${index}`] = {
+        localizations: { en: { stringUnit: translated(value) } },
+      };
+    const imported = await plugin.importFiles!({
+      settings,
+      files: [{ locale: "en", content: encode(catalog(strings)) }],
+    });
+    const variant = (bundleId: string) =>
+      imported.variants.find(
+        (variant) => variant.messageBundleId === bundleId,
+      )!;
+    expect(
+      variant("price").pattern!.flatMap((part) =>
+        part.type === "expression"
+          ? [(part.annotation as any).options[0].value.value]
+          : [],
+      ),
+    ).toEqual(["@", ".2f", "5d"]);
+    for (const [index, value] of prose.entries())
+      expect(variant(`prose${index}`).pattern, value).toEqual([
+        { type: "text", value },
+      ]);
+    const [file] = await plugin.exportFiles!({
+      settings,
+      ...concretize(imported),
+    });
+    const exported = JSON.parse(decode(file!.content));
+    expect(exported.strings.price.localizations.en.stringUnit.value).toBe(
+      "%1$@ costs %2$.2f (%3$5d)",
+    );
+    for (const [index, value] of prose.entries())
+      expect(
+        exported.strings[`prose${index}`].localizations.en.stringUnit.value,
+      ).toBe(value);
+    compileWithXcode(file!.content);
+  });
+
+  test("reads Xcode's %arg placeholder as one argument", async () => {
+    // what `xcstringstool extract` writes for an interpolation of unknown type
     const imported = await plugin.importFiles!({
       settings,
       files: [
@@ -553,39 +609,116 @@ describe("Apple String Catalog plugin", () => {
           locale: "en",
           content: encode(
             catalog({
-              price: {
+              "Hello, %arg!": {},
+              "Pos %arg %arg": {
                 localizations: {
-                  en: { stringUnit: translated("%@ costs %.2f (%5d, %-3s)") },
+                  en: {
+                    stringUnit: { state: "new", value: "Pos %1$arg %2$arg" },
+                  },
                 },
-              },
-              // the space flag is not read: text that has a percent sign
-              sale: {
-                localizations: { en: { stringUnit: translated("50% off") } },
               },
             }),
           ),
         },
       ],
     });
-    const specifiers = (bundleId: string) =>
-      imported.variants
-        .find((variant) => variant.messageBundleId === bundleId)!
-        .pattern!.flatMap((part) =>
-          part.type === "expression"
-            ? [(part.annotation as any).options[0].value.value]
-            : [],
-        );
-    expect(specifiers("price")).toEqual(["@", ".2f", "5d", "-3s"]);
-    expect(specifiers("sale")).toEqual([]);
-    const [file] = await plugin.exportFiles!({
-      settings,
-      ...concretize(imported),
+    const arg = (position: number) => ({
+      type: "expression",
+      arg: { type: "variable-reference", name: `arg${position}` },
+      annotation: {
+        type: "function-reference",
+        name: "apple-printf",
+        options: [
+          { name: "specifier", value: { type: "literal", value: "arg" } },
+          {
+            name: "position",
+            value: { type: "literal", value: String(position) },
+          },
+        ],
+      },
     });
-    expect(
-      JSON.parse(decode(file!.content)).strings.price.localizations.en
-        .stringUnit.value,
-    ).toBe("%1$@ costs %2$.2f (%3$5d, %4$-3s)");
+    const pattern = (bundleId: string) =>
+      imported.variants.find((variant) => variant.messageBundleId === bundleId)!
+        .pattern;
+    expect(pattern("Hello, %arg!")).toEqual([
+      { type: "text", value: "Hello, " },
+      arg(1),
+      { type: "text", value: "!" },
+    ]);
+    expect(pattern("Pos %arg %arg")).toEqual([
+      { type: "text", value: "Pos " },
+      arg(1),
+      { type: "text", value: " " },
+      arg(2),
+    ]);
+    // a translation with the arguments in another order
+    const data = concretize(imported);
+    const message = data.messages.find(
+      (message: any) => message.bundleId === "Pos %arg %arg",
+    );
+    data.messages.push({ ...message, id: "pos-de", locale: "de" });
+    data.variants.push({
+      id: "pos-de-variant",
+      messageId: "pos-de",
+      matches: [],
+      pattern: [arg(2), { type: "text", value: " Pos " }, arg(1)],
+    });
+    const [file] = await plugin.exportFiles!({ settings, ...data });
+    const exported = JSON.parse(decode(file!.content));
+    expect(exported.strings["Pos %arg %arg"].localizations.de).toEqual({
+      stringUnit: translated("%2$arg Pos %1$arg"),
+    });
+    expect(exported.strings["Hello, %arg!"]).toEqual({
+      extractionState: "manual",
+    });
     compileWithXcode(file!.content);
+  });
+
+  test("a direct plural translated as text without the number reads again", async () => {
+    // e.g. "Ein Artikel" / "Viele Artikel"; before, the next import failed
+    // because no variant and not the key has a numeric argument
+    for (const en of [
+      { one: "%lld item", other: "%lld items" },
+      { one: "One item", other: "Many items" },
+    ]) {
+      const source = catalog({
+        items_count: {
+          extractionState: "manual",
+          localizations: {
+            de: {
+              variations: {
+                plural: {
+                  one: { stringUnit: translated("Ein Artikel") },
+                  other: { stringUnit: translated("Viele Artikel") },
+                },
+              },
+            },
+            en: {
+              variations: {
+                plural: {
+                  one: { stringUnit: translated(en.one) },
+                  other: { stringUnit: translated(en.other) },
+                },
+              },
+            },
+          },
+        },
+      });
+      const imported = await plugin.importFiles!({
+        settings,
+        files: [{ locale: "en", content: encode(source) }],
+      });
+      const [file] = await plugin.exportFiles!({
+        settings,
+        ...concretize(imported),
+      });
+      const exported = JSON.parse(decode(file!.content));
+      expect(exported.strings.items_count.localizations.de).toEqual(
+        JSON.parse(source).strings.items_count.localizations.de,
+      );
+      // Xcode requires the number in the source language only
+      if (en.one.includes("%")) compileWithXcode(file!.content);
+    }
   });
 
   test("rejects duplicate identities", () => {

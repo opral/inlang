@@ -9,6 +9,8 @@ Like Xcode at runtime, a string without a localization of the source language us
 Also fixed:
 
 - Catalogs of version 1.1 and 1.2, which Xcode 26 writes, can be imported, and their version is kept.
-- Implicit printf arguments with flags, width or precision, such as `%.2f` or `%5d`, are read as variables. Before, they failed the import.
+- Implicit printf arguments with width or precision, such as `%.2f` or `%5d`, are read as variables. Before, they failed the import. Percent signs in prose, e.g. `50%-off`, stay text.
+- Xcode's `%arg` placeholder, e.g. in `"Hello, %arg!"`, is read as one argument. Before, it was read as `%a` followed by the text `rg`.
+- A plural whose variants a translator wrote without the number, e.g. "Ein Artikel" / "Viele Artikel", no longer fails the next import.
 - A key or value that isn't a format string the plugin can read, e.g. one that mixes positional and implicit arguments, is imported as text and written back as it is, instead of failing the import of the whole catalog.
 - A string whose only translation is removed is written like Xcode writes empty strings.
