@@ -1,0 +1,9 @@
+{
+	"key": "Wert",
+	"interpolation": "Hallo {{name}}!",
+	"item_zero": "Keine Artikel",
+	"item_one": "{{count}} Artikel",
+	"item_other": "{{count}} Artikel",
+	"friend": "Ein Freund",
+	"friend_female": "Eine Freundin"
+}

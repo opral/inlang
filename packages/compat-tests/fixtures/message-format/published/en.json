@@ -1,0 +1,81 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"hello_world": "Hello World!",
+	"greeting": "Good morning {name}!",
+	"code_example": "Use \\{variable\\} syntax, a backslash \\\\ and \"quotes\"",
+	"navigation": {
+		"home": "Home",
+		"contact": {
+			"email": "Email us at {email}"
+		}
+	},
+	"welcome": "{#b}Hi {name}{/b}{#icon/}",
+	"cta": "{#link to=|/docs| rel=$relationship}Read docs{/link}",
+	"banner": "{#cta @track @variant=|hero|}Try now{/cta}",
+	"items": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "One item",
+				"countPlural=other": "{count} items"
+			}
+		}
+	],
+	"invite": [
+		{
+			"declarations": [
+				"input count",
+				"input gender",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural",
+				"gender"
+			],
+			"match": {
+				"countPlural=one, gender=female": "She invited one guest",
+				"countPlural=*, gender=female": "She invited {count} guests",
+				"countPlural=one, gender=*": "They invited one guest",
+				"countPlural=*, gender=*": "They invited {count} guests"
+			}
+		}
+	],
+	"rank": [
+		{
+			"declarations": [
+				"input place",
+				"local placeOrdinal = place: plural type=ordinal"
+			],
+			"selectors": [
+				"placeOrdinal"
+			],
+			"match": {
+				"placeOrdinal=one": "{place}st",
+				"placeOrdinal=two": "{place}nd",
+				"placeOrdinal=few": "{place}rd",
+				"placeOrdinal=*": "{place}th"
+			}
+		}
+	],
+	"price": [
+		{
+			"declarations": [
+				"input amount",
+				"input priceCurrency",
+				"local formattedAmount = amount: number style=currency currency=$priceCurrency"
+			],
+			"selectors": [
+				"formattedAmount"
+			],
+			"match": {
+				"formattedAmount=*": "Total: {formattedAmount}"
+			}
+		}
+	]
+}

@@ -1,0 +1,9 @@
+{
+  "Index": {
+    "title": "Hello {name}!",
+    "description": "Welcome to our site"
+  },
+  "About": {
+    "heading": "About us"
+  }
+}

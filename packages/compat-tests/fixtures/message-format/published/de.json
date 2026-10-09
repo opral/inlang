@@ -1,0 +1,41 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"hello_world": "Hallo Welt!",
+	"greeting": "Guten Morgen {name}!",
+	"navigation": {
+		"home": "Startseite"
+	},
+	"items": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "Ein Artikel",
+				"countPlural=other": "{count} Artikel"
+			}
+		}
+	],
+	"invite": [
+		{
+			"declarations": [
+				"input count",
+				"input gender",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural",
+				"gender"
+			],
+			"match": {
+				"countPlural=one, gender=female": "Sie hat einen Gast eingeladen",
+				"countPlural=*, gender=female": "Sie hat {count} Gäste eingeladen",
+				"countPlural=*, gender=*": "Eingeladen: {count} Gäste"
+			}
+		}
+	]
+}

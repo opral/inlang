@@ -1,0 +1,27 @@
+{
+  "key": "value",
+  "interpolation": "Hello {{name}}!",
+  "formatted": "Total: {{amount, number}}",
+  "nested": {
+    "deep": {
+      "title": "Deep title"
+    }
+  },
+  "nesting": "$t(key) and more",
+  "item_zero": "No items",
+  "item_one": "{{count}} item",
+  "item_other": "{{count}} items",
+  "friend": "A friend",
+  "friend_male": "A boyfriend",
+  "friend_female": "A girlfriend",
+  "friend_male_one": "{{count}} boyfriend",
+  "friend_male_other": "{{count}} boyfriends",
+  "friend_female_one": "{{count}} girlfriend",
+  "friend_female_other": "{{count}} girlfriends",
+  "place_ordinal_one": "{{count}}st place",
+  "place_ordinal_two": "{{count}}nd place",
+  "place_ordinal_few": "{{count}}rd place",
+  "place_ordinal_other": "{{count}}th place",
+  "rich": "Read the <strong>docs</strong>",
+  "escaped": "Braces { } and a backslash \\ stay text"
+}

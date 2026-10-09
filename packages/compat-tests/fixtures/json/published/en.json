@@ -1,0 +1,10 @@
+{
+	"hello": "Hello {name}!",
+	"nested": {
+		"deeper": {
+			"subtitle": "Deeper {thing}"
+		},
+		"title": "Nested title"
+	},
+	"plain": "Just text"
+}
