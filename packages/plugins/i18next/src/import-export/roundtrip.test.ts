@@ -272,9 +272,10 @@ test("keyContextCombinedWithPlurals", async () => {
 			{ type: "input-variable", name: "count" },
 		])
 	);
-	// 8 keys -> 10 variants: each `_zero` key imports as an exact
-	// `count = 0` match plus the Intl "zero" category fallback (#4357)
-	expect(imported.variants).lengthOf(10);
+	// 8 keys -> 8 variants: each `_zero` key imports as an exact
+	// `count = 0` match (#4357). English has no Intl "zero" category, so
+	// there is no category variant that could diverge from it.
+	expect(imported.variants).lengthOf(8);
 });
 
 // a plural key set can ship a base key as the fallback for calls without a
@@ -478,9 +479,10 @@ test("keyPluralMultipleEgArabic", async () => {
 		])
 	);
 
-	// 6 keys -> 7 variants: `_zero` imports as an exact `count = 0` match
-	// (i18next prefers `_zero` at count 0 in every language) plus the Intl
-	// "zero" category fallback (e.g. Arabic, Latvian)
+	// 6 keys -> 6 variants: `_zero` imports as an exact `count = 0` match
+	// (i18next prefers `_zero` at count 0 in every language). The file is
+	// imported as "en", which has no Intl "zero" category; see
+	// exactNumbers.test.ts for Arabic and Latvian.
 	expect(
 		imported.variants.map((variant) =>
 			variant.matches
@@ -493,7 +495,6 @@ test("keyPluralMultipleEgArabic", async () => {
 		)
 	).toStrictEqual([
 		"count=0 countPlural=*",
-		"count=* countPlural=zero",
 		"count=* countPlural=one",
 		"count=* countPlural=two",
 		"count=* countPlural=few",
@@ -504,21 +505,18 @@ test("keyPluralMultipleEgArabic", async () => {
 		{ type: "text", value: "the plural form 0" },
 	]);
 	expect(imported.variants[1]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 0" },
-	]);
-	expect(imported.variants[2]?.pattern).toStrictEqual([
 		{ type: "text", value: "the plural form 1" },
 	]);
-	expect(imported.variants[3]?.pattern).toStrictEqual([
+	expect(imported.variants[2]?.pattern).toStrictEqual([
 		{ type: "text", value: "the plural form 2" },
 	]);
-	expect(imported.variants[4]?.pattern).toStrictEqual([
+	expect(imported.variants[3]?.pattern).toStrictEqual([
 		{ type: "text", value: "the plural form 3" },
 	]);
-	expect(imported.variants[5]?.pattern).toStrictEqual([
+	expect(imported.variants[4]?.pattern).toStrictEqual([
 		{ type: "text", value: "the plural form 4" },
 	]);
-	expect(imported.variants[6]?.pattern).toStrictEqual([
+	expect(imported.variants[5]?.pattern).toStrictEqual([
 		{ type: "text", value: "the plural form 5" },
 	]);
 });
@@ -544,16 +542,13 @@ test("keyPluralWithZero", async () => {
 		{ type: "variable-reference", name: "countPlural" },
 	]);
 
-	// the exact `count = 0` variant is the most specific and comes first;
-	// the Intl "zero" category fallback keeps languages like Latvian working
+	// the exact `count = 0` variant is the most specific and comes first.
+	// English has no Intl "zero" category, so `_zero` is only this variant
+	// (Latvian keeps a category variant, see exactNumbers.test.ts)
 	expect(imported.variants.map((variant) => variant.matches)).toStrictEqual([
 		[
 			{ type: "literal-match", key: "count", value: "0" },
 			{ type: "catchall-match", key: "countPlural" },
-		],
-		[
-			{ type: "catchall-match", key: "count" },
-			{ type: "literal-match", key: "countPlural", value: "zero" },
 		],
 		[
 			{ type: "catchall-match", key: "count" },

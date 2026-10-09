@@ -302,6 +302,126 @@ test("ICU exact numbers other than 0 are reported, not exported as wrong plurals
 	);
 });
 
+// `_zero` is one text in i18next. It is imported as one form wherever the
+// Intl "zero" category selects nothing but 0 (or does not exist), so an edit
+// cannot leave a second, diverging copy behind.
+test.each([
+	[
+		"en",
+		{
+			item_zero: "No items",
+			item_one: "One item",
+			item_other: "{{count}} items",
+		},
+	],
+	[
+		"fr",
+		{
+			item_zero: "Aucun article",
+			item_one: "{{count}} article",
+			item_other: "{{count}} articles",
+		},
+	],
+	[
+		"ar",
+		{
+			item_zero: "لا عناصر",
+			item_one: "عنصر واحد",
+			item_two: "عنصران",
+			item_few: "{{count}} عناصر",
+			item_many: "{{count}} عنصرًا",
+			item_other: "{{count}} عنصر",
+		},
+	],
+])("`_zero` imports as a single exact-0 form in %s", async (locale, file) => {
+	const imported = await runImport({ [locale]: file });
+	const zeroForms = imported.variants.filter((variant) =>
+		variant.pattern?.some(
+			(part) => part.type === "text" && part.value === file.item_zero
+		)
+	);
+	expect(zeroForms.map((variant) => variant.matches)).toStrictEqual([
+		[
+			{ type: "literal-match", key: "count", value: "0" },
+			{ type: "catchall-match", key: "countPlural" },
+		],
+	]);
+	expect(await runExport(withIds(imported))).toStrictEqual({ [locale]: file });
+
+	// an edit of the exact-0 form is exported
+	zeroForms[0]!.pattern = [{ type: "text", value: "edited" }];
+	const edited = await runExport(withIds(imported));
+	expect(edited).toStrictEqual({ [locale]: { ...file, item_zero: "edited" } });
+	const t = await runtime(edited);
+	expect(t("item", { lng: locale, count: 0 })).toBe("edited");
+	expect(t("item", { lng: locale, count: 1 })).toBe(
+		file.item_one.replace("{{count}}", "1")
+	);
+});
+
+// Latvian's "zero" category also selects 10, 11–19, 20, 30, …, and i18next
+// uses `_zero` for those counts too. Two forms are needed there: exact 0 and
+// the category. They must have the same text.
+test("`_zero` imports as exact 0 and the zero category in Latvian", async () => {
+	const file = {
+		item_zero: "{{count}} vienību",
+		item_one: "{{count}} vienība",
+		item_other: "{{count}} vienības",
+	};
+	const imported = await runImport({ lv: file });
+	const zeroForms = imported.variants.filter((variant) =>
+		variant.pattern?.some(
+			(part) => part.type === "text" && part.value === " vienību"
+		)
+	);
+	expect(zeroForms.map((variant) => variant.matches)).toStrictEqual([
+		[
+			{ type: "literal-match", key: "count", value: "0" },
+			{ type: "catchall-match", key: "countPlural" },
+		],
+		[
+			{ type: "catchall-match", key: "count" },
+			{ type: "literal-match", key: "countPlural", value: "zero" },
+		],
+	]);
+	expect(await runExport(withIds(imported))).toStrictEqual({ lv: file });
+
+	const t = await runtime({ lv: file });
+	expect(t("item", { lng: "lv", count: 0 })).toBe("0 vienību");
+	expect(t("item", { lng: "lv", count: 10 })).toBe("10 vienību");
+
+	// both forms edited alike: exported
+	for (const form of zeroForms) {
+		form.pattern = [{ type: "text", value: "nav vienību" }];
+	}
+	expect(await runExport(withIds(imported))).toStrictEqual({
+		lv: { ...file, item_zero: "nav vienību" },
+	});
+
+	// only one edited: i18next cannot hold both texts, so export fails
+	// instead of silently dropping one
+	zeroForms[1]!.pattern = [{ type: "text", value: "{{count}} vienību" }];
+	await expect(runExport(withIds(imported))).rejects.toThrow(
+		'i18next export cannot represent two different texts for "item_zero" of bundle "item" (lv)'
+	);
+});
+
+test("an exact 0 and a different zero-category text are rejected", async () => {
+	await expect(
+		runExport(
+			exactPluralBundle("item", {
+				ar: [
+					[{ countPluralExact: "0", countPlural: "*" }, "No items"],
+					[{ countPluralExact: "*", countPlural: "zero" }, "Zero items"],
+					[{ countPluralExact: "*", countPlural: "*" }, "{{count}} items"],
+				],
+			})
+		)
+	).rejects.toThrow(
+		'i18next export cannot represent two different texts for "item_zero" of bundle "item" (ar)'
+	);
+});
+
 type Imported = Awaited<ReturnType<typeof importFiles>>;
 type Exportable = {
 	bundles: Bundle[];
@@ -387,7 +507,7 @@ async function runExport(
 	const files = await exportFiles({
 		settings: {
 			baseLocale: "en",
-			locales: ["en", "fr", "de"],
+			locales: ["en", "fr", "de", "ar", "lv"],
 			"plugin.inlang.i18next": {
 				pathPattern: "./{locale}.json",
 				...pluginSettings,

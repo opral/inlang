@@ -384,11 +384,14 @@ function parseMessage(args: {
 
 	const variants: VariantImport[] = [variant];
 
-	if (isZero) {
-		// `_zero` additionally serves as the Intl "zero" plural category key
-		// (selected for counts other than 0 in languages like Latvian), so a
-		// second variant keeps category-based selection working alongside
-		// the exact-0 match.
+	if (isZero && zeroCategorySelectsNonZero(args.locale)) {
+		// `_zero` additionally serves as the Intl "zero" plural category key,
+		// which Latvian selects for 10, 11–19, 20, … too. Only there a second
+		// variant keeps category-based selection working alongside the
+		// exact-0 match. Everywhere else (English, French, and Arabic or Welsh,
+		// whose "zero" category is 0 only) the exact-0 variant is all of
+		// `_zero`, so there is no second form that an edit could make diverge.
+		// Export fails if the two Latvian forms diverge, see exportFiles.
 		variants.push({
 			messageBundleId: bundleId,
 			messageLocale: args.locale,
@@ -712,4 +715,34 @@ function classifyKey(
 		isZero,
 		hasContext: context !== undefined,
 	};
+}
+
+const zeroCategoryCache = new Map<string, boolean>();
+
+/**
+ * True when the cardinal plural category "zero" of `locale` selects numbers
+ * other than 0 (Latvian: 10, 11–19, 20, …), so i18next's `_zero` key is also
+ * a plural category there and not only the exact `count === 0` form.
+ *
+ * Unknown locales are treated as "yes", which keeps the category variant.
+ */
+export function zeroCategorySelectsNonZero(locale: string): boolean {
+	const cached = zeroCategoryCache.get(locale);
+	if (cached !== undefined) return cached;
+	let result = true;
+	try {
+		const rules = new Intl.PluralRules(locale);
+		const language = (tag: string) => tag.split(/[-_]/)[0]!.toLowerCase();
+		if (language(rules.resolvedOptions().locale) === language(locale)) {
+			result =
+				rules.resolvedOptions().pluralCategories.includes("zero") &&
+				[...Array.from({ length: 1000 }, (_, n) => n + 1), 0.1, 0.5, 1.5].some(
+					(n) => rules.select(n) === "zero"
+				);
+		}
+	} catch {
+		// invalid locale tag: keep the conservative default
+	}
+	zeroCategoryCache.set(locale, result);
+	return result;
 }

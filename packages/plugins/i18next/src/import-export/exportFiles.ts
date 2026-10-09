@@ -191,6 +191,22 @@ function serializeMessage(
 					? `_ordinal_${pluralMatch.value}`
 					: `_${pluralMatch.value}`;
 		}
+		// two forms can map to one key: in Latvian `_zero` is both the exact
+		// `count = 0` form and the plural category "zero" (10, 11–19, …).
+		// i18next has one text for both, so refuse to drop either silently.
+		const existing = result.find((entry) => entry.key === key);
+		if (existing !== undefined) {
+			if (existing.value !== pattern) {
+				throw new Error(
+					`i18next export cannot represent two different texts for "${key}" of bundle "${bundle.id}" (${message.locale}): ${
+						key.endsWith("_zero")
+							? `i18next uses "_zero" both for count 0 and for the plural category "zero". Give the exact 0 form and the "zero" form the same text.`
+							: "both forms map to the same i18next key."
+					}`
+				);
+			}
+			continue;
+		}
 		result.push({ key, value: pattern, locale: message.locale });
 	}
 
