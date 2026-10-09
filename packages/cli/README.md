@@ -402,7 +402,7 @@ npx @inlang/cli cloud
 
 ### `lint`
 
-`inlang lint` is deprecated: use [`inlang check`](#check). It is hidden from `--help`, prints a deprecation warning and runs `check`, mapping `--languageTags de,fr` to `--locales de,fr` and accepting `--no-fail`. Like v1's `lint`, it exits with 1 on findings unless `--no-fail` is passed.
+`inlang lint` is deprecated: use [`inlang check`](#check). It is hidden from `--help`, prints a deprecation warning and does nothing else; it exits with 0.
 
 ## `plugin`
 

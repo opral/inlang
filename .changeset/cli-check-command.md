@@ -14,4 +14,4 @@ npx @inlang/cli check --project ./project.inlang
 - `--format json` prints the full report (with a `version`).
 - Exits with 1 when there are findings or project errors, and with 0 otherwise or with `--no-fail`.
 
-`inlang validate` and `inlang lint` are deprecated and hidden from `--help`. Both keep working and print a deprecation warning: `validate` still only reports settings and plugin errors, and `lint` runs `check`, including its `--languageTags` and `--no-fail` flags. Note that `lint` was a no-op in CLI v3: it now requires `--project` and, like v1's `lint`, exits with 1 on findings unless `--no-fail` is passed.
+`inlang validate` and `inlang lint` are deprecated and hidden from `--help`. Both keep working and print a deprecation warning: `validate` still only reports settings and plugin errors, and `lint` does nothing else, as in CLI v3.
