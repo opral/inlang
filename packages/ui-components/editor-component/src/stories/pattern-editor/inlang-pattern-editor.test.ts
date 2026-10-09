@@ -1,11 +1,18 @@
 // @vitest-environment happy-dom
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import type { Pattern, VariantRow } from "@inlang/sdk";
 import { $getRoot, $getSelection, $isRangeSelection, type ElementNode } from "lexical";
 import type { ChangeEventDetail } from "../../helper/event.js";
 import type InlangPatternEditor from "./inlang-pattern-editor.js";
 import "./inlang-pattern-editor.js";
 import { $readPattern } from "./patternNodes.js";
+
+// Lexical handles `beforeinput` (as in browsers) only where InputEvent has getTargetRanges, which
+// happy-dom lacks. It checks once when it loads, so this runs before the imports.
+vi.hoisted(() => {
+	const proto = InputEvent.prototype as InputEvent & { getTargetRanges?: () => StaticRange[] };
+	proto.getTargetRanges ??= () => [];
+});
 
 async function mount(variant: VariantRow) {
 	const element = document.createElement("inlang-pattern-editor");
@@ -166,4 +173,130 @@ it("ignores shortcut keys while an IME composes text", async () => {
 	const plain = new KeyboardEvent("keydown", { key: "b", metaKey: true, bubbles: true, cancelable: true });
 	editable.dispatchEvent(plain);
 	expect(plain.defaultPrevented).toBe(true);
+});
+
+
+/**
+ * Keys pressed faster than the browser reports the caret: the caret moved (End, an arrow key,
+ * a click) but `selectionchange` has not reached Lexical yet, so Lexical's selection is stale.
+ */
+async function fastKeys(
+	element: InlangPatternEditor,
+	{ clickedAt, movedTo }: { clickedAt: number; movedTo: number },
+	keys: (editable: HTMLElement) => void
+) {
+	const editable = element.querySelector<HTMLElement>("[contenteditable]")!;
+	const text = editable.querySelector("[data-lexical-text]")!.firstChild!;
+	editable.focus();
+	// where the user clicked earlier: Lexical knows this caret
+	window.getSelection()!.collapse(text, clickedAt);
+	await new Promise((resolve) => setTimeout(resolve));
+	const hold = (event: Event) => event.stopImmediatePropagation();
+	document.addEventListener("selectionchange", hold, { capture: true });
+	// happy-dom has no Selection.modify, which Lexical's Backspace and Delete use to find the
+	// character to delete; a browser moves the native caret by one character
+	const proto = Selection.prototype as Selection & { modify?: unknown };
+	const nativeModify = proto.modify;
+	proto.modify = function (this: Selection, alter: string, direction: string) {
+		const node = this.focusNode!;
+		const step = direction === "backward" || direction === "left" ? -1 : 1;
+		const offset = Math.max(0, Math.min(node.textContent!.length, this.focusOffset + step));
+		if (alter === "move") this.collapse(node, offset);
+		else this.extend(node, offset);
+	};
+	try {
+		window.getSelection()!.collapse(text, movedTo);
+		// a task passes, as between key presses: only the held-back selectionchange is missing
+		await new Promise((resolve) => setTimeout(resolve));
+		keys(editable);
+		await new Promise((resolve) => setTimeout(resolve));
+	} finally {
+		proto.modify = nativeModify;
+		document.removeEventListener("selectionchange", hold, { capture: true });
+	}
+}
+
+/** A key as the browser sends it: keydown, then beforeinput unless the keydown was handled. */
+function press(editable: HTMLElement, key: string, inputType: string) {
+	const keydown = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+	editable.dispatchEvent(keydown);
+	if (!keydown.defaultPrevented)
+		editable.dispatchEvent(new InputEvent("beforeinput", { inputType, bubbles: true, cancelable: true }));
+}
+
+it("keeps stored braces text on End then Backspace before selectionchange", async () => {
+	const pattern: Pattern = [{ type: "text", value: "Hi {name}!" }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	await fastKeys(element, { clickedAt: 0, movedTo: 10 }, (editable) =>
+		press(editable, "Backspace", "deleteContentBackward")
+	);
+	expect(lastPattern(changes)).toEqual([{ type: "text", value: "Hi {name}" }]);
+});
+
+it("keeps stored braces text on a deleteContentBackward input (no Backspace keydown) before selectionchange", async () => {
+	const pattern: Pattern = [{ type: "text", value: "Hi {name}!" }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	await fastKeys(element, { clickedAt: 0, movedTo: 10 }, (editable) =>
+		editable.dispatchEvent(
+			new InputEvent("beforeinput", { inputType: "deleteContentBackward", bubbles: true, cancelable: true })
+		)
+	);
+	expect(lastPattern(changes)).toEqual([{ type: "text", value: "Hi {name}" }]);
+});
+
+it("keeps stored braces text on a fast Delete that joins them with the text after", async () => {
+	const pattern: Pattern = [{ type: "text", value: "a {name}!b" }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	await fastKeys(element, { clickedAt: 0, movedTo: 8 }, (editable) =>
+		press(editable, "Delete", "deleteContentForward")
+	);
+	expect(lastPattern(changes)).toEqual([{ type: "text", value: "a {name}b" }]);
+});
+
+/**
+ * Types a character as the browser does: beforeinput, then (unless Lexical inserted it) the
+ * browser writes it into the DOM text at the caret, then input.
+ */
+function typeKey(editable: HTMLElement, data: string) {
+	editable.dispatchEvent(new KeyboardEvent("keydown", { key: data, bubbles: true, cancelable: true }));
+	const beforeinput = new InputEvent("beforeinput", { inputType: "insertText", data, bubbles: true, cancelable: true });
+	editable.dispatchEvent(beforeinput);
+	if (beforeinput.defaultPrevented) return;
+	const selection = window.getSelection()!;
+	const node = selection.anchorNode as Text;
+	const offset = selection.anchorOffset;
+	node.data = node.data.slice(0, offset) + data + node.data.slice(offset);
+	selection.collapse(node, offset + data.length);
+	editable.dispatchEvent(new InputEvent("input", { inputType: "insertText", data, bubbles: true }));
+}
+
+it("still converts a } typed right after the caret moved, and keeps the stored braces text", async () => {
+	const pattern: Pattern = [{ type: "text", value: "{lit} {who" }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	await fastKeys(element, { clickedAt: 0, movedTo: 10 }, (editable) => typeKey(editable, "}"));
+	expect(lastPattern(changes)).toEqual([
+		{ type: "text", value: "{lit} " },
+		{ type: "expression", arg: { type: "variable-reference", name: "who" } },
+	]);
+});
+
+it("keeps stored braces text when the user types right after End", async () => {
+	const pattern: Pattern = [{ type: "text", value: "Hi {name}" }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	await fastKeys(element, { clickedAt: 0, movedTo: 9 }, (editable) => typeKey(editable, "!"));
+	expect(lastPattern(changes)).toEqual([{ type: "text", value: "Hi {name}!" }]);
+});
+
+it("converts a {name} pasted right after the caret moved, and keeps the stored braces text", async () => {
+	const pattern: Pattern = [{ type: "text", value: "{a} | " }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	await fastKeys(element, { clickedAt: 0, movedTo: 6 }, (editable) => {
+		const clipboardData = new DataTransfer();
+		clipboardData.setData("text/plain", "{x}");
+		editable.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+	});
+	expect(lastPattern(changes)).toEqual([
+		{ type: "text", value: "{a} | " },
+		{ type: "expression", arg: { type: "variable-reference", name: "x" } },
+	]);
 });

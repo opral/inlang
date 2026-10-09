@@ -345,19 +345,65 @@ function $caret(): number | undefined {
 }
 
 /**
- * Per editor, as after the last update that did not compose: how often each
- * `{name}` was text, and where the selection started (the text the user types
- * next starts there, also when it replaces a selection).
+ * Per editor, as after the last committed update that did not compose: the
+ * pattern as text and how often each `{name}` was text in it. Text only
+ * changes in updates, so a caret the browser moves does not make it stale.
+ * The selection is not remembered: the caret the browser moves (End, arrow
+ * keys, a click) reaches Lexical with the asynchronous `selectionchange`,
+ * which keys pressed right after it beat.
  */
 const textBefore = new WeakMap<
 	LexicalEditor,
-	{ counts: Map<string, number>; selectionStart: number | undefined }
+	{ text: string; counts: Map<string, number> }
 >();
 
 function countTexts(occurrences: Occurrence[]) {
 	const counts = new Map<string, number>();
 	for (const { text } of occurrences) counts.set(text, (counts.get(text) ?? 0) + 1);
 	return counts;
+}
+
+/** The whole pattern as text (tokens as their text), in the offsets of {@link $textVariables}. */
+function $patternText(): string {
+	return $leaves()
+		.map((node) => node.getTextContent())
+		.join("");
+}
+
+/**
+ * When `after` is `before` with one run of characters removed (it reads as a
+ * deletion), the last offset the removed run can have started at (the common
+ * prefix), else undefined. Text typed over a selection can read as a deletion
+ * too ("{name}" pasted over "{name foo}"); then the caret is behind that offset.
+ */
+export function deletedAt(before: string, after: string): number | undefined {
+	if (after.length >= before.length) return undefined;
+	let prefix = 0;
+	while (prefix < after.length && before[prefix] === after[prefix]) prefix++;
+	return before.endsWith(after.slice(prefix)) ? prefix : undefined;
+}
+
+/**
+ * The range of `after` an edit typed or pasted, from the text before and after
+ * it and the caret after it: typed text ends at the caret, the text behind the
+ * caret is what followed the edit before, and the typed text starts where
+ * `after` stops matching `before`. Undefined when the text behind the caret
+ * changed (the edit ended behind the caret). An edit that ended before the
+ * caret without moving it (not one the user types; an extension or a
+ * programmatic edit) reads as typed up to the caret: text alone cannot tell it
+ * from typing over a selection.
+ */
+export function typedRange(
+	before: string,
+	after: string,
+	caret: number
+): [number, number] | undefined {
+	const behind = after.slice(caret);
+	if (!before.endsWith(behind)) return undefined;
+	const replacedEnd = before.length - behind.length;
+	let from = 0;
+	while (from < caret && from < replacedEnd && before[from] === after[from]) from++;
+	return [from, caret];
 }
 
 /**
@@ -367,25 +413,10 @@ function countTexts(occurrences: Occurrence[]) {
  * needs.
  */
 export function registerVariableText(editor: LexicalEditor): () => void {
-	const remember = (state: EditorState, contentReplaced = false) =>
+	const remember = (state: EditorState) =>
 		textBefore.set(
 			editor,
-			state.read(() => {
-				const selection = $getSelection();
-				return {
-					counts: countTexts($textVariables()),
-					// a selection left on nodes the update removed (content replaced) says nothing
-					// after the host replaced the content, the selection is where Lexical put it
-					selectionStart:
-						!contentReplaced &&
-						$isRangeSelection(selection) &&
-						[selection.anchor, selection.focus].every((point) =>
-							$getNodeByKey(point.key)?.isAttached()
-						)
-							? Math.min($pointOffset(selection.anchor), $pointOffset(selection.focus))
-							: undefined,
-				};
-			})
+			state.read(() => ({ text: $patternText(), counts: countTexts($textVariables()) }))
 		);
 	remember(editor.getEditorState());
 	return mergeRegister(
@@ -393,20 +424,22 @@ export function registerVariableText(editor: LexicalEditor): () => void {
 		editor.registerUpdateListener(({ editorState, tags }) => {
 			// a word an IME is still composing is converted when the composition ends; content the
 			// host set replaces what was composed
-			const replaced = tags.has(SET_PATTERN_UPDATE);
-			if (!editor.isComposing() || replaced) remember(editorState, replaced);
+			if (!editor.isComposing() || tags.has(SET_PATTERN_UPDATE)) remember(editorState);
 		})
 	);
 }
 
 /**
  * Node transform (see {@link registerVariableText}): converts the `{name}`
- * texts the user just typed or pasted - those whose `{` or `}` lies between
- * where the selection started before the update and the caret now, in offsets
- * of the whole pattern, so Lexical splitting or merging text nodes (Enter, a
- * token inserted or removed, bold) does not matter. Stored braces stay text
- * when the user edits next to or inside them, or deletes. Without a caret
- * (programmatic edits) the `{name}` texts the update added are converted.
+ * texts the user just typed or pasted - those whose `{` or `}` lies in the
+ * text the update inserted before the caret (see {@link typedRange}), in
+ * offsets of the whole pattern, so Lexical splitting or merging text nodes
+ * (Enter, a token inserted or removed, bold) does not matter. It compares
+ * text, not selections, so it does not depend on when `selectionchange`
+ * arrives. Stored braces stay text when the user edits next to or inside
+ * them, and a deletion never creates a variable. Without a caret at the end
+ * of the edit (programmatic edits) the `{name}` texts the update added are
+ * converted.
  */
 export function $transformVariableText(node: TextNode) {
 	if ($isPatternTokenNode(node) || !node.isSimpleText()) return;
@@ -415,13 +448,19 @@ export function $transformVariableText(node: TextNode) {
 	const all = $textVariables();
 	if (!all.some((occurrence) => occurrence.key === key)) return;
 	const before = textBefore.get($getEditor());
+	const text = $patternText();
 	const caret = $caret();
+	// a deletion types nothing, also when it joins "{na" and "me}"; after a deletion the caret is
+	// where the text was removed (Lexical puts it there, also when its selection was stale)
+	const deleted = before ? deletedAt(before.text, text) : undefined;
+	if (deleted !== undefined && (caret === undefined || caret <= deleted)) return;
+	const range =
+		caret !== undefined && before ? typedRange(before.text, text, caret) : undefined;
 	let typed: Occurrence[];
-	if (caret !== undefined && before?.selectionStart !== undefined) {
-		const from = before.selectionStart;
-		// nothing was inserted (a deletion): nothing was typed
-		if (caret <= from) return;
-		const inserted = (offset: number) => offset >= from && offset < caret;
+	if (range) {
+		const [from, to] = range;
+		if (from >= to) return;
+		const inserted = (offset: number) => offset >= from && offset < to;
 		typed = all.filter(
 			(occurrence) =>
 				inserted(occurrence.at) ||
@@ -456,13 +495,24 @@ export function $transformVariableText(node: TextNode) {
 			budget--;
 		}
 	}
-	const mine = typed
-		.filter((occurrence) => occurrence.key === key)
-		.sort((a, b) => a.start - b.start);
-	if (mine.length === 0) return;
+	// all at once: converting `{ a }` changes the text the transforms of other nodes compare
+	const byNode = new Map<NodeKey, Occurrence[]>();
+	for (const occurrence of typed)
+		byNode.set(occurrence.key, [...(byNode.get(occurrence.key) ?? []), occurrence]);
+	for (const [typedKey, occurrences] of byNode) {
+		const typedNode = $getNodeByKey(typedKey);
+		if ($isTextNode(typedNode)) $convertOccurrences(typedNode, occurrences);
+	}
+}
+
+/** Replaces `{name}` texts of `node` with expression tokens, keeping a caret in it where it was. */
+function $convertOccurrences(node: TextNode, occurrences: Occurrence[]) {
+	const mine = [...occurrences].sort((a, b) => a.start - b.start);
 	const selection = $getSelection();
 	const caretOffset =
-		$isRangeSelection(selection) && selection.isCollapsed() && selection.anchor.key === key
+		$isRangeSelection(selection) &&
+		selection.isCollapsed() &&
+		selection.anchor.key === node.getKey()
 			? selection.anchor.offset
 			: undefined;
 	const pieces = node.splitText(...mine.flatMap((match) => [match.start, match.end]));
