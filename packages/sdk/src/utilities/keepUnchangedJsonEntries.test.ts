@@ -214,11 +214,29 @@ describe("stringifyJsonKeepingEntries", () => {
 		);
 	});
 
-	test("Xcode's ` : ` separator is used for new keys too", () => {
-		const previous = '{\n  "a" : "A"\n}';
-		expect(keep(previous, { a: "A", b: "B" })).toBe(
-			'{\n  "a" : "A",\n  "b" : "B"\n}'
+	test("Xcode's ` : ` separator is used for new keys too, also inside new values", () => {
+		const previous = '{\n  "a" : "A",\n  "n" : {\n    "x" : 1\n  }\n}';
+		expect(
+			keep(previous, { a: "A", n: { x: 1, y: [{ z: 2 }, []] }, b: { c: {} } })
+		).toBe(
+			'{\n  "a" : "A",\n  "n" : {\n    "x" : 1,\n    "y" : [\n      {\n        "z" : 2\n      },\n      []\n    ]\n  },\n  "b" : {\n    "c" : {}\n  }\n}'
 		);
+	});
+
+	test("new values are written like JSON.stringify", () => {
+		const value = {
+			s: 'quote " \u2028 \u0001 😀',
+			n: [1, 1.5, 1e21, null, true],
+			o: { "": "empty key", nested: { a: [] } },
+		};
+		for (const indent of ["\t", "  ", ""]) {
+			const previous = indent === "" ? '{"a":1}' : `{\n${indent}"a": 1\n}`;
+			const result = keep(previous, { a: 1, value })!;
+			expect(JSON.parse(result)).toEqual({ a: 1, value });
+			expect(result).toContain(
+				JSON.stringify(value, undefined, indent).replace(/\n/g, `\n${indent}`)
+			);
+		}
 	});
 
 	test("an empty previous object uses the default indentation", () => {

@@ -289,7 +289,9 @@ export function stringifyJsonKeepingEntries(args: {
 		newline: args.previous.includes("\r\n") ? "\r\n" : "\n",
 		indent: detectIndent(tree, args.indent ?? "\t"),
 		splitKey: args.splitKey ?? splitAtDots,
+		colon: "",
 	};
+	writer.colon = detectColon(tree, writer.indent);
 	return (
 		args.previous.slice(0, start) +
 		writeObject(writer, {
@@ -311,7 +313,20 @@ type Writer = {
 	/** one level of indentation, "" for files without line breaks */
 	indent: string;
 	splitKey: (key: string) => string[];
+	/** the separator between keys and values, e.g. Xcode's `" : "` */
+	colon: string;
 };
+
+/**
+ * The separator of the first member that has only whitespace around the
+ * colon on one line, or the default of `JSON.stringify`.
+ */
+function detectColon(tree: ObjectNode, indent: string): string {
+	const member = tree.members.find((member) =>
+		/^[ \t]*:[ \t]*$/.test(member.colon)
+	);
+	return member?.colon ?? (indent === "" ? ":" : ": ");
+}
 
 /**
  * The indentation of the first member on its own line, or `fallback` for an
@@ -473,7 +488,7 @@ function writeObject(
 			key,
 			before,
 			keyText: JSON.stringify(key),
-			colon: like?.colon ?? (writer.indent === "" ? ":" : ": "),
+			colon: like?.colon ?? writer.colon,
 			value: stringifyValue(writer, value, lastLine(before)),
 			after: "",
 		};
@@ -584,13 +599,41 @@ function stringifyValue(
 	value: unknown,
 	lineIndent: string
 ): string {
-	if (writer.indent === "") {
-		return JSON.stringify(value);
+	return stringify(value, writer, lineIndent);
+}
+
+/**
+ * `JSON.stringify(value, undefined, writer.indent)` with the separator of
+ * the file between keys and values and its line endings.
+ */
+function stringify(value: unknown, writer: Writer, lineIndent: string): string {
+	if (Array.isArray(value)) {
+		if (value.length === 0) return "[]";
+		const inner = lineIndent + writer.indent;
+		const items = value.map((item) =>
+			// like JSON.stringify: undefined and functions in arrays are null
+			item === undefined || typeof item === "function"
+				? "null"
+				: stringify(item, writer, inner)
+		);
+		return writer.indent === ""
+			? `[${items.join(",")}]`
+			: `[${writer.newline}${inner}${items.join(`,${writer.newline}${inner}`)}${writer.newline}${lineIndent}]`;
 	}
-	return JSON.stringify(value, undefined, writer.indent).replace(
-		/\n/g,
-		writer.newline + lineIndent
-	);
+	if (isObject(value)) {
+		const inner = lineIndent + writer.indent;
+		const members = Object.entries(value)
+			.filter(([, item]) => item !== undefined && typeof item !== "function")
+			.map(
+				([key, item]) =>
+					JSON.stringify(key) + writer.colon + stringify(item, writer, inner)
+			);
+		if (members.length === 0) return "{}";
+		return writer.indent === ""
+			? `{${members.join(",")}}`
+			: `{${writer.newline}${inner}${members.join(`,${writer.newline}${inner}`)}${writer.newline}${lineIndent}}`;
+	}
+	return JSON.stringify(value);
 }
 
 /** The text after the last line break, i.e. the indentation of a line. */
