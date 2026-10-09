@@ -50,6 +50,35 @@ const globalAliases = new Set([
 	"contentWindow",
 	"defaultView",
 ]);
+/**
+ * `import.meta` properties that cannot load modules. Anything else (`glob`, `globEager`,
+ * bundler-specific loaders, `import.meta` as a value) may load every message module behind a
+ * computed key, so it makes the analysis incomplete.
+ */
+const importMetaProperties = new Set(["env", "url", "dirname", "filename", "hot"]);
+/** Bundler module loaders that take computed module ids. */
+const moduleLoaders = new Set([
+	"__webpack_require__",
+	"__non_webpack_require__",
+	"__webpack_modules__",
+	"importScripts",
+]);
+type ParserPlugins = NonNullable<NonNullable<Parameters<typeof parse>[1]>["plugins"]>;
+/** Babel parser plugins per file type: JSX only where it is valid (`<string>x` is a TS cast). */
+const parserPlugins = (path: string): ParserPlugins[] => {
+	const typescript = /\.(?:tsx?|mts|cts)$/i.test(path);
+	const jsx = /\.(?:jsx?|tsx|mjs)$/i.test(path);
+	const base: ParserPlugins = [
+		...(typescript ? (["typescript"] as const) : []),
+		...(jsx ? (["jsx"] as const) : []),
+	];
+	// TypeScript's experimental decorators (Angular, Nest, Lit) first, then the standard ones.
+	return [
+		[...base, "decorators-legacy"],
+		[...base, ["decorators", { decoratorsBeforeExport: true }]],
+		[...base, ["decorators", { decoratorsBeforeExport: false }]],
+	];
+};
 const messageModule = (value: unknown): boolean =>
 	typeof value === "string" &&
 	/(?:^|\/)(?:messages(?:\/|\.|$)|paraglide(?:\/|$))/.test(value);
@@ -156,16 +185,21 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 						}
 					}
 				}
-			} else {
-				const ast = parse(file.content, {
-					sourceType: "module",
-					plugins: [
-						...(/\.(?:tsx?|mts)$/i.test(file.path)
-							? ["typescript" as const]
-							: []),
-						"jsx",
-					],
-				}) as unknown as Node;
+} else {
+				let ast: Node | undefined;
+				let failure: unknown;
+				for (const plugins of parserPlugins(file.path)) {
+					try {
+						ast = parse(file.content, {
+							sourceType: "module",
+							plugins,
+						}) as unknown as Node;
+						break;
+					} catch (error) {
+						failure ??= error;
+					}
+				}
+				if (!ast) throw failure;
 				root = ast.program as Node;
 				programs = [root];
 			}
@@ -336,8 +370,44 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 					"TSParameterProperty",
 					"TSImportEqualsDeclaration",
 				].includes(node.type)
-			)
+			) {
+				// `typeof m.label` in a type keeps the message: deleting it breaks the build.
+				const types: Node[] = [node];
+				while (types.length) {
+					const type = types.pop()!;
+					if (type.type === "TSTypeQuery" && isNode(type.exprName)) {
+						const name = type.exprName;
+						if (
+							name.type === "TSQualifiedName" &&
+							namespaces.has(identifier(name.left) ?? "")
+						) {
+							const id = identifier(name.right);
+							if (id !== undefined) {
+								used.add(id);
+								refer(id, name);
+							}
+						}
+					}
+					if (
+						type.type === "TSIndexedAccessType" &&
+						isNode(type.objectType) &&
+						type.objectType.type === "TSTypeQuery" &&
+						namespaces.has(identifier(type.objectType.exprName) ?? "") &&
+						isNode(type.indexType) &&
+						type.indexType.type === "TSLiteralType" &&
+						isNode(type.indexType.literal) &&
+						typeof type.indexType.literal.value === "string"
+					) {
+						const id = type.indexType.literal.value;
+						used.add(id);
+						refer(id, type);
+					}
+					for (const value of Object.values(type))
+						for (const child of Array.isArray(value) ? value : [value])
+							if (isNode(child)) types.push(child);
+				}
 				continue;
+			}
 			if (node.type === "ObjectPattern") {
 				for (const property of node.properties as Node[]) {
 					const name = staticMemberName({
@@ -362,6 +432,30 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 						);
 				}
 			}
+if (
+				node.type === "MetaProperty" &&
+				identifier(node.meta) === "import" &&
+				identifier(node.property) === "meta"
+			) {
+				const property =
+					parent &&
+					(parent.type === "MemberExpression" ||
+						parent.type === "OptionalMemberExpression") &&
+					key === "object"
+						? staticMemberName(parent)
+						: undefined;
+				if (!property || !importMetaProperties.has(property))
+					unresolved.add(
+						"import.meta.glob and other import.meta loaders can load message modules by computed names."
+					);
+			}
+			if (
+				node.type === "Identifier" &&
+				moduleLoaders.has(node.name as string) &&
+				!staticProperty &&
+				!objectKey
+			)
+				unresolved.add("Bundler module loaders cannot be resolved.");
 			if (node.type === "ImportExpression")
 				unresolved.add("Dynamic message imports cannot be resolved.");
 			if (

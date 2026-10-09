@@ -48,4 +48,6 @@ The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files }
 
 See the [SDK checks and fixes documentation](../../sdk/docs/checks.md) for source snapshot requirements, supported syntax, limits and programmatic usage. This capability is separate from the existing IDE reference matchers.
 
+Bundle size: the analysis bundles Babel's parser and Svelte's compiler, so `dist/index.js` is about 830 KB minified (28 KB before). It is not lazy-loaded: the SDK imports a plugin module as a single `data:` URL, where a separately loaded chunk can't be resolved.
+
 Svelte analysis covers instance/module scripts (JavaScript or TypeScript) and template expressions, blocks, snippets, components and directives. Include `.svelte` files in the full source snapshot; no extra configuration is required. External scripts and unsupported script languages report incomplete analysis.

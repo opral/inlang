@@ -309,3 +309,54 @@ test("reports where each message is used, covering the whole call", async () => 
 		])
 	);
 });
+
+test.each([
+	// Vite: every message module, then a computed key - nothing names a message
+	`const mods = import.meta.glob("./paraglide/messages/*.js", { eager: true }); Object.values(mods)[0][k]()`,
+	`const mods = import.meta.globEager("./paraglide/messages/*.js")`,
+	`const meta = import.meta; meta.glob("./paraglide/messages/*.js")`,
+	`const load = import.meta["glob"]; load("./paraglide/messages/*.js")`,
+	`const ctx = require.context("./paraglide/messages", true); ctx.keys()`,
+	`const url = new URL("./paraglide/messages/" + k + ".js", import.meta.url); await import(url.href)`,
+	`__webpack_require__(id)`,
+	`Reflect.get(globalThis, "m").key()`,
+	`Reflect.get(m, key)()`,
+	`globalThis[name]()`,
+])("module loaders and reflective lookups withhold unused findings: %s", async (code) => {
+	const result = await analyze(`import { m } from './messages'; ${code}`, "src/app.ts");
+	expect(result.status).toBe("incomplete");
+});
+
+test("ordinary import.meta properties keep the analysis complete", async () => {
+	const result = await analyze(
+		`import { m } from './messages'; const url = new URL("./logo.svg", import.meta.url); if (import.meta.env.DEV) m.dev(); import.meta.hot?.accept(); console.log(import.meta.dirname, import.meta.filename);`,
+		"src/app.ts"
+	);
+	expect(result.issues).toEqual([]);
+	expect(result.usedBundleIds).toEqual(["dev"]);
+});
+
+test("TypeScript files parse type assertions and decorators", async () => {
+	const angular = `import { m } from './messages';
+		@Component({ selector: "app-root", template: "" })
+		export class App { constructor(@Inject(TOKEN) private token: string) {} title = m.title(); }
+		const y = <string>value;`;
+	const result = await analyze(angular, "src/app.ts");
+	expect(result.issues).toEqual([]);
+	expect(result.usedBundleIds).toEqual(["title"]);
+	const lit = `import { m } from './messages';
+		@customElement("my-el") export class El extends LitElement { @property() label = m.label(); }`;
+	expect((await analyze(lit, "src/el.ts")).usedBundleIds).toEqual(["label"]);
+	expect((await analyze(lit, "src/el.js")).usedBundleIds).toEqual(["label"]);
+	// JSX stays available where it is valid
+	expect((await analyze(`import { m } from './messages'; const v = <p>{m.jsx()}</p>;`, "src/a.jsx")).usedBundleIds).toEqual(["jsx"]);
+});
+
+test("typeof a message in a type position counts as a usage", async () => {
+	const result = await analyze(
+		`import { m } from './messages'; type Label = ReturnType<typeof m.label>; let x: typeof m["quoted"];`,
+		"src/app.ts"
+	);
+	expect(result.status).toBe("complete");
+	expect(new Set(result.usedBundleIds)).toEqual(new Set(["label", "quoted"]));
+});
