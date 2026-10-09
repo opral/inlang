@@ -148,6 +148,33 @@ describe("serializeMessage", () => {
     });
   });
 
+  it("does not bind an offset-0 # to a nested plural with an offset", () => {
+    // the export moves the outer `#` into the nested plural's cases, where a
+    // bare `#` would display n - 1
+    const { bundle, message, variants } = buildMessage(
+      "{n, plural, other {# and {n, plural, offset:1 one {one} other {many}}}}",
+    );
+    expect(serializeMessage({ bundle, message, variants })).toBe(
+      "{n, plural, other {{n, plural, offset:1 one {{n, number} and one} other {{n, number} and many}}}}",
+    );
+  });
+
+  it("quotes runs of special characters as one segment", () => {
+    // quoting them one by one gives '#''#', where '' reads as an apostrophe
+    for (const source of [
+      "'{}' and it''s",
+      "{n, plural, other {'##' and '#{'}}",
+      "{n, plural, other {{g, select, a {'##'} other {x}}}}",
+    ]) {
+      const { bundle, message, variants } = buildMessage(source);
+      const exported = serializeMessage({ bundle, message, variants });
+      expect(exported).toBe(source);
+      // and the export is stable
+      const again = buildMessage(exported);
+      expect(serializeMessage(again)).toBe(source);
+    }
+  });
+
   it("escapes a literal # inside a select nested in a plural", () => {
     const source =
       "{count, plural, other {{gender, select, male {He has '#'#} other {# they have '#'}}}}";
