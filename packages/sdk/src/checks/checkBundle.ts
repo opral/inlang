@@ -52,6 +52,8 @@ export type CheckBundleArgs = {
  * - `missing-translation`: the bundle has no message for a locale.
  * - `empty-translation`: every variant of a locale's message is empty, the
  *   reference locale's included.
+ * - `empty-variant`: one variant is empty while others of the message are not
+ *   (an exported ICU `=0 {}`), the reference locale's included.
  * - `missing-variant`: also checked for the reference locale, against its own
  *   selectors.
  * - `missing-variable`, `unknown-variable`, `missing-markup`: compared with
@@ -92,6 +94,7 @@ export function checkBundle(args: CheckBundleArgs): CheckDiagnostic[] {
 			if (
 				locale === referenceLocale &&
 				issue.type !== "missing-translation" &&
+				issue.type !== "empty-variant" &&
 				issue.type !== "missing-variant"
 			)
 				continue;
@@ -106,6 +109,17 @@ export function checkBundle(args: CheckBundleArgs): CheckDiagnostic[] {
 						message: `Message ${id} has an empty translation for ${where}.`,
 					});
 			} else if (!wanted(issue.type)) continue;
+			else if (issue.type === "empty-variant")
+				diagnostics.push({
+					...base,
+					fixes: [],
+					locale,
+					checkId: "empty-variant",
+					messageId,
+					variantId: issue.variantId!,
+					matches: issue.matches.map((match) => ({ ...match })),
+					message: `Message ${id} has an empty form${describeMatches(issue.matches)} in ${where}.`,
+				});
 			else if (issue.type === "missing-variable")
 				diagnostics.push({
 					...base,
@@ -148,9 +162,22 @@ export function checkBundle(args: CheckBundleArgs): CheckDiagnostic[] {
 					checkId: "missing-variant",
 					messageId,
 					matches: issue.matches.map((match) => ({ ...match })),
-					message: `Message ${id} has no variant for ${issue.matches.map((match) => `${match.key}=${match.type === "literal-match" ? match.value : "*"}`).join(", ")} in ${where}.`,
+					message: `Message ${id} has no variant for ${formatMatches(issue.matches)} in ${where}.`,
 				});
 		}
 	}
 	return diagnostics;
+}
+
+function formatMatches(matches: readonly Match[]): string {
+	return matches
+		.map(
+			(match) =>
+				`${match.key}=${match.type === "literal-match" ? match.value : "*"}`
+		)
+		.join(", ");
+}
+
+function describeMatches(matches: readonly Match[]): string {
+	return matches.length ? ` (${formatMatches(matches)})` : "";
 }

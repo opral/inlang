@@ -11,6 +11,7 @@ const ALL_CHECKS: readonly CheckId[] = [
 	"missing-translation",
 	"unused-message",
 	"empty-translation",
+	"empty-variant",
 	"missing-variable",
 	"unknown-variable",
 	"missing-markup",
@@ -19,6 +20,7 @@ const ALL_CHECKS: readonly CheckId[] = [
 /** Checks that compare translation patterns and therefore read them. */
 const PATTERN_CHECKS: readonly CheckId[] = [
 	"empty-translation",
+	"empty-variant",
 	"missing-variable",
 	"unknown-variable",
 	"missing-markup",

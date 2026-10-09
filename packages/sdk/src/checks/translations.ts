@@ -29,6 +29,7 @@ type MessageLike = {
 /** A problem in one translation, relative to the reference. */
 export type TranslationIssue =
 	| { type: "missing-translation" }
+	| { type: "empty-variant"; variantId?: string; matches: Match[] }
 	| { type: "missing-variable"; name: string; variantId?: string }
 	| {
 			type: "unknown-variable";
@@ -116,6 +117,8 @@ export function closestName(
  * of the variants they appear in.
  *
  * - `missing-translation`: no message, no variants, or every pattern is empty.
+ * - `empty-variant`: one variant's pattern is empty while another variant of
+ *   the message has text, e.g. an ICU `=0 {}`. Checked without a reference too.
  * - `missing-variable`: a reference variable is absent from a non-empty
  *   variant. Variants for one exact number on a plural selector (`0`, or a
  *   category that selects one number such as German `one`) may spell the
@@ -163,9 +166,16 @@ export function checkTranslation(args: {
 				))
 		);
 	};
-	if (reference)
-		for (const variant of target.variants) {
-			if (isEmptyPattern(variant.pattern)) continue;
+	for (const variant of target.variants) {
+		if (isEmptyPattern(variant.pattern)) {
+			issues.push({
+				type: "empty-variant",
+				variantId: variant.id,
+				matches: variant.matches.map((match) => ({ ...match })),
+			});
+			continue;
+		}
+		if (reference) {
 			const variantId = variant.id;
 			const own = variableNames(variant.pattern);
 			const exactNumber = variant.matches.some(spellsOut);
@@ -192,6 +202,7 @@ export function checkTranslation(args: {
 				if (!tags.includes(name))
 					issues.push({ type: "missing-markup", name, variantId });
 		}
+	}
 	for (const matches of missingVariants(target, declarations, {
 		referenceVariants: reference?.variants,
 	}))
