@@ -276,12 +276,13 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 				metadata: pair.file.metadata,
 				content: contentOf(pair),
 			};
-			const next = pairs
-				.slice(index + 1)
-				.find(
-					(candidate) =>
-						placed.has(candidate) && candidate.file.locale === pair.file.locale
-				);
+			const next = pairs.slice(index + 1).find(
+				(candidate) =>
+					placed.has(candidate) &&
+					// emptied files come after the export, not in its order
+					candidate.emptiedFrom === undefined &&
+					candidate.file.locale === pair.file.locale
+			);
 			const at = next === undefined ? -1 : positions.get(next)!;
 			if (at === -1) {
 				result.push(entry);

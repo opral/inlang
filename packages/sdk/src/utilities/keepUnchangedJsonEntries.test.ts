@@ -818,6 +818,90 @@ describe("keepUnchangedJsonEntries", () => {
 		).toEqual([{ type: "text", value: "edited" }]);
 	});
 
+	test("an emptied file doesn't move a new file before the files it follows", async () => {
+		// `x_*` goes to x, `z_*` to z, everything else to the new file y;
+		// the plugin exports x, y (z has no messages anymore). Loads read z,
+		// x, then y.
+		const exportByPrefix = async (
+			args: Parameters<typeof exportFiles>[0]
+		): Promise<ExportFile[]> => {
+			const json: Record<string, Record<string, string>> = {};
+			for (const message of args.messages) {
+				const variant = args.variants.find((v) => v.messageId === message.id)!;
+				const namespace = message.bundleId.startsWith("x_")
+					? "x"
+					: message.bundleId.startsWith("z_")
+						? "z"
+						: "y";
+				(json[namespace] ??= {})[message.bundleId] = variant.pattern
+					.map((part) => (part.type === "text" ? part.value : ""))
+					.join("");
+			}
+			return ["x", "y", "z"]
+				.filter((namespace) => json[namespace] !== undefined)
+				.map((namespace) => ({
+					locale: "en",
+					name: `${namespace}.json`,
+					metadata: { namespace },
+					content: encode(JSON.stringify(json[namespace], undefined, "\t")),
+				}));
+		};
+		const files = [
+			{
+				path: "./z.json",
+				locale: "en",
+				metadata: { namespace: "z" },
+				content: encode('{"z_d": "D"}'),
+				imported: true,
+			},
+			{
+				path: "./x.json",
+				locale: "en",
+				metadata: { namespace: "x" },
+				// `k` here is read before y and doesn't win
+				content: encode('{ "x_a" : "A", "k": "old" }'),
+				imported: true,
+			},
+		];
+		const rows = rowsFromImport(await importFiles({ files } as any));
+		// delete z_d, edit k
+		const zd = rows.messages.find((m) => m.bundleId === "z_d")!;
+		rows.messages = rows.messages.filter((m) => m !== zd);
+		rows.variants = rows.variants.filter((v) => v.messageId !== zd.id);
+		const k = rows.messages.find((m) => m.bundleId === "k")!;
+		rows.variants.find((v) => v.messageId === k.id)!.pattern = [
+			{ type: "text", value: "edited" },
+		];
+
+		const result = await keepUnchangedJsonEntries({
+			exported: await exportByPrefix({ ...rows, settings: {} as any }),
+			files,
+			settings: {} as any,
+			importFiles,
+			exportFiles: exportByPrefix,
+		});
+
+		const byNamespace = (namespace: string) =>
+			result.find((file) => file.metadata?.["namespace"] === namespace)!;
+		// x is kept as it is: on the next load, y comes after it
+		expect(decode(byNamespace("x").content)).toBe(
+			'{ "x_a" : "A", "k": "old" }'
+		);
+		expect(decode(byNamespace("z").content)).toBe("{}");
+		const reloaded = rowsFromImport(
+			await importFiles({
+				files: ["z", "x", "y"].map((namespace) => ({
+					locale: "en",
+					content: byNamespace(namespace).content,
+				})),
+			})
+		);
+		const reloadedK = reloaded.messages.find((m) => m.bundleId === "k")!;
+		expect(
+			reloaded.variants.find((v) => v.messageId === reloadedK.id)!.pattern
+		).toEqual([{ type: "text", value: "edited" }]);
+	});
+
 	test("a locale with several existing files is written in full", async () => {
 		const exported = await exportFiles({
 			...rowsFromImport(
