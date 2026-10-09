@@ -120,6 +120,70 @@ describe("stringifyJsonKeepingEntries", () => {
 		).toBe('{\n\t"nav:home": "Start"\n}');
 	});
 
+	test("a removed object keeps the keys that the plugin doesn't import", () => {
+		const previous =
+			'{\n  "nav": {\n    "home": "Home",\n    "order": 3\n  },\n  "x": "X"\n}';
+		expect(keep(previous, { x: "X" }, { nav: { home: "Home" }, x: "X" })).toBe(
+			'{\n  "nav": {\n    "order": 3\n  },\n  "x": "X"\n}'
+		);
+	});
+
+	test("a flat key whose value is an object is walked like the nested object", () => {
+		const previous =
+			'{\n\t"nav.menu": {\n\t\t"home": "Home",\n\t\t"about": "About"\n\t},\n\t"x": "X"\n}';
+		const canonical = {
+			nav: { menu: { home: "Home", about: "About" } },
+			x: "X",
+		};
+		expect(keep(previous, { ...canonical, x: "X2" }, canonical)).toBe(
+			previous.replace('"x": "X"', '"x": "X2"')
+		);
+		expect(
+			keep(
+				previous,
+				{ nav: { menu: { home: "Start", about: "About" } }, x: "X" },
+				canonical
+			)
+		).toBe(previous.replace('"home": "Home"', '"home": "Start"'));
+	});
+
+	test("a flat key that the plugin writes flat itself is not mapped to the nested path", () => {
+		// e.g. the json plugin: "a.b" and a: { b } are two messages
+		const previous = '{\n\t"a.b": "F",\n\t"a": {\n\t\t"b": "N"\n\t}\n}';
+		const canonical = { "a.b": "F", a: { b: "N" } };
+		expect(keep(previous, { a: { b: "N" } }, canonical)).toBe(
+			'{\n\t"a": {\n\t\t"b": "N"\n\t}\n}'
+		);
+	});
+
+	test("isEntry writes an object in full if anything in it changed", () => {
+		const previous =
+			'{\n  "a" : {\n    "state" : "needs_review",\n    "value" : "Hallo"\n  }\n}';
+		const next = { a: { state: "translated", value: "Hallo!" } };
+		const canonical = { a: { state: "translated", value: "Hallo" } };
+		// walked key by key, the old state stays
+		expect(keep(previous, next, canonical)).toContain('"needs_review"');
+		expect(
+			stringifyJsonKeepingEntries({
+				previous,
+				previousCanonical: canonical,
+				next,
+				isEntry: (path) => path.length === 1,
+			})
+		).toBe(
+			'{\n  "a" : {\n    "state" : "translated",\n    "value" : "Hallo!"\n  }\n}'
+		);
+		// unchanged, the entry is kept as it is
+		expect(
+			stringifyJsonKeepingEntries({
+				previous,
+				previousCanonical: canonical,
+				next: canonical,
+				isEntry: (path) => path.length === 1,
+			})
+		).toBe(previous);
+	});
+
 	test("the order of objects in arrays is part of the value", () => {
 		const previous =
 			'{\n\t"a": [{ "match": { "x=1": "one", "x=*": "other" } }]\n}';
@@ -545,6 +609,102 @@ describe("keepUnchangedJsonEntries", () => {
 		expect(decode(edited.content)).toBe(
 			'{\n\t"$schema": "schema",\n\t"a": "3"\n}'
 		);
+	});
+
+	test("a kept key that the plugin imports into another file can't bring back a deleted message", async () => {
+		// Like i18next: `"x:y"` in en.json is message `y` of namespace `x`,
+		// which the plugin writes to x-en.json.
+		const importRouted: typeof importFiles = async ({ files }) =>
+			importFiles({
+				files: files.map((file: any) => {
+					const namespace = file.toBeImportedFilesMetadata?.namespace;
+					const json = JSON.parse(decode(file.content));
+					return {
+						locale: file.locale,
+						content: encode(
+							JSON.stringify(
+								Object.fromEntries(
+									Object.entries(json).map(([key, value]) => [
+										namespace ? `${namespace}:${key}` : key,
+										value,
+									])
+								)
+							)
+						),
+					};
+				}),
+			});
+		const exportRouted = async (
+			args: Parameters<typeof exportFiles>[0]
+		): Promise<ExportFile[]> => {
+			const files = new Map<string, ExportFile & { json: any }>();
+			for (const file of await exportFiles(args)) {
+				const json = JSON.parse(decode(file.content));
+				for (const [key, value] of Object.entries(json)) {
+					const [namespace, rest] = key.includes(":")
+						? key.split(":")
+						: [undefined, key];
+					const name = namespace
+						? `${namespace}-${file.locale}.json`
+						: file.name;
+					const target = files.get(name) ?? {
+						...file,
+						name,
+						metadata: namespace ? { namespace } : undefined,
+						json: {},
+					};
+					target.json[rest!] = value;
+					files.set(name, target);
+				}
+			}
+			return [...files.values()].map(({ json, ...file }) => ({
+				...file,
+				content: encode(JSON.stringify(json, undefined, "\t")),
+			}));
+		};
+		const previous = '{\n\t"$schema": "schema",\n\t"x:y": "X",\n\t"c": "C"\n}';
+		// delete x:y, edit c
+		const exported = await exportRouted({
+			...rowsFromImport(
+				await importRouted({
+					files: [{ locale: "en", content: encode('{"c": "C2"}') }],
+				})
+			),
+			settings: {} as any,
+		});
+		const result = await keepUnchangedJsonEntries({
+			exported,
+			files: [{ path: "./en.json", locale: "en", content: encode(previous) }],
+			settings: {} as any,
+			importFiles: importRouted,
+			exportFiles: exportRouted,
+		});
+		expect(result.map((file) => decode(file.content))).toEqual(
+			exported.map((file) => decode(file.content))
+		);
+		expect(result.every((file) => file.verbatim === undefined)).toBe(true);
+	});
+
+	test("a locale with several existing files is written in full", async () => {
+		const exported = await exportFiles({
+			...rowsFromImport(
+				await importFiles({
+					files: [{ locale: "en", content: encode('{"a": "A"}') }],
+				})
+			),
+			settings: {} as any,
+		});
+		const [file] = await keepUnchangedJsonEntries({
+			exported,
+			files: [
+				{ path: "./a/en.json", locale: "en", content: encode('{ "a": "A" }') },
+				{ path: "./b/en.json", locale: "en", content: encode("{}") },
+			],
+			settings: {} as any,
+			importFiles,
+			exportFiles,
+		});
+		expect(file).toBe(exported[0]);
 	});
 
 	test("files without a previous file or without any previous files are returned as is", async () => {

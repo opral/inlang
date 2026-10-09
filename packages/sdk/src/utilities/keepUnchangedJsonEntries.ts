@@ -87,6 +87,12 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	 * the full export doesn't have.
 	 */
 	splitKey?: (key: string) => string[];
+	/**
+	 * Whether the object at `path` (keys from the root of the file) is one
+	 * entry, i.e. is written in full if anything in it changed. By default,
+	 * objects are walked key by key.
+	 */
+	isEntry?: (path: string[]) => boolean;
 	/** Indentation of new entries if the previous file has none. Defaults to a tab. */
 	indent?: string;
 }): Promise<ExportFile[]> {
@@ -96,12 +102,14 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	const isSameFile = args.isSameFile ?? isSameLocaleAndNamespace;
 	const existingFiles = args.files;
 	const pairs = args.exported.map((file) => {
-		const existing = existingFiles.find((candidate) =>
+		const matches = existingFiles.filter((candidate) =>
 			isSameFile(file, candidate)
 		);
 		return {
 			file,
-			existing,
+			// With several existing files (e.g. a `pathPattern` array), the
+			// host writes the exported file to each of them, so none can be kept.
+			existing: matches.length === 1 ? matches[0] : undefined,
 			exportedText: decodeUtf8(file.content),
 			/** the text to write if it keeps entries of the existing file */
 			kept: undefined as string | undefined,
@@ -111,37 +119,6 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	if (withExisting.length === 0) {
 		return args.exported;
 	}
-
-	/**
-	 * The JSON value of every file the plugin writes for `files`, imported
-	 * together like a project is loaded, by locale and name.
-	 */
-	const canonical = async (
-		files: Array<{ existing: ExistingFile; content: Uint8Array }>
-	): Promise<Map<string, unknown>> => {
-		const imported = await args.importFiles({
-			files: files.map(({ existing, content }) => ({
-				locale: existing.locale,
-				content,
-				toBeImportedFilesMetadata: existing.metadata,
-			})),
-			settings: structuredClone(args.settings),
-		});
-		const exported = await args.exportFiles({
-			...rowsFromImport(imported),
-			settings: structuredClone(args.settings),
-		});
-		const result = new Map<string, unknown>();
-		for (const file of exported) {
-			try {
-				result.set(fileKey(file), JSON.parse(decodeUtf8(file.content)));
-			} catch {
-				// not JSON, can't be compared
-			}
-		}
-		return result;
-	};
-
 	// files that the export writes as they are need no comparison
 	if (
 		withExisting.every(
@@ -153,17 +130,44 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 		);
 	}
 
+	/**
+	 * The JSON value of every file the plugin writes for `files`, imported
+	 * together like a project is loaded, by locale and name.
+	 */
+	const canonical = async (
+		files: ReadonlyArray<{
+			locale: string;
+			content: Uint8Array;
+			metadata?: Record<string, any>;
+		}>
+	): Promise<Map<string, unknown>> => {
+		const imported = await args.importFiles({
+			files: files.map(({ locale, content, metadata }) => ({
+				locale,
+				content,
+				toBeImportedFilesMetadata: metadata,
+			})),
+			settings: structuredClone(args.settings),
+		});
+		const exported = await args.exportFiles({
+			...rowsFromImport(imported),
+			settings: structuredClone(args.settings),
+		});
+		const result = new Map<string, unknown>();
+		for (const file of exported) {
+			result.set(fileKey(file), JSON.parse(decodeUtf8(file.content)));
+		}
+		return result;
+	};
+
 	let previousCanonical: Map<string, unknown>;
 	try {
-		previousCanonical = await canonical(
-			existingFiles.map((existing) => ({ existing, content: existing.content }))
-		);
+		previousCanonical = await canonical(existingFiles);
 	} catch {
 		// e.g. a previous file can't be imported
 		return args.exported;
 	}
 
-	const next = new Map<string, unknown>();
 	for (const pair of withExisting) {
 		const previous = decodeUtf8(pair.existing!.content);
 		if (previous === pair.exportedText) {
@@ -171,13 +175,12 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 			continue;
 		}
 		try {
-			const value = JSON.parse(pair.exportedText) as unknown;
-			next.set(fileKey(pair.file), value);
 			pair.kept = stringifyJsonKeepingEntries({
 				previous,
 				previousCanonical: previousCanonical.get(fileKey(pair.file)),
-				next: value,
+				next: JSON.parse(pair.exportedText),
 				splitKey: args.splitKey,
+				isEntry: args.isEntry,
 				indent: args.indent,
 			});
 		} catch {
@@ -185,39 +188,74 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 		}
 	}
 
-	// Only use the results if the plugin reads them as the full export. This
-	// guarantees that no edit is lost, e.g. if a previous file has a shape that
-	// this function doesn't understand. Files that don't pass are written in
-	// full, which can change how the others are read, so check again.
-	for (;;) {
-		const toCheck = withExisting.filter(
+	// Only use the results if the plugin reads the files as they will be on
+	// disk exactly like the full export: the exported files, and existing
+	// files that the export doesn't replace. This guarantees that no edit is
+	// lost, e.g. if a previous file has a shape that this function doesn't
+	// understand, or kept text of one file changes how another one is read.
+	const replaced = new Set(withExisting.map((pair) => pair.existing!));
+	const untouched = existingFiles.filter(
+		(existing) =>
+			!replaced.has(existing) &&
+			!args.exported.some((file) => isSameFile(file, existing))
+	);
+	const onDisk = () => [
+		...pairs.map((pair) => ({
+			locale: pair.existing?.locale ?? pair.file.locale,
+			metadata: pair.existing?.metadata ?? pair.file.metadata,
+			content:
+				pair.kept === undefined || pair.kept === pair.exportedText
+					? pair.file.content
+					: new TextEncoder().encode(pair.kept),
+		})),
+		...untouched,
+	];
+	const changed = () =>
+		pairs.filter(
 			(pair) => pair.kept !== undefined && pair.kept !== pair.exportedText
 		);
-		if (toCheck.length === 0) break;
-		let result: Map<string, unknown>;
+	if (changed().length > 0) {
+		let expected: Map<string, unknown> | undefined;
 		try {
-			result = await canonical(
-				withExisting.map((pair) => ({
-					existing: pair.existing!,
-					content:
-						pair.kept === undefined
-							? pair.file.content
-							: new TextEncoder().encode(pair.kept),
-				}))
-			);
+			const kept = pairs.map((pair) => pair.kept);
+			for (const pair of pairs) pair.kept = undefined;
+			expected = await canonical(onDisk());
+			pairs.forEach((pair, index) => (pair.kept = kept[index]));
 		} catch {
-			for (const pair of toCheck) pair.kept = undefined;
-			break;
+			expected = undefined;
 		}
-		const failed = toCheck.filter(
-			(pair) =>
-				jsonEquals(
-					result.get(fileKey(pair.file)),
-					next.get(fileKey(pair.file))
-				) === false
-		);
-		if (failed.length === 0) break;
-		for (const pair of failed) pair.kept = undefined;
+		// Files that fail are written in full, which can change how the others
+		// are read, so check again. After a few rounds, write everything in full.
+		for (let round = 0; ; round++) {
+			const toCheck = changed();
+			if (toCheck.length === 0) break;
+			if (expected === undefined || round === 3) {
+				for (const pair of pairs) pair.kept = undefined;
+				break;
+			}
+			let result: Map<string, unknown>;
+			try {
+				result = await canonical(onDisk());
+			} catch {
+				for (const pair of pairs) pair.kept = undefined;
+				break;
+			}
+			const failed = [
+				...new Set([...result.keys(), ...expected.keys()]),
+			].filter(
+				(key) => jsonEquals(result.get(key), expected!.get(key)) === false
+			);
+			if (failed.length === 0) break;
+			const failedKept = toCheck.filter((pair) =>
+				failed.includes(fileKey(pair.file))
+			);
+			if (failedKept.length < failed.length) {
+				// another file reads differently, the cause can't be told
+				for (const pair of pairs) pair.kept = undefined;
+				break;
+			}
+			for (const pair of failedKept) pair.kept = undefined;
+		}
 	}
 
 	return pairs.map((pair) =>
@@ -261,8 +299,9 @@ function isSameLocaleAndNamespace(
  *   `next` is kept if its value in `previousCanonical` equals `next`, e.g. a
  *   legacy shape of a message. Keys of `previous` that are neither in `next`
  *   nor here are kept, the plugin doesn't import them.
- * @param args.next The JSON value of the new file.
+ * @param args.next The JSON value of the new file, as `JSON.parse` returns it.
  * @param args.splitKey See `keepUnchangedJsonEntries`.
+ * @param args.isEntry See `keepUnchangedJsonEntries`.
  * @param args.indent Indentation of new entries if `previous` has none.
  */
 export function stringifyJsonKeepingEntries(args: {
@@ -270,6 +309,7 @@ export function stringifyJsonKeepingEntries(args: {
 	previousCanonical?: unknown;
 	next: unknown;
 	splitKey?: (key: string) => string[];
+	isEntry?: (path: string[]) => boolean;
 	indent?: string;
 }): string | undefined {
 	let parsed: unknown;
@@ -300,6 +340,7 @@ export function stringifyJsonKeepingEntries(args: {
 		newline: args.previous.includes("\r\n") ? "\r\n" : "\n",
 		indent: detectIndent(tree, args.indent ?? "\t"),
 		splitKey: args.splitKey ?? splitAtDots,
+		isEntry: args.isEntry ?? (() => false),
 		colon: "",
 	};
 	writer.colon = detectColon(tree, writer.indent);
@@ -313,7 +354,8 @@ export function stringifyJsonKeepingEntries(args: {
 				: undefined,
 			next: args.next,
 			depth: 0,
-		}) +
+			path: [],
+		}).text +
 		args.previous.slice(end)
 	);
 }
@@ -324,6 +366,7 @@ type Writer = {
 	/** one level of indentation, "" for files without line breaks */
 	indent: string;
 	splitKey: (key: string) => string[];
+	isEntry: (path: string[]) => boolean;
 	/** the separator between keys and values, e.g. Xcode's `" : "` */
 	colon: string;
 };
@@ -369,8 +412,10 @@ function writeObject(
 		canonical: Record<string, unknown> | undefined;
 		next: Record<string, unknown>;
 		depth: number;
+		/** the keys of the object from the root of the file */
+		path: string[];
 	}
-): string {
+): { text: string; empty: boolean } {
 	const { node, previous, canonical } = args;
 	let next = args.next;
 	const previousKeys = new Set(node.members.map((member) => member.key));
@@ -382,10 +427,13 @@ function writeObject(
 	{
 		for (const member of node.members) {
 			if (hasOwn(next, member.key)) continue;
+			// a key that the plugin writes flat itself
+			if (canonical !== undefined && hasOwn(canonical, member.key)) continue;
 			const path = writer.splitKey(member.key);
 			if (path.length < 2 || hasOwn(next, path[0]!) === false) continue;
 			const value = getPath(next, path);
-			if (value === undefined || isObject(value)) continue;
+			if (value === undefined) continue;
+			if (isObject(value) && member.value.kind !== "object") continue;
 			flat.set(member.key, path);
 		}
 		if (flat.size > 0) next = withoutPaths(next, [...flat.values()]);
@@ -413,6 +461,26 @@ function writeObject(
 			const nextValue = getPath(args.next, path);
 			const canonicalValue =
 				canonical === undefined ? undefined : getPath(canonical, path);
+			const previousValue = previous[member.key];
+			if (
+				member.value.kind === "object" &&
+				isObject(nextValue) &&
+				isObject(previousValue) &&
+				writer.isEntry([...args.path, ...path]) === false
+			) {
+				out.push({
+					...base,
+					value: writeObject(writer, {
+						node: member.value,
+						previous: previousValue,
+						canonical: isObject(canonicalValue) ? canonicalValue : undefined,
+						next: nextValue,
+						depth: args.depth + 1,
+						path: [...args.path, ...path],
+					}).text,
+				});
+				continue;
+			}
 			out.push({
 				...base,
 				value: isUnchanged(previous[member.key], canonicalValue, nextValue)
@@ -431,8 +499,28 @@ function writeObject(
 				// The plugin neither imports nor writes the key, e.g. `$schema`
 				// for a plugin that ignores it. Kept as it is.
 				out.push({ ...base, value: raw });
+				continue;
 			}
-			// otherwise removed
+			// Removed. An object keeps the keys in it that the plugin neither
+			// imports nor writes.
+			const previousValue = previous[member.key];
+			const canonicalValue = canonical?.[member.key];
+			if (
+				member.value.kind === "object" &&
+				isObject(previousValue) &&
+				isObject(canonicalValue) &&
+				writer.isEntry([...args.path, member.key]) === false
+			) {
+				const rest = writeObject(writer, {
+					node: member.value,
+					previous: previousValue,
+					canonical: canonicalValue,
+					next: {},
+					depth: args.depth + 1,
+					path: [...args.path, member.key],
+				});
+				if (rest.empty === false) out.push({ ...base, value: rest.text });
+			}
 			continue;
 		}
 		const nextValue = next[member.key];
@@ -445,7 +533,8 @@ function writeObject(
 		if (
 			member.value.kind === "object" &&
 			isObject(nextValue) &&
-			isObject(previousValue)
+			isObject(previousValue) &&
+			writer.isEntry([...args.path, member.key]) === false
 		) {
 			out.push({
 				...base,
@@ -455,7 +544,8 @@ function writeObject(
 					canonical: isObject(canonicalValue) ? canonicalValue : undefined,
 					next: nextValue,
 					depth: args.depth + 1,
-				}),
+					path: [...args.path, member.key],
+				}).text,
 			});
 			continue;
 		}
@@ -518,17 +608,19 @@ function writeObject(
 		}
 	};
 	emit(undefined);
-	for (const member of node.members) {
-		const written = kept.get(member.key);
-		if (written !== undefined) members.push(written);
-		// also after a removed member, at its place
-		emit(member.key);
+	for (const written of kept.values()) {
+		members.push(written);
+		emit(written.key);
 	}
 
 	if (members.length === 0) {
-		return node.members.length === 0
-			? writer.source.slice(node.start, node.end)
-			: "{}";
+		return {
+			text:
+				node.members.length === 0
+					? writer.source.slice(node.start, node.end)
+					: "{}",
+			empty: true,
+		};
 	}
 	const lastMember = node.members[node.members.length - 1];
 	const closing =
@@ -537,7 +629,7 @@ function writeObject(
 			: writer.indent === ""
 				? ""
 				: writer.newline + writer.indent.repeat(args.depth);
-	return (
+	const text =
 		"{" +
 		members
 			.map(
@@ -549,8 +641,8 @@ function writeObject(
 					(index === members.length - 1 ? closing : member.after)
 			)
 			.join(",") +
-		"}"
-	);
+		"}";
+	return { text, empty: false };
 }
 
 function splitAtDots(key: string): string[] {
@@ -590,11 +682,18 @@ function withoutPaths(
 		const sub = paths
 			.filter((path) => path[0] === key)
 			.map((path) => path.slice(1));
+		const set = (value: unknown) =>
+			Object.defineProperty(result, key, {
+				value,
+				enumerable: true,
+				writable: true,
+				configurable: true,
+			});
 		if (sub.length === 0) {
-			result[key] = child;
+			set(child);
 		} else if (isObject(child) && sub.every((path) => path.length > 0)) {
 			const rest = withoutPaths(child, sub);
-			if (Object.keys(rest).length > 0) result[key] = rest;
+			if (Object.keys(rest).length > 0) set(rest);
 		}
 		// else: the value itself is at a path
 	}
