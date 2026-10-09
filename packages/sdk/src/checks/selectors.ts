@@ -71,11 +71,39 @@ export function resolveInputVariable(
 }
 
 /** True when a selector chooses by plural category (`:plural`, also through aliases). */
+/**
+ * How an annotation selects by plural category: `:plural`, and `:number` /
+ * `:integer` with `select=plural` (their default) or `select=ordinal`.
+ * Undefined for other annotations, `select=exact` and selects only known at runtime.
+ */
+function pluralSelection(
+	annotation: FunctionReference | undefined
+): { type?: "cardinal" | "ordinal" } | undefined {
+	if (annotation?.name === "plural") return {};
+	if (annotation?.name !== "number" && annotation?.name !== "integer")
+		return undefined;
+	const select = annotation.options?.find((option) => option.name === "select");
+	if (!select) return { type: "cardinal" };
+	const value =
+		select.value.type === "literal" ? select.value.value : undefined;
+	return value === "plural"
+		? { type: "cardinal" }
+		: value === "ordinal"
+			? { type: "ordinal" }
+			: undefined;
+}
+
+/**
+ * True when a selector chooses by plural category (`:plural`, `:number` and
+ * `:integer` with plural or ordinal selection), also through aliases.
+ */
 export function isPluralSelector(
 	selector: string,
 	declarations: readonly Declaration[] | undefined
 ): boolean {
-	return resolveAnnotation(selector, declarations)?.name === "plural";
+	return (
+		pluralSelection(resolveAnnotation(selector, declarations)) !== undefined
+	);
 }
 
 /** A match key that is a number, such as `0` or ICU's `=1` imported as `1`. */
@@ -108,6 +136,12 @@ export type PluralRules = {
 	offset: number;
 	/** The categories of the locale in CLDR order (zero, one, two, few, many, other). */
 	categories: string[];
+	/**
+	 * The categories a translation needs: `categories` without those only
+	 * millions or compact exponents select, such as French, Spanish or Italian
+	 * "many" (1000000). Editors can still offer them.
+	 */
+	requiredCategories: string[];
 	/** Categories that select exactly one number, e.g. German "one" (1) but not Russian "one" (1, 21, 31, …). */
 	singleNumberCategories: string[];
 	/** `Intl.PluralRules` with the selector's options, to choose a category for a number. */
@@ -133,18 +167,29 @@ export function pluralRules(
 	locale: string
 ): PluralRules | undefined {
 	const annotation = resolveAnnotation(selector, declarations);
-	if (annotation?.name !== "plural") return undefined;
-	const key = JSON.stringify([locale, annotation.options ?? []]);
+	const selection = pluralSelection(annotation);
+	if (!annotation || !selection) return undefined;
+	// `pt_BR` as written in some projects: Intl needs `pt-BR`
+	locale = locale.replace(/_/g, "-");
+	const key = JSON.stringify([
+		locale,
+		annotation.name,
+		annotation.options ?? [],
+	]);
 	if (!rulesCache.has(key)) {
 		let result: PluralRules | null = null;
 		try {
-			const options: Intl.PluralRulesOptions = { type: "cardinal" };
+			const options: Intl.PluralRulesOptions = {
+				type: selection.type ?? "cardinal",
+			};
 			let known = true;
 			let offset = 0;
 			for (const option of annotation.options ?? []) {
 				const value =
 					option.value.type === "literal" ? option.value.value : undefined;
+				if (annotation.name !== "plural" && option.name === "select") continue; // read by pluralSelection
 				if (
+					annotation.name === "plural" &&
 					option.name === "type" &&
 					(value === "cardinal" || value === "ordinal")
 				)
@@ -172,11 +217,16 @@ export function pluralRules(
 					if (!numbers.has(category)) numbers.set(category, new Set());
 					numbers.get(category)!.add(sample);
 				}
+				const categories = [...rules.resolvedOptions().pluralCategories].sort(
+					(a, b) => PLURAL_ORDER.indexOf(a) - PLURAL_ORDER.indexOf(b)
+				);
 				result = {
 					type: options.type ?? "cardinal",
 					offset,
-					categories: [...rules.resolvedOptions().pluralCategories].sort(
-						(a, b) => PLURAL_ORDER.indexOf(a) - PLURAL_ORDER.indexOf(b)
+					categories,
+					// the samples (0–1000 and decimals) reach every category but those for millions
+					requiredCategories: categories.filter(
+						(category) => category === "other" || numbers.has(category)
 					),
 					singleNumberCategories: [...numbers]
 						.filter(
@@ -197,8 +247,9 @@ export function pluralRules(
 }
 
 /**
- * The plural categories a `plural` selector needs in a locale, in CLDR order.
- * Undefined when the plural rules are unknown, see {@link pluralRules}.
+ * The plural categories of a `plural` selector in a locale, in CLDR order (a
+ * translation needs `pluralRules().requiredCategories` of them). Undefined
+ * when the plural rules are unknown, see {@link pluralRules}.
  */
 export function pluralCategories(
 	selector: string,
@@ -338,9 +389,30 @@ export function selectorGroups(
 		}
 		const rules = pluralRules(name, declarations, message.locale);
 		const exact = exactFor.get(name);
-		const exactNumbers = exact ? literalKeys(exact, all).sort(byNumber) : [];
+		// The reference's exact numbers on this input (its exact-number selector, whatever its
+		// name): needed here too, on this message's exact selector or else on the plural itself.
+		const referenceNumbers = (options.referenceVariants ?? []).flatMap(
+			(variant) =>
+				variant.matches.flatMap((match) =>
+					match.type === "literal-match" &&
+					isNumericKey(match.value) &&
+					resolveAnnotation(match.key, declarations) === undefined &&
+					resolveInputVariable(match.key, declarations) === input
+						? [match.value]
+						: []
+				)
+		);
+		const exactNumbers = [
+			...new Set([
+				...(exact ? literalKeys(exact, all) : []),
+				...referenceNumbers,
+			]),
+		].sort(byNumber);
 		const own = literalKeys(name, variants);
 		const categories = (rules?.categories ?? []).filter(
+			(category) => category !== "other"
+		);
+		const required = (rules?.requiredCategories ?? []).filter(
 			(category) => category !== "other"
 		);
 		const numbers = [
@@ -366,7 +438,7 @@ export function selectorGroups(
 				...others,
 				"*",
 			],
-			requiredKeys: [...exactNumbers, ...categories, "*"],
+			requiredKeys: [...exactNumbers, ...required, "*"],
 			values: (key) => {
 				if (!exact) return { [name]: key };
 				if (key === "*") return { [exact]: "*", [name]: "*" };
@@ -423,21 +495,49 @@ export function requiredVariants(
 
 /**
  * True when a variant is the form for a match combination. An explicit
- * `other` of a plural selector is its catch-all form as well.
+ * `other` of a plural selector is its catch-all form as well, and an exact
+ * number may be on the exact-number selector or on the plural of the same
+ * input (`countPluralExact=0, countPlural=*` and `countPlural=0`).
  */
 export function variantCovers(
 	variant: WithMatches,
 	matches: readonly Match[],
 	declarations: readonly Declaration[] | undefined
 ): boolean {
+	const input = (key: string) => resolveInputVariable(key, declarations);
+	// An exact number on the exact-number selector (`countPluralExact=0, countPlural=*`) is
+	// the same form as that number on the plural selector (`countPluralExact=*, countPlural=0`).
+	const exactOnPlural = (number: string, exactKey: string) =>
+		matches.some(
+			(other) =>
+				other.type === "catchall-match" &&
+				other.key !== exactKey &&
+				isPluralSelector(other.key, declarations) &&
+				input(other.key) === input(exactKey) &&
+				matchValue(variant, other.key) === number
+		);
 	return matches.every((match) => {
 		const actual = matchValue(variant, match.key);
 		if (actual === (match.type === "literal-match" ? match.value : "*"))
 			return true;
+		if (match.type === "literal-match")
+			return (
+				actual === "*" &&
+				isNumericKey(match.value) &&
+				!isPluralSelector(match.key, declarations) &&
+				exactOnPlural(match.value, match.key)
+			);
+		if (!isPluralSelector(match.key, declarations)) return false;
+		if (actual === "other") return true;
 		return (
-			match.type === "catchall-match" &&
-			actual === "other" &&
-			isPluralSelector(match.key, declarations)
+			isNumericKey(actual) &&
+			matches.some(
+				(other) =>
+					other.type === "literal-match" &&
+					other.value === actual &&
+					!isPluralSelector(other.key, declarations) &&
+					input(other.key) === input(match.key)
+			)
 		);
 	});
 }

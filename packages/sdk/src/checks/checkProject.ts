@@ -16,6 +16,7 @@ const ALL_CHECKS: readonly CheckId[] = [
 	"unknown-variable",
 	"missing-markup",
 	"missing-variant",
+	"missing-selector",
 ];
 /** Checks that compare translation patterns and therefore read them. */
 const PATTERN_CHECKS: readonly CheckId[] = [
@@ -25,6 +26,7 @@ const PATTERN_CHECKS: readonly CheckId[] = [
 	"unknown-variable",
 	"missing-markup",
 	"missing-variant",
+	"missing-selector",
 ];
 
 /** Checks derived project state without mutation, subscriptions or file I/O. */

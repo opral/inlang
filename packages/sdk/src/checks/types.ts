@@ -34,6 +34,7 @@ export type CheckId =
 	| "unknown-variable"
 	| "missing-markup"
 	| "missing-variant"
+	| "missing-selector"
 	| "unused-message";
 export type CheckStatus = {
 	id: CheckId;
@@ -86,6 +87,14 @@ export type CheckDiagnostic = DiagnosticBase &
 				name: string;
 				/** The reference variable the name most likely meant. */
 				suggestion?: string;
+		  }
+		| {
+				checkId: "missing-selector";
+				messageId: string;
+				/** The input the reference chooses by ("gender", "count"). */
+				name: string;
+				/** The reference's selector on it ("gender", "countPlural"). */
+				selector: string;
 		  }
 		| {
 				checkId: "missing-variant";
