@@ -9,6 +9,7 @@ import type {
 import type { plugin } from "../plugin.js";
 import { unflatten } from "flat";
 import { matchSpecificity } from "./matchSpecificity.js";
+import { zeroCategorySelectsNonZero } from "./zeroCategory.js";
 import type { PluginSettings } from "../settings.js";
 
 export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
@@ -120,6 +121,9 @@ function serializeMessage(
 		(selector) => selector.name === "countOrdinal"
 	);
 	const result = [];
+	// keys written by an exact `count = 0` form and by a `zero` category form
+	const exactZeroKeys = new Set<string>();
+	const zeroCategoryKeys = new Set<string>();
 
 	// emit base keys first and the most specific keys last, mirroring how
 	// i18next files are conventionally written
@@ -181,6 +185,7 @@ function serializeMessage(
 			// `_zero` suffix (its Intl category fallback variant derives the
 			// same key), see https://github.com/opral/inlang/issues/4357
 			key += "_zero";
+			exactZeroKeys.add(key);
 		} else if (ordinalMatch !== undefined) {
 			// ordinal plurals use the reserved `_ordinal_<category>` suffix,
 			// see https://github.com/opral/inlang/issues/4358
@@ -190,6 +195,13 @@ function serializeMessage(
 				pluralTypeMatch?.value === "ordinal"
 					? `_ordinal_${pluralMatch.value}`
 					: `_${pluralMatch.value}`;
+		}
+		if (
+			pluralMatch?.value === "zero" &&
+			pluralTypeMatch?.value !== "ordinal" &&
+			key.endsWith("_zero")
+		) {
+			zeroCategoryKeys.add(key);
 		}
 		// two forms can map to one key: in Latvian `_zero` is both the exact
 		// `count = 0` form and the plural category "zero" (10, 11–19, …).
@@ -208,6 +220,20 @@ function serializeMessage(
 			continue;
 		}
 		result.push({ key, value: pattern, locale: message.locale });
+	}
+
+	// Where the `zero` category selects more than 0 (Latvian: 10, 11–19, 20,
+	// …), i18next uses `_zero` for all of those counts. An exact 0 alone would
+	// make them show the text for 0, so it needs a `zero` form with the same
+	// text (a differing text is rejected above).
+	if (zeroCategorySelectsNonZero(message.locale)) {
+		for (const key of exactZeroKeys) {
+			if (!zeroCategoryKeys.has(key)) {
+				throw new Error(
+					`i18next export cannot represent the exact number =0 of bundle "${bundle.id}" (${message.locale}) as "${key}": in ${message.locale}, i18next also uses "_zero" for every count of the plural category "zero" (e.g. 10, 11–19, 20). Add a "zero" form with the same text or remove the exact 0 form.`
+				);
+			}
+		}
 	}
 
 	return result;

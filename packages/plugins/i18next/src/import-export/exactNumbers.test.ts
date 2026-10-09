@@ -4,6 +4,7 @@ import type { Bundle, Declaration, Message, Variant } from "@inlang/sdk";
 import icuPlugin from "@inlang/plugin-icu1";
 import { importFiles } from "./importFiles.js";
 import { exportFiles } from "./exportFiles.js";
+import { zeroCategorySelectsNonZero } from "./zeroCategory.js";
 
 // Exact numbers in the shape `@inlang/plugin-icu1` imports
 // `{count, plural, =0 {…} one {…} other {…}}` and editors create them
@@ -422,6 +423,84 @@ test("an exact 0 and a different zero-category text are rejected", async () => {
 	);
 });
 
+// In Latvian, i18next uses `_zero` for every count of the "zero" category
+// (0, 10, 11–19, 20, …). An ICU `=0` alone would show its text for 10 too.
+test("rejects a Latvian exact 0 without a zero-category form", async () => {
+	const imported = await icuImport({
+		lv: {
+			item: "{count, plural, =0 {nav} one {{count} vienība} other {{count} vienības}}",
+		},
+	});
+	await expect(runExport(withIds(imported))).rejects.toThrow(
+		'i18next export cannot represent the exact number =0 of bundle "item" (lv) as "item_zero"'
+	);
+});
+
+test("a Latvian exact 0 with the same zero-category text exports with matching lookups", async () => {
+	const imported = await icuImport({
+		lv: {
+			item: "{count, plural, =0 {{count} vienību} zero {{count} vienību} one {{count} vienība} other {{count} vienības}}",
+			friend:
+				"{context, select, male {{count, plural, =0 {nav} one {draugs} other {draugi}}} other {{count, plural, =0 {{count} draugu} zero {{count} draugu} one {draugs} other {draugi}}}}",
+		},
+	});
+	// the male exact 0 has no zero form
+	await expect(runExport(withIds(imported))).rejects.toThrow(
+		'(lv) as "friend_male_zero"'
+	);
+
+	imported.bundles = imported.bundles.filter((bundle) => bundle.id === "item");
+	imported.messages = imported.messages.filter((m) => m.bundleId === "item");
+	imported.variants = imported.variants.filter(
+		(v) => v.messageBundleId === "item"
+	);
+	const exported = await runExport(withIds(imported), {
+		variableReferencePattern: ["{", "}"],
+	});
+	expect(exported).toStrictEqual({
+		lv: {
+			item: "{count} vienības",
+			item_one: "{count} vienība",
+			item_zero: "{count} vienību",
+		},
+	});
+	const t = await runtime(exported, ["{", "}"]);
+	expect(t("item", { lng: "lv", count: 0 })).toBe("0 vienību");
+	expect(t("item", { lng: "lv", count: 10 })).toBe("10 vienību");
+	expect(t("item", { lng: "lv", count: 1 })).toBe("1 vienība");
+	expect(t("item", { lng: "lv", count: 2 })).toBe("2 vienības");
+});
+
+test("locales with underscores resolve their plural rules", async () => {
+	expect(zeroCategorySelectsNonZero("pt_BR")).toBe(false);
+	expect(zeroCategorySelectsNonZero("lv_LV")).toBe(true);
+	expect(zeroCategorySelectsNonZero("lv-LV")).toBe(true);
+
+	const imported = await runImport({
+		pt_BR: { item_zero: "Nenhum", item_one: "Um", item_other: "{{count}}" },
+	});
+	expect(
+		imported.variants.filter((variant) =>
+			variant.matches?.some(
+				(match) =>
+					match.type === "literal-match" &&
+					match.key === "countPlural" &&
+					match.value === "zero"
+			)
+		)
+	).toStrictEqual([]);
+});
+
+async function icuImport(files: Record<string, Record<string, string>>) {
+	return (await icuPlugin.importFiles!({
+		files: Object.entries(files).map(([locale, json]) => ({
+			locale,
+			content: new TextEncoder().encode(JSON.stringify(json)),
+		})),
+		settings: {} as any,
+	})) as Imported;
+}
+
 type Imported = Awaited<ReturnType<typeof importFiles>>;
 type Exportable = {
 	bundles: Bundle[];
@@ -507,7 +586,7 @@ async function runExport(
 	const files = await exportFiles({
 		settings: {
 			baseLocale: "en",
-			locales: ["en", "fr", "de", "ar", "lv"],
+			locales: ["en", "fr", "de", "ar", "lv", "pt_BR"],
 			"plugin.inlang.i18next": {
 				pathPattern: "./{locale}.json",
 				...pluginSettings,

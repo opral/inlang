@@ -1,8 +1,8 @@
 import type { Declaration } from "@inlang/sdk";
 
 /**
- * Returns the selector names in message order, with every exact-number
- * selector moved directly before the plural of the same input.
+ * Returns the selector names in message order. An exact-number selector that
+ * comes after the plural of the same input is moved directly before it.
  *
  * That pair is how `@inlang/plugin-icu1` and editors (`addExactNumber`)
  * express ICU `{count, plural, =0 {…} one {…} other {…}}`:
@@ -58,6 +58,10 @@ export function orderSelectors(
 		);
 		if (exact === undefined) continue;
 		paired.add(exact);
+		// an exact number already before its plural keeps its place, also
+		// with other selectors in between (`countPluralExact, gender,
+		// countPlural`): it already wins over the plural
+		if (result.indexOf(exact) < result.indexOf(plural)) continue;
 		result.splice(result.indexOf(exact), 1);
 		result.splice(result.indexOf(plural), 0, exact);
 	}

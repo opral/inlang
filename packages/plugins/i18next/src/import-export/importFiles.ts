@@ -10,6 +10,7 @@ import type { plugin } from "../plugin.js";
 import { flatten } from "flat";
 import type { BundleImport, MessageImport, VariantImport } from "@inlang/sdk";
 import { matchSpecificity } from "./matchSpecificity.js";
+import { zeroCategorySelectsNonZero } from "./zeroCategory.js";
 import type { PluginSettings } from "../settings.js";
 
 export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
@@ -715,34 +716,4 @@ function classifyKey(
 		isZero,
 		hasContext: context !== undefined,
 	};
-}
-
-const zeroCategoryCache = new Map<string, boolean>();
-
-/**
- * True when the cardinal plural category "zero" of `locale` selects numbers
- * other than 0 (Latvian: 10, 11–19, 20, …), so i18next's `_zero` key is also
- * a plural category there and not only the exact `count === 0` form.
- *
- * Unknown locales are treated as "yes", which keeps the category variant.
- */
-export function zeroCategorySelectsNonZero(locale: string): boolean {
-	const cached = zeroCategoryCache.get(locale);
-	if (cached !== undefined) return cached;
-	let result = true;
-	try {
-		const rules = new Intl.PluralRules(locale);
-		const language = (tag: string) => tag.split(/[-_]/)[0]!.toLowerCase();
-		if (language(rules.resolvedOptions().locale) === language(locale)) {
-			result =
-				rules.resolvedOptions().pluralCategories.includes("zero") &&
-				[...Array.from({ length: 1000 }, (_, n) => n + 1), 0.1, 0.5, 1.5].some(
-					(n) => rules.select(n) === "zero"
-				);
-		}
-	} catch {
-		// invalid locale tag: keep the conservative default
-	}
-	zeroCategoryCache.set(locale, result);
-	return result;
 }

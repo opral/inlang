@@ -248,7 +248,9 @@ i18next looks up `key_zero` whenever `count === 0`, in every language and before
 |---|---|
 | exact `0` on `count`, or on an un-annotated alias of it such as `.local countPluralExact = {$count}` (ICU `{count, plural, =0 {…}}`, editors' "add exact number") | `key_zero` |
 | `countPlural` category `zero` (Latvian, Arabic, …) | `key_zero` |
-| other exact numbers (`=1`, `=5`), an exact number of an ordinal plural | not representable: export fails with an error naming the bundle and number |
+| other exact numbers (`=1`, `=5`), an exact number of an ordinal plural, a Latvian exact `0` without a `zero` form of the same text | not representable: export fails with an error naming the bundle and number |
+
+Where the `zero` category covers more than 0 (Latvian: 10, 11–19, 20, …), i18next uses `key_zero` for all of those counts, so an exact `0` alone cannot be expressed: its text would also show for 10, 11, 20. There an exact `0` exports only next to a `zero` form with the same text; otherwise the export fails with an error.
 
 On import, `key_zero` becomes one form: an exact `count = 0` match next to `countPlural`. Editors and the inlang SDK treat `count` and `countPlural` as one choice, like `countPluralExact` and `countPlural`. Only where the `zero` category also selects other numbers (Latvian: 10, 11–19, 20, …) is a second form with `countPlural = zero` imported. Both forms export to `key_zero`, so they need the same text; if they differ, the export fails instead of dropping one.
 

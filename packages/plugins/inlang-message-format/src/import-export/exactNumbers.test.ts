@@ -232,6 +232,48 @@ test("repairs a plural written before its exact number (sorted by earlier versio
 	]);
 });
 
+test("an exact number already before its plural keeps its place", async () => {
+	const exported = await runExport({
+		bundles: [
+			{
+				id: "items",
+				declarations: [
+					{ type: "input-variable", name: "gender" },
+					...exactPluralDeclarations,
+				],
+			},
+		],
+		messages: [
+			{
+				id: "items-en",
+				bundleId: "items",
+				locale: "en",
+				selectors: [
+					{ type: "variable-reference", name: "countPluralExact" },
+					{ type: "variable-reference", name: "gender" },
+					{ type: "variable-reference", name: "countPlural" },
+				],
+			},
+		],
+		variants: [
+			variant(
+				"items-en",
+				{ gender: "*", countPluralExact: "*", countPlural: "*" },
+				"Items"
+			),
+		],
+	});
+	expect(exported.en.items[0].selectors).toStrictEqual([
+		"countPluralExact",
+		"gender",
+		"countPlural",
+	]);
+	const reimported = await runImport(exported);
+	expect(
+		reimported.messages[0]?.selectors?.map((selector) => selector.name)
+	).toStrictEqual(["countPluralExact", "gender", "countPlural"]);
+});
+
 test("the input itself pairs with its plural as exact-number selector", async () => {
 	const exported = await runExport({
 		bundles: [
