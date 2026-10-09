@@ -1,4 +1,5 @@
 import type { Match } from "@inlang/sdk";
+import { styles } from "../../utilities/styles.js";
 import {
   CHECKS,
   type CheckReport,
@@ -8,22 +9,6 @@ import {
 
 /** Incomplete-analysis locations shown in text output; JSON lists all. */
 const MAX_ISSUES = 20;
-
-type Style = (text: string) => string;
-export function styles(color: boolean) {
-  const ansi =
-    (open: number, close: number): Style =>
-    (text) =>
-      color ? `\u001b[${open}m${text}\u001b[${close}m` : text;
-  return {
-    bold: ansi(1, 22),
-    dim: ansi(2, 22),
-    red: ansi(31, 39),
-    green: ansi(32, 39),
-    yellow: ansi(33, 39),
-    cyan: ansi(36, 39),
-  };
-}
 
 export function formatJson(report: CheckReport): string {
   return JSON.stringify(report, undefined, 2) + "\n";

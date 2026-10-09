@@ -135,6 +135,7 @@ If one of the commands can't be found, you probably use an outdated CLI version.
 | **CLI Version** | `npx @inlang/cli@latest [command]`            | Get the latest version of the inlang CLI.                                                                                                                           |
 | **Check**       | `npx @inlang/cli check [options]`             | Check translations for missing, empty or inconsistent messages, and source code for unused messages. Exits with 1 on findings, for CI.                              |
 | **Machine**     | `npx @inlang/cli machine translate [options]` | Automate translation processes. Options include `-f, --force`, `--project <path>`, `--locale <source>` and `--targetLocales <targets...>`                           |
+| **Cloud**       | `npx @inlang/cli cloud`                       | See what's coming in inlang Cloud and tell us what your team needs.                                                                                                 |
 | **Plugin**      | `npx @inlang/cli plugin [command]`            | Interact with Inlang plugins, including initialization and building. `build [options]` build an inlang module. Options include `--type`, `--entry`, and `--outdir`. |
 
 ---
@@ -164,7 +165,11 @@ Commands:
                      messages, and source code for unused messages.
   machine [command]  Commands for automating translations.
   plugin [command]   Commands for inlang plugins.
+  cloud [options]    See what's coming in inlang Cloud and tell us what you
+                     need.
   help [command]     display help for command
+
+Coming soon: hosted AI translation and handoff between design, translation and code. Run `inlang cloud`.
 ```
 
 The following commands are available with the inlang CLI:
@@ -366,6 +371,28 @@ A message is only reported as unused when every usage in the analyzed source cou
 - `checks`: the status of each check that ran: `complete`, `incomplete` or `unavailable`, with a `reason`. An incomplete `unused-message` check lists `issues` with `path`, `start`, `end` and the `code` there (1-based lines, 0-based columns).
 - `diagnostics`: findings, identified by `checkId`, `bundleId`, `locale` and, for a form, `matches`; the other fields depend on the check (`name` of a variable or markup, `suggestion`, `values`).
 - `summary`: the number of findings, project errors and findings per check.
+
+## `cloud`
+
+inlang Cloud is coming: hosted services on top of your inlang project, as Parrot and Fink show them.
+
+- **Automatic handoff between designers, developers, and translators** through a CLI, REST API, or your CI.
+- **AI translation** that fills in every missing language at once.
+- **Your terminology and tone**: product names stay as they are and your style guide is followed.
+- **Translations that fit the design**: knows buttons from headings and keeps text within its space.
+- **Smart message keys** like `checkout.continue_button`, generated for you.
+
+```sh
+npx @inlang/cli cloud
+```
+
+`cloud` lists these features and opens a short form where you can tell us what your team needs. For Paraglide JS projects, the form has Paraglide JS pre-selected.
+
+### Cloud options
+
+- `--project <path>`: Path to the inlang project, used to tell which product you use (default `./project.inlang`).
+- `--no-open`: Print the form's URL instead of opening the browser. The browser is never opened in CI, when the output is piped, or on Linux without a display.
+- `--json`: Print the features and the form's URL as JSON.
 
 ## Deprecated commands
 

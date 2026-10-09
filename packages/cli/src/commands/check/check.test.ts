@@ -1,5 +1,6 @@
 /**
- * End-to-end: builds the CLI and runs `inlang check` against a Paraglide-style
+ * End-to-end tests of the built CLI (`check`, `cloud`, `--help` and the
+ * deprecated commands). Builds the CLI and runs it against a Paraglide-style
  * fixture (`test/fixtures/check-app`) with the workspace's message-format and
  * m-function-matcher plugins as local modules.
  */
@@ -325,9 +326,11 @@ describe("inlang check", { timeout: 60_000 }, () => {
 });
 
 describe("deprecated commands", { timeout: 60_000 }, () => {
-  test("--help lists check but hides validate and lint", async () => {
+  test("--help lists check and cloud but hides validate and lint", async () => {
     const { stdout } = await run(app(), ["--help"]);
     expect(stdout).toMatch(/^\s+check \[options\]/m);
+    expect(stdout).toMatch(/^\s+cloud \[options\]/m);
+    expect(stdout).toContain("Run `inlang cloud`.");
     expect(stdout).not.toMatch(/^\s+validate/m);
     expect(stdout).not.toMatch(/^\s+lint/m);
   });
@@ -352,5 +355,17 @@ describe("deprecated commands", { timeout: 60_000 }, () => {
     );
     expect(stdout).toContain("welcome_back  pt-BR  no translation");
     expect(code).toBe(0);
+  });
+});
+
+describe("inlang cloud", { timeout: 60_000 }, () => {
+  test("prints the features and the form without opening a browser when piped", async () => {
+    const { code, stdout } = await run(app(), ["cloud"]);
+    expect(code).toBe(0);
+    expect(stdout).toContain("inlang Cloud · coming soon");
+    expect(stdout).toContain("AI translation");
+    // the fixture uses the m-function matcher, so Paraglide JS is pre-selected
+    expect(stdout).toContain("entry.14901479=Paraglide+JS");
+    expect(stdout).not.toContain("Opened");
   });
 });
