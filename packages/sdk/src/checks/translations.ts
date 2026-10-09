@@ -211,12 +211,24 @@ export function checkTranslation(args: {
 			keys.every((key) => matchValue(form, key) === matchValue(variant, key))
 		);
 	};
-	// A plural's input ("count") is needed in every form of the plural that is not one number.
-	const pluralInputs = [
-		...new Set(
-			groups.filter((group) => group.isPlural).map((group) => group.input)
-		),
-	].filter((input) => variables.includes(input));
+	// Of those, the form for the same plural category, else the reference's other form: what
+	// the variant's text should carry (markup or a variable only `one` uses stays in `one`).
+	const isOther = (value: string) => value === "*" || value === "other";
+	const categoryForms = (variant: VariantLike, forms: VariantLike[]) => {
+		for (const group of groups) {
+			if (!group.isPlural) continue;
+			const value = matchValue(variant, group.selector);
+			const same = forms.filter((form) => {
+				const other = matchValue(form, group.selector);
+				return other === value || (isOther(value) && isOther(other));
+			});
+			const fallback = forms.filter((form) =>
+				isOther(matchValue(form, group.selector))
+			);
+			forms = same.length ? same : fallback.length ? fallback : forms;
+		}
+		return forms;
+	};
 	for (const variant of target.variants) {
 		if (isEmptyPattern(variant.pattern)) {
 			issues.push({
@@ -230,11 +242,20 @@ export function checkTranslation(args: {
 		const variantId = variant.id;
 		const forms = sameForms(variant);
 		const exempt = spelledOut(variant);
+		const category = categoryForms(variant, forms);
+		// A plural's input ("count") is needed in every form that isn't one number when the
+		// reference uses it in the forms with these select values and exact numbers.
+		const inputs = groups
+			.filter((group) => group.isPlural)
+			.map((group) => group.input)
+			.filter((input) =>
+				forms.some((form) => variableNames(form.pattern).includes(input))
+			);
 		const expected = forms.length
 			? [
 					...new Set([
-						...forms.flatMap((form) => variableNames(form.pattern)),
-						...pluralInputs,
+						...category.flatMap((form) => variableNames(form.pattern)),
+						...inputs,
 					]),
 				]
 			: variables;
@@ -261,7 +282,7 @@ export function checkTranslation(args: {
 			}
 		const tags = markupNames(variant.pattern);
 		const expectedMarkup = forms.length
-			? [...new Set(forms.flatMap((form) => markupNames(form.pattern)))]
+			? [...new Set(category.flatMap((form) => markupNames(form.pattern)))]
 			: markup;
 		for (const name of expectedMarkup)
 			if (!tags.includes(name))
@@ -288,7 +309,9 @@ export function checkTranslation(args: {
 				(pluralRules(group.selector, declarations, target.locale)
 					?.requiredCategories.length ?? 1) > 1;
 			if (!own.length) {
-				if (numbers.length || needsPlural) report(group.selector, numbers);
+				if (needsPlural) report(group.selector, []);
+				if (numbers.length)
+					report(group.exactSelector ?? group.selector, numbers);
 				continue;
 			}
 			if (needsPlural && !own.some((value) => value.isPlural))
