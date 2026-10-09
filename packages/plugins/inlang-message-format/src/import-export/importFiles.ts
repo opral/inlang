@@ -227,7 +227,12 @@ function parseVariants(
 			selectors: [],
 		};
 	}
-	const complexMessage = value[0]!;
+	const complexMessage = Array.isArray(value) ? value[0] : undefined;
+	if (typeof complexMessage !== "object" || complexMessage === null) {
+		throw new Error(
+			`The message "${bundleId}" (${locale}) is neither a string nor a complex message (an array with an object of declarations, selectors and match): ${JSON.stringify(value)}`
+		);
+	}
 	// multi variant
 	const variants: VariantImport[] = [];
 	const selectors: VariableReference[] = (

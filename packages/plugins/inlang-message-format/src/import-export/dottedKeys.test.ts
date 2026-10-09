@@ -354,6 +354,119 @@ describe("import of arrays and match objects the published plugin wrote", () => 
 	});
 });
 
+describe("a complex message next to a key that starts with its key", () => {
+	// What the published plugin wrote for `items.title` before the plural
+	// `items`: `unflatten` put the complex message into the object of
+	// `items.title` under the key "0". In German, a plain string next to the
+	// English plural, it is the complex form with `selectors: []`.
+	const files = {
+		en: `{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"items": {
+		"0": {
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "One item",
+				"countPlural=*": "{count} items"
+			}
+		},
+		"title": "Items"
+	}
+}`,
+		de: `{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"items": {
+		"0": {
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [],
+			"match": [
+				"Artikel"
+			]
+		},
+		"title": "Artikel"
+	}
+}`,
+	};
+
+	test("is read as the message of its key", async () => {
+		const imported = await importTexts(files);
+		expect(
+			[...new Set(imported.bundles.map((bundle) => bundle.id))].sort()
+		).toEqual(["items", "items.title"]);
+		expect(textsOf(imported, "items")).toEqual({
+			"countPlural=one": "One item",
+			"countPlural=*": "{count} items",
+		});
+		expect(textsOf(imported, "items", "de")).toEqual({ "": "Artikel" });
+		expect(textsOf(imported, "items.title", "de")).toEqual({
+			"": "Artikel",
+		});
+	});
+
+	test("stays byte-identical when exported with the files, and is written in the current form in full", async () => {
+		const rows = rowsOf(await importTexts(files));
+		expect(await exportTexts(rows, { files })).toEqual(files);
+		const whole = await exportTexts(rows);
+		expect(JSON.parse(whole.en!)).toEqual({
+			$schema: "https://inlang.com/schema/inlang-message-format",
+			items: [
+				{
+					declarations: ["input count", "local countPlural = count: plural"],
+					selectors: ["countPlural"],
+					match: {
+						"countPlural=one": "One item",
+						"countPlural=*": "{count} items",
+					},
+				},
+			],
+			"items.title": "Items",
+		});
+		expect(JSON.parse(whole.de!)).toEqual({
+			$schema: "https://inlang.com/schema/inlang-message-format",
+			items: "Artikel",
+			"items.title": "Artikel",
+		});
+		expect(contentOf(await importTexts(whole))).toEqual(
+			contentOf(await importTexts(files))
+		);
+	});
+
+	test("an edit is not lost", async () => {
+		const rows = rowsOf(await importTexts(files));
+		rows.variants.find(
+			(variant) => variant.messageId === "items.title/en"
+		)!.pattern = [{ type: "text", value: "Products" }];
+		rows.variants.find((variant) => variant.messageId === "items/de")!.pattern =
+			[{ type: "text", value: "Produkte" }];
+		const exported = await exportTexts(rows, { files });
+		// the edited files are written in full, the old text is gone
+		expect(exported.en).not.toContain('"title"');
+		expect(exported.de).not.toContain('"title"');
+		expect(exported.de).toContain('"items.title": "Artikel"');
+		const reimported = await importTexts(exported);
+		expect(textsOf(reimported, "items.title")).toEqual({ "": "Products" });
+		expect(textsOf(reimported, "items", "de")).toEqual({ "": "Produkte" });
+		expect(textsOf(reimported, "items")).toEqual({
+			"countPlural=one": "One item",
+			"countPlural=*": "{count} items",
+		});
+	});
+});
+
+test("a value that is no message is an error that names its key", async () => {
+	await expect(importTexts({ en: { a: { b: [] } } })).rejects.toThrow(/"a\.b"/);
+	await expect(importTexts({ en: { a: 5 } })).rejects.toThrow(/"a"/);
+});
+
 describe("export of keys with dots", () => {
 	test("number segments are object keys, not arrays", async () => {
 		const imported = await importTexts({ en: writtenByPublishedPlugin });

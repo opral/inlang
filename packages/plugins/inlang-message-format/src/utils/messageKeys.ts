@@ -64,17 +64,42 @@ export function messageKeyPath(
  * Like `flatten(json, { safe: true })` of the `flat` package, which earlier
  * versions used, except for arrays that are not a complex message: they are
  * objects with number keys, as `unflatten` wrote them. `null` in them is a
- * hole, not a message.
+ * hole, not a message. And a complex message under the key `"0"` of an
+ * object, `{ "a": { "0": {…}, "b": … } }`, is the message of the object's key
+ * (`a`), which `unflatten` wrote that way if `a.b` came before `a`.
  */
 export function flattenMessageKeys(
 	json: Record<string, unknown>
 ): Map<string, unknown> {
 	const result = new Map<string, unknown>();
-	const visit = (key: string, value: unknown) => {
+	// keys of the messages in an object with a legacy complex message
+	const legacy = new Set<string>();
+	const set = (key: string, value: unknown, inLegacy: boolean) => {
+		if (inLegacy) legacy.add(key);
+		// A message in such an object wins over the same key elsewhere, e.g. a
+		// flat `"a.b"` that a later export added for an edit while it kept
+		// the object. The file then reads differently from the data, and the
+		// export writes it in full.
+		else if (legacy.has(key)) return;
+		// the last of two equal keys wins, at the position of the first
+		result.set(key, value);
+	};
+	const visit = (key: string, value: unknown, inLegacy: boolean) => {
 		if (isObject(value) && Object.keys(value).length > 0) {
+			const legacyObject = key !== "" && isComplexMessageObject(value["0"]);
 			for (const child of Object.keys(value)) {
+				if (legacyObject && child === "0") {
+					// `unflatten` wrote the complex message `a` as `{ "0": … }`
+					// into the object of a key after it, e.g. `a.b`
+					set(key, [value[child]], true);
+					continue;
+				}
 				// `flatten` doesn't join to an empty key
-				visit(key ? `${key}.${child}` : child, value[child]);
+				visit(
+					key ? `${key}.${child}` : child,
+					value[child],
+					inLegacy || legacyObject
+				);
 			}
 		} else if (
 			Array.isArray(value) &&
@@ -83,15 +108,14 @@ export function flattenMessageKeys(
 		) {
 			value.forEach((item, index) => {
 				if (item === null || item === undefined) return;
-				visit(key ? `${key}.${index}` : String(index), item);
+				visit(key ? `${key}.${index}` : String(index), item, inLegacy);
 			});
 		} else {
-			// the last of two equal keys wins, at the position of the first
-			result.set(key, value);
+			set(key, value, inLegacy);
 		}
 	};
 	for (const key of Object.keys(json)) {
-		visit(key, json[key]);
+		visit(key, json[key], false);
 	}
 	return result;
 }
@@ -114,6 +138,20 @@ function isComplexMessage(value: unknown[]): boolean {
 			(typeof first.match === "object" && first.match !== null)) &&
 		(!has("declarations") || Array.isArray(first.declarations)) &&
 		(!has("selectors") || Array.isArray(first.selectors))
+	);
+}
+
+/**
+ * An object that is all of a complex message, `{ declarations: […],
+ * selectors: […], match: {…} }`, as earlier versions wrote it.
+ */
+function isComplexMessageObject(value: unknown): boolean {
+	return (
+		isObject(value) &&
+		Array.isArray(value.declarations) &&
+		Array.isArray(value.selectors) &&
+		typeof value.match === "object" &&
+		value.match !== null
 	);
 }
 

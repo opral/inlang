@@ -578,6 +578,81 @@ describe("message-format", () => {
 		}
 	});
 
+	test('a plural `items` after `items.title`: the published plugin wrote it as `items: { "0": {…}, "title": … }` and couldn\'t read it back; it is read as the plural', async () => {
+		const source: Record<string, string> = {
+			en: JSON.stringify({
+				"items.title": "Items",
+				items: [
+					{
+						declarations: ["input count", "local countPlural = count: plural"],
+						selectors: ["countPlural"],
+						match: {
+							"countPlural=one": "One item",
+							"countPlural=*": "{count} items",
+						},
+					},
+				],
+			}),
+			de: JSON.stringify({ "items.title": "Artikel", items: "Artikel" }),
+		};
+		const asImport = (files: Record<string, string>) =>
+			Object.entries(files).map(([locale, content]) => ({
+				locale,
+				content: encode(content),
+			}));
+		const published = await open(f, "published", "published");
+		await published.importFiles({ pluginKey: f.key, files: asImport(source) });
+		const expected = textsOf(await selectRows(published));
+		const written = Object.fromEntries(
+			(await published.exportFiles({ pluginKey: f.key })).map((file) => [
+				file.locale,
+				decode(file.content),
+			])
+		);
+		await published.close();
+		expect(Object.keys(JSON.parse(written.en!).items)).toEqual(["0", "title"]);
+		expect(JSON.parse(written.de!).items["0"].selectors).toEqual([]);
+		// the published plugin can't read it back
+		const reimported = await open(f, "published", "published");
+		await expect(
+			reimported.importFiles({ pluginKey: f.key, files: asImport(written) })
+		).rejects.toThrow();
+		await reimported.close();
+
+		for (const { sdk, plugin } of upgrades) {
+			const label = `${sdk} SDK with the ${plugin} plugin`;
+			const current = await open(f, sdk, plugin);
+			await current.importFiles({ pluginKey: f.key, files: asImport(written) });
+			expect(textsOf(await selectRows(current)), label).toEqual(expected);
+			const after = JSON.parse(await exportLocale(current, f));
+			await current.close();
+			expect(Object.keys(after), label).toEqual([
+				"$schema",
+				"items",
+				"items.title",
+			]);
+			expect(Array.isArray(after.items), label).toBe(true);
+		}
+
+		// SDK 4 passes the files: they stay byte-identical
+		const current = await open(f, "current", "current");
+		await current.importFiles({ pluginKey: f.key, files: asImport(written) });
+		const files = await (current.exportFiles as any)({
+			pluginKey: f.key,
+			files: Object.entries(written).map(([locale, content]) => ({
+				path: `./messages/${locale}.json`,
+				locale,
+				content: encode(content),
+			})),
+		});
+		expect(
+			Object.fromEntries(
+				files.map((file: any) => [file.locale, decode(file.content)])
+			)
+		).toEqual(written);
+		await current.close();
+	});
+
 	test("sort: the published plugin also sorted the variants of a message, which put the catch-all first, where runtimes that try the variants in file order always select it; the order of the variants is kept", async () => {
 		const sorted = {
 			...f,
