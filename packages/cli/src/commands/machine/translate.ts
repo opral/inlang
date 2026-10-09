@@ -169,6 +169,15 @@ export async function translateCommandAction(args: {
       // Unchanged bundles aren't written back.
       if (bundle.data && (bundle.translated ?? 0) > 0) {
         await upsertBundleNested(args.project.db, bundle.data);
+        // variants that got a new id to keep the order of the source
+        // message; deleted after the write, so that nothing is lost if it
+        // fails
+        if (bundle.replacedVariantIds?.length) {
+          await args.project.db
+            .deleteFrom("inlang_variant")
+            .where("id", "in", bundle.replacedVariantIds)
+            .execute();
+        }
         translated += bundle.translated!;
       }
     }

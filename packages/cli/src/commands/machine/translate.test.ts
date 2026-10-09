@@ -467,3 +467,54 @@ test("keeps successful translations on disk when others fail", async () => {
     await cleanup();
   }
 });
+
+test("a translated plural form goes before the existing catch-all, other entries stay byte-identical", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "demosjarco");
+  const plural = (match: string) =>
+    `[{"declarations": ["input count", "local countPlural = count: plural"], "selectors": ["countPlural"], "match": {${match}}}]`;
+  const en = `{\n  "items": ${plural('"countPlural=one": "One item", "countPlural=*": "Many items"')},\n  "alpha": "Alpha"\n}\n`;
+  // only the catch-all; odd formatting that the exporter wouldn't reproduce
+  const de = `{\n  "alpha":   "Alpha (de)",\n  "items": ${plural('"countPlural=*": "Viele Dinge"')}\n}\n`;
+  const { project, path, read, cleanup } = await projectOnDisk({ en, de });
+  const fetch = vi.fn().mockImplementation(async (url: string) => {
+    const query = new URL(url).searchParams;
+    return Response.json({
+      data: {
+        translations: [
+          { translatedText: `${query.get("q")} (${query.get("target")})` },
+        ],
+      },
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
+  try {
+    await translateAndSave({ project, path });
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    const after = read("de");
+    expect(after.startsWith(`{\n  "alpha":   "Alpha (de)",\n`)).toBe(true);
+    expect(Object.keys(JSON.parse(after).items[0].match)).toEqual([
+      "countPlural=one",
+      "countPlural=*",
+    ]);
+    expect(JSON.parse(after).items[0].match["countPlural=*"]).toBe(
+      "Viele Dinge",
+    );
+    expect(read("en")).toBe(en);
+    // one variant per form in the project, in the order of the file
+    const [bundle] = (await selectBundleNested(project.db).execute()).filter(
+      (bundle) => bundle.id === "items",
+    );
+    const deMessage = bundle!.messages.find((m) => m.locale === "de")!;
+    expect(
+      deMessage.variants.map((variant) => variant.matches[0]!.type),
+    ).toEqual(["literal-match", "catchall-match"]);
+
+    // nothing left to translate: the files stay as they are
+    await translateAndSave({ project, path });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(read("de")).toBe(after);
+  } finally {
+    await cleanup();
+  }
+});
