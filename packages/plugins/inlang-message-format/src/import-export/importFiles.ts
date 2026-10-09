@@ -230,7 +230,7 @@ function parseVariants(
 	const complexMessage = Array.isArray(value) ? value[0] : undefined;
 	if (typeof complexMessage !== "object" || complexMessage === null) {
 		throw new Error(
-			`The message "${bundleId}" (${locale}) is neither a string nor a complex message (an array with an object of declarations, selectors and match): ${JSON.stringify(value)}`
+			`The message "${bundleId}" (${locale}) is neither a string nor a complex message (an array with an object of declarations, selectors and match): ${String(JSON.stringify(value)).slice(0, 100)}`
 		);
 	}
 	// multi variant

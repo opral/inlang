@@ -84,6 +84,44 @@ export function flattenMessageKeys(
 		// the last of two equal keys wins, at the position of the first
 		result.set(key, value);
 	};
+	/**
+	 * A complex message `a` as `unflatten` wrote it, with the keys after it
+	 * that start with `a.0.` and `a.<n>.` in its object and array, e.g.
+	 * `[{ declarations, selectors, match, x }, { y }]` for `a`, `a.0.x` and
+	 * `a.1.y`. Other complex messages in the array are ignored as before.
+	 */
+	const complex = (key: string, items: unknown[], inLegacy: boolean) => {
+		const { declarations, selectors, match, ...rest } = items[0] as Record<
+			string,
+			unknown
+		>;
+		const extra = Object.keys(rest);
+		if (extra.length === 0 && items.length === 1) {
+			set(key, items, inLegacy);
+			return;
+		}
+		set(
+			key,
+			[
+				Object.fromEntries(
+					Object.entries({ declarations, selectors, match }).filter(
+						([, part]) => part !== undefined
+					)
+				),
+			],
+			inLegacy
+		);
+		// like the messages next to `{ "0": … }`, these win over the same key
+		// elsewhere in the file
+		for (const other of extra) {
+			visit(`${key}.0.${other}`, rest[other], true);
+		}
+		items.forEach((item, index) => {
+			if (index === 0 || item === null || item === undefined) return;
+			if (isComplexMessageObject(item)) return;
+			visit(`${key}.${index}`, item, true);
+		});
+	};
 	const visit = (key: string, value: unknown, inLegacy: boolean) => {
 		if (isObject(value) && Object.keys(value).length > 0) {
 			const legacyObject = key !== "" && isComplexMessageObject(value["0"]);
@@ -91,7 +129,7 @@ export function flattenMessageKeys(
 				if (legacyObject && child === "0") {
 					// `unflatten` wrote the complex message `a` as `{ "0": … }`
 					// into the object of a key after it, e.g. `a.b`
-					set(key, [value[child]], true);
+					complex(key, [value[child]], true);
 					continue;
 				}
 				// `flatten` doesn't join to an empty key
@@ -110,6 +148,8 @@ export function flattenMessageKeys(
 				if (item === null || item === undefined) return;
 				visit(key ? `${key}.${index}` : String(index), item, inLegacy);
 			});
+		} else if (Array.isArray(value) && value.length > 0) {
+			complex(key, value, inLegacy);
 		} else {
 			set(key, value, inLegacy);
 		}

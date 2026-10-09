@@ -358,7 +358,9 @@ describe("a complex message next to a key that starts with its key", () => {
 	// What the published plugin wrote for `items.title` before the plural
 	// `items`: `unflatten` put the complex message into the object of
 	// `items.title` under the key "0". In German, a plain string next to the
-	// English plural, it is the complex form with `selectors: []`.
+	// English plural, it is the complex form with `selectors: []`. The
+	// published plugin read it as other messages (`items.0.match.…`)
+	// without `items`, and failed on `selectors: []`.
 	const files = {
 		en: `{
 	"$schema": "https://inlang.com/schema/inlang-message-format",
@@ -456,6 +458,74 @@ describe("a complex message next to a key that starts with its key", () => {
 		expect(textsOf(reimported, "items.title")).toEqual({ "": "Products" });
 		expect(textsOf(reimported, "items", "de")).toEqual({ "": "Produkte" });
 		expect(textsOf(reimported, "items")).toEqual({
+			"countPlural=one": "One item",
+			"countPlural=*": "{count} items",
+		});
+	});
+});
+
+describe("keys after a complex message that start with its key", () => {
+	const plural = {
+		declarations: ["input count", "local countPlural = count: plural"],
+		selectors: ["countPlural"],
+		match: {
+			"countPlural=one": "One item",
+			"countPlural=*": "{count} items",
+		},
+	};
+	// as the published plugin wrote them (`JSON.stringify` with tabs)
+	const file = (items: unknown) =>
+		JSON.stringify(
+			{ $schema: "https://inlang.com/schema/inlang-message-format", items },
+			undefined,
+			"\t"
+		);
+
+	test.each([
+		[
+			// `items.title`, the plural `items`, `items.0.note`
+			"in the object of a key before it",
+			file({ "0": { ...plural, note: "Note" }, title: "Title" }),
+			["items", "items.0.note", "items.title"],
+		],
+		[
+			// the plural `items`, `items.0.note`, `items.1.note`
+			"in the array of the complex message",
+			file([{ ...plural, note: "Note" }, { note: "Second" }]),
+			["items", "items.0.note", "items.1.note"],
+		],
+	])("%s are read as their messages", async (_, en, ids) => {
+		const files = { en };
+		const imported = await importTexts(files);
+		expect(imported.bundles.map((bundle) => bundle.id).sort()).toEqual(ids);
+		expect(textsOf(imported, "items")).toEqual({
+			"countPlural=one": "One item",
+			"countPlural=*": "{count} items",
+		});
+		expect(textsOf(imported, "items.0.note")).toEqual({ "": "Note" });
+		// byte-identical with the files
+		const rows = rowsOf(imported);
+		expect(await exportTexts(rows, { files })).toEqual(files);
+		// an edit is written, and nothing is lost
+		rows.variants.find(
+			(variant) => variant.messageId === "items.0.note/en"
+		)!.pattern = [{ type: "text", value: "Edited" }];
+		const exported = await exportTexts(rows, { files });
+		const reimported = await importTexts(exported);
+		expect(contentOf(reimported).bundles).toEqual(contentOf(imported).bundles);
+		expect(textsOf(reimported, "items.0.note")).toEqual({ "": "Edited" });
+		expect(textsOf(reimported, "items")).toEqual(textsOf(imported, "items"));
+		expect(exported.en).not.toContain('"Note"');
+	});
+
+	test("a second complex message object in the array is ignored as before", async () => {
+		const imported = await importTexts({
+			en: {
+				items: [plural, { ...plural, match: { "countPlural=*": "Other" } }],
+			},
+		});
+		expect(imported.bundles.map((bundle) => bundle.id)).toEqual(["items"]);
+		expect(textsOf(imported, "items")).toEqual({
 			"countPlural=one": "One item",
 			"countPlural=*": "{count} items",
 		});
