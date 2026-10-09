@@ -64,6 +64,20 @@ describe("serializeMessage", () => {
     );
   });
 
+  it("serializes a pound outside a plural as the number it stands for", () => {
+    // e.g. after an editor removed the plural around `# items`
+    const { bundle, message, variants } = buildMessage(
+      "{count, plural, one {# item} other {# items}}",
+    );
+    expect(
+      serializeMessage({
+        bundle,
+        message: { ...message, selectors: [] },
+        variants: [{ ...variants.at(-1)!, matches: [] }],
+      }),
+    ).toBe("{count, number} items");
+  });
+
   it("serializes selectordinal", () => {
     const { bundle, message, variants } = buildMessage(
       "{place, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}",

@@ -64,8 +64,9 @@ export type AddSelectorArgs = {
 
 /**
  * The variables a message can still be made plural / a select by: every declared
- * variable that no message of the bundle uses as a selector yet (input variables
- * first, in declaration order).
+ * variable whose input no message of the bundle chooses by yet (input variables
+ * first, in declaration order). "count" is not offered once `countPlural` (which
+ * reads it) is a selector.
  */
 export function selectableVariables(
 	bundle: Pick<SelectorBundle, "declarations"> & {
@@ -73,9 +74,13 @@ export function selectableVariables(
 	}
 ): string[] {
 	const used = new Set(
-		bundle.messages.flatMap((m) => m.selectors.map((s) => s.name))
+		bundle.messages.flatMap((m) =>
+			m.selectors.map((s) => resolveInputVariable(s.name, bundle.declarations))
+		)
 	);
-	const free = bundle.declarations.filter((d) => !used.has(d.name));
+	const free = bundle.declarations.filter(
+		(d) => !used.has(resolveInputVariable(d.name, bundle.declarations))
+	);
 	return [
 		...free.filter((d) => d.type === "input-variable"),
 		...free.filter((d) => d.type !== "input-variable"),
@@ -109,7 +114,8 @@ function uniqueName(base: string, declarations: readonly Declaration[]) {
  *   to the message of `locale` only
  *
  * Pure: returns a new bundle and leaves the argument untouched. Throws when the
- * variable is not declared or already is a selector.
+ * variable is not declared, already is a selector, or its input already is a
+ * plural (`count` once `countPlural` is a selector).
  *
  * @example
  * const plural = addSelector(bundle, { variable: "count", kind: "plural" });
@@ -125,6 +131,19 @@ export function addSelector<B extends SelectorBundle>(
 	if (!declarations.some((d) => d.name === variable)) {
 		throw new Error(`"${variable}" is not a variable of this message.`);
 	}
+
+	const input = resolveInputVariable(variable, declarations);
+	const plural = bundle.messages
+		.flatMap((m) => m.selectors)
+		.find(
+			(s) =>
+				isPluralSelector(s.name, declarations) &&
+				resolveInputVariable(s.name, declarations) === input
+		);
+	if (plural)
+		throw new Error(
+			`"${input}" is already a plural of this message ("${plural.name}"): use addExactNumber for exact numbers.`
+		);
 
 	let selector = variable;
 	if (kind !== "select") {
@@ -183,23 +202,24 @@ export function addSelector<B extends SelectorBundle>(
 	const messages = bundle.messages.map((message) => {
 		const variants: typeof message.variants = [];
 		for (const variant of message.variants) {
+			// the new forms come before the catch-all, so exports keep "other" last
+			if (message.locale === args.locale)
+				for (const value of values) {
+					variants.push({
+						...copy(variant),
+						id: createId(),
+						matches: [
+							...copy(variant.matches),
+							{ type: "literal-match", key: selector, value },
+						],
+						pattern: [],
+					});
+				}
 			const catchall = { type: "catchall-match", key: selector } as const;
 			variants.push({
 				...copy(variant),
 				matches: [...copy(variant.matches), catchall],
 			});
-			if (message.locale !== args.locale) continue;
-			for (const value of values) {
-				variants.push({
-					...copy(variant),
-					id: createId(),
-					matches: [
-						...copy(variant.matches),
-						{ type: "literal-match", key: selector, value },
-					],
-					pattern: [],
-				});
-			}
 		}
 		return {
 			...copy(message),
@@ -236,6 +256,10 @@ function references(value: unknown, name: string): boolean {
  * default the catch-all), the other forms are dropped. A local variable that was
  * only declared for the selector is removed as well.
  *
+ * Removing a plural removes its exact-number selector (ICU `=0`) too; `keep` may
+ * then also be one of its numbers ("0"). Removing only the exact-number selector
+ * keeps the plural.
+ *
  * Pure. Throws when no message has the selector.
  */
 export function removeSelector<B extends SelectorBundle>(
@@ -247,6 +271,33 @@ export function removeSelector<B extends SelectorBundle>(
 	if (!bundle.messages.some((m) => m.selectors.some((s) => s.name === name))) {
 		throw new Error(`"${name}" is not a selector of this message.`);
 	}
+	// A plural goes together with its exact-number partner (ICU `=0`): without the plural, the
+	// partner would turn into a select, and the export would lose the plural around `#`.
+	const partners = new Set(
+		bundle.messages.flatMap((message) =>
+			message.selectors.some((s) => s.name === name)
+				? selectorGroups(
+						{ ...message, locale: message.locale ?? "en" },
+						bundle.declarations
+					).flatMap((group) =>
+						group.selector === name && group.exactSelector
+							? [group.exactSelector]
+							: []
+					)
+				: []
+		)
+	);
+	let result: B = bundle;
+	for (const partner of partners)
+		result = removeOne(result, partner, isNumericKey(keep) ? keep : "*");
+	return removeOne(result, name, isNumericKey(keep) && partners.size ? "*" : keep);
+}
+
+function removeOne<B extends SelectorBundle>(
+	bundle: B,
+	name: string,
+	keep: string
+): B {
 	const messages = bundle.messages.map((message) => {
 		if (!message.selectors.some((s) => s.name === name)) return copy(message);
 		const rest = message.selectors.filter((s) => s.name !== name);
@@ -303,6 +354,36 @@ function groupOf(bundle: SelectorBundle, selector: string) {
 		).find((group) => group.names.includes(selector));
 	}
 	return undefined;
+}
+
+/**
+ * The exact-number selector paired with `plural` (ICU `=0`) in any message: `@inlang/plugin-icu1`
+ * declares it only in the languages that use an exact number, so the first message with the plural
+ * may not have it. Without such a message, an un-annotated local alias of the plural's input that
+ * no message uses as a selector (left by an import) is reused.
+ */
+function exactSelectorOf(bundle: SelectorBundle, plural: string): string | undefined {
+	for (const message of bundle.messages) {
+		if (!message.selectors.some((s) => s.name === plural)) continue;
+		const exact = selectorGroups(
+			{ ...message, locale: message.locale ?? "en" },
+			bundle.declarations
+		).find((group) => group.selector === plural)?.exactSelector;
+		if (exact) return exact;
+	}
+	const input = resolveInputVariable(plural, bundle.declarations);
+	const selectors = new Set(
+		bundle.messages.flatMap((m) => m.selectors.map((s) => s.name))
+	);
+	return bundle.declarations.find(
+		(d) =>
+			d.type === "local-variable" &&
+			d.value.annotation === undefined &&
+			d.value.arg.type === "variable-reference" &&
+			!selectors.has(d.name) &&
+			!isPluralSelector(d.name, bundle.declarations) &&
+			resolveInputVariable(d.name, bundle.declarations) === input
+	)?.name;
 }
 
 /**
@@ -430,7 +511,7 @@ export function addExactNumber<B extends SelectorBundle>(
 	const plural = pluralSelectorOf(bundle, args.selector);
 	requireSelectorIn(bundle, plural, args.locale);
 	const declarations = copy(bundle.declarations);
-	let exact = groupOf(bundle, plural)?.exactSelector;
+	let exact = exactSelectorOf(bundle, plural);
 	if (!exact) {
 		exact = uniqueName(`${plural}Exact`, declarations);
 		declarations.push({
@@ -486,7 +567,7 @@ export function removeExactNumber<B extends SelectorBundle>(
 ): B {
 	const number = exactNumber(args.value);
 	const plural = pluralSelectorOf(bundle, args.selector);
-	const exact = groupOf(bundle, plural)?.exactSelector;
+	const exact = exactSelectorOf(bundle, plural);
 	const isForm = (variant: BundleVariant) =>
 		(exact !== undefined && matchValue(variant, exact) === number) ||
 		matchValue(variant, plural) === number;

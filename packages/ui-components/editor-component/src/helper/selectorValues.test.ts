@@ -7,6 +7,7 @@ import {
 	addSelectValue,
 	removeExactNumber,
 	removeSelectValue,
+	removeSelector,
 	type SelectorBundle,
 } from "./addSelector.js";
 
@@ -390,4 +391,62 @@ it("removes an exact number whose selector is the input itself (the i18next impo
 			missingVariants({ ...message, locale: message.locale! }, removed.declarations)
 		).toEqual([]);
 	}
+});
+
+it("finds the exact-number selector in any language: icu1 declares it only where =0 is used", async () => {
+	// German first: its message has only the plural; the English one has `=0` as well
+	const mixed = {
+		de: { items: "{count, plural, one {# Element} other {# Elemente}}" },
+		en: { items: "{count, plural, =0 {No items} one {# item} other {# items}}" },
+	};
+	const [bundle] = await importIcu(mixed);
+	expect(bundle!.messages.map((m) => [m.locale, m.selectors.map((s) => s.name)])).toEqual([
+		["de", ["countPlural"]],
+		["en", ["countPluralExact", "countPlural"]],
+	]);
+	const one = addExactNumber(bundle!, { selector: "count", value: 1, locale: "en", createId });
+	expect(one.declarations.map((d) => d.name)).not.toContain("countPluralExact1");
+	for (const message of one.messages)
+		expect(message.selectors.map((s) => s.name)).toEqual(["countPluralExact", "countPlural"]);
+	expect(missing(one, "de")).toEqual(["0 · *", "1 · *"]);
+	expect((await exportIcu([fill(one, { en: "One item" })])).en.items).toBe(
+		"{count, plural, =0 {No items} =1 {One item} one {# item} other {# items}}"
+	);
+	const withoutZero = removeExactNumber(bundle!, { selector: "count", value: 0 });
+	expect(await exportIcu([withoutZero])).toEqual({
+		de: mixed.de,
+		en: { items: "{count, plural, one {# item} other {# items}}" },
+	});
+	expect(withoutZero.declarations.map((d) => d.name)).toEqual(["count", "countPlural"]);
+});
+
+it("reuses a declared exact-number alias no message selects by yet", async () => {
+	const [bundle] = await importIcu(items);
+	const declared: Bundle = {
+		...bundle!,
+		declarations: [
+			...bundle!.declarations,
+			{
+				type: "local-variable",
+				name: "countPluralExact",
+				value: { type: "expression", arg: { type: "variable-reference", name: "count" } },
+			},
+		],
+	};
+	const zero = addExactNumber(declared, { selector: "count", value: 0, locale: "en", createId });
+	expect(zero.declarations).toEqual(declared.declarations);
+	expect(zero.messages[0]!.selectors.map((s) => s.name)).toEqual(["countPluralExact", "countPlural"]);
+});
+
+it("removing an ICU plural removes its exact numbers too and exports plain text", async () => {
+	const [bundle] = await importIcu({
+		en: { items: "{count, plural, =0 {No items} one {# item} other {# items}}" },
+		de: { items: "{count, plural, one {# Element} other {# Elemente}}" },
+	});
+	const removed = removeSelector(bundle!, "countPlural");
+	expect(removed.messages.map((m) => m.selectors)).toEqual([[], []]);
+	expect(await exportIcu([removed])).toEqual({
+		en: { items: "{count, number} items" },
+		de: { items: "{count, number} Elemente" },
+	});
 });

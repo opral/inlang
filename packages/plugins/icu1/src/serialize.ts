@@ -421,6 +421,9 @@ function serializeExpression(
     expression.annotation?.type === "function-reference" &&
     expression.annotation.name === POUND_FUNCTION
   ) {
+    // `#` only means the number inside a plural; outside one (the plural was removed) it would be literal text
+    if (!options.inPlural && expression.arg.type === "variable-reference")
+      return `{${expression.arg.name}, number}`;
     return "#";
   }
 

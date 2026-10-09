@@ -135,12 +135,14 @@ it("adds an ordinal plural and a select with empty forms for its values", () => 
 		addSelector(bundle(), { variable: "count", kind: "select", values: ["a"] })
 	).toThrow(/locale/);
 	expect(en.selectors).toEqual([{ type: "variable-reference", name: "count" }]);
+	// the new forms come before the catch-all, so exports keep "other" last
 	expect(en.variants.map((v) => v.matches[0])).toEqual([
-		{ type: "catchall-match", key: "count" },
 		{ type: "literal-match", key: "count", value: "female" },
 		{ type: "literal-match", key: "count", value: "male" },
+		{ type: "catchall-match", key: "count" },
 	]);
-	expect(en.variants.slice(1).every((v) => v.pattern.length === 0)).toBe(true);
+	expect(en.variants.slice(0, 2).every((v) => v.pattern.length === 0)).toBe(true);
+	expect(en.variants[2]!.id).toBe("items_en_1");
 	expect(new Set(en.variants.map((v) => v.id)).size).toBe(3);
 });
 
@@ -185,19 +187,21 @@ it("reuses a plural that is already declared and rejects invalid requests", () =
 	]);
 	expect(() =>
 		addSelector(reused, { variable: "countPlural", kind: "plural" })
-	).toThrow(/already a selector/);
+	).toThrow(/already a plural/);
 	expect(() =>
 		addSelector(bundle(), { variable: "nope", kind: "plural" })
 	).toThrow(/not a variable/);
-	// a second plural on the same input gets its own name
-	const twice = addSelector(
-		addSelector(bundle(), { variable: "count", kind: "plural" }),
-		{ variable: "count", kind: "ordinal" }
+	// an input that already is a plural cannot get a second one (no `countPlural1`)
+	const plural = addSelector(bundle(), { variable: "count", kind: "plural" });
+	expect(() => addSelector(plural, { variable: "count", kind: "plural" })).toThrow(
+		/already a plural/
 	);
-	expect(twice.messages[0]!.selectors.map((s) => s.name)).toEqual([
-		"countPlural",
-		"countOrdinal",
-	]);
+	expect(() => addSelector(plural, { variable: "count", kind: "ordinal" })).toThrow(
+		/already a plural/
+	);
+	expect(() => addSelector(plural, { variable: "count", kind: "select" })).toThrow(
+		/already a plural/
+	);
 });
 
 it("removes a selector again: keeps the catch-all form and drops unused local variables", () => {
@@ -271,10 +275,52 @@ it("removes both selectors of an imported ICU exact number + plural", () => {
 it("lists the variables that can still become a selector", () => {
 	const plural = addSelector(bundle(), { variable: "count", kind: "plural" });
 	expect(selectableVariables(bundle())).toEqual(["count"]);
-	expect(selectableVariables(plural)).toEqual(["count"]);
+	// "count" is plural already: no second selector on it
+	expect(selectableVariables(plural)).toEqual([]);
 	expect(selectableVariables(removeSelector(plural, "countPlural"))).toEqual([
 		"count",
 	]);
 	const local = { ...plural, declarations: plural.declarations };
 	expect(selectableVariables(local)).not.toContain("countPlural");
+});
+
+it("removes the exact-number partner together with its plural", async () => {
+	const mk = (a: string, b: string, text: string) => ({
+		id: `${a}${b}`,
+		matches: [
+			a === "*"
+				? { type: "catchall-match" as const, key: "countPluralExact" }
+				: { type: "literal-match" as const, key: "countPluralExact", value: a },
+			b === "*"
+				? { type: "catchall-match" as const, key: "countPlural" }
+				: { type: "literal-match" as const, key: "countPlural", value: b },
+		],
+		pattern: [{ type: "text" as const, value: text }],
+	});
+	const icu: SelectorBundle = {
+		declarations: icuExactPluralDeclarations,
+		messages: [
+			{
+				id: "m",
+				locale: "en",
+				selectors: [
+					{ type: "variable-reference", name: "countPluralExact" },
+					{ type: "variable-reference", name: "countPlural" },
+				],
+				variants: [mk("0", "*", "none"), mk("*", "one", "one"), mk("*", "*", "many")],
+			},
+		],
+	};
+	const removed = removeSelector(icu, "countPlural");
+	expect(removed.declarations).toEqual([{ type: "input-variable", name: "count" }]);
+	expect(removed.messages[0]!.selectors).toEqual([]);
+	expect(removed.messages[0]!.variants).toEqual([
+		{ id: "**", matches: [], pattern: [{ type: "text", value: "many" }] },
+	]);
+	expect(removeSelector(icu, "countPlural", { keep: "0" }).messages[0]!.variants).toEqual([
+		{ id: "0*", matches: [], pattern: [{ type: "text", value: "none" }] },
+	]);
+	expect(removeSelector(icu, "countPlural", { keep: "one" }).messages[0]!.variants).toEqual([
+		{ id: "*one", matches: [], pattern: [{ type: "text", value: "one" }] },
+	]);
 });
