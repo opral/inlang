@@ -410,21 +410,22 @@ test("only the translated messages change in the translation files", async () =>
   const en = `{"zeta": "Zeta",   "alpha": "Alpha", "beta": "Beta"}`;
   const de = `{\n    "zeta": "Zeta (de)",\n    "alpha":"Caf\\u00e9"\n}`;
   const { project, path, read, cleanup } = await projectOnDisk({ en, de });
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockImplementation(async (url: string) => {
-      const query = new URL(url).searchParams;
-      return Response.json({
-        data: {
-          translations: [
-            { translatedText: `${query.get("q")} (${query.get("target")})` },
-          ],
-        },
-      });
-    }),
-  );
+  const fetch = vi.fn().mockImplementation(async (url: string) => {
+    const query = new URL(url).searchParams;
+    return Response.json({
+      data: {
+        translations: [
+          { translatedText: `${query.get("q")} (${query.get("target")})` },
+        ],
+      },
+    });
+  });
+  vi.stubGlobal("fetch", fetch);
   try {
     await translateAndSave({ project, path });
+    // only beta was translated
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(new URL(fetch.mock.calls[0]![0]).searchParams.get("q")).toBe("Beta");
     expect(read("en")).toBe(en);
     expect(read("de")).toBe(
       `{\n    "zeta": "Zeta (de)",\n    "alpha":"Caf\\u00e9",\n    "beta":"Beta (de)"\n}`,
