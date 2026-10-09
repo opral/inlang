@@ -142,7 +142,7 @@ test("exports the exact-number selector directly before its plural", async () =>
 				"local countPluralExact = count",
 				"local countPlural = count: plural",
 			],
-			// not sorted alphabetically: the exact number must stay first, see
+			// not alphabetical: the exact number must come first, see
 			// orderSelectors in exportFiles.ts
 			selectors: ["countPluralExact", "countPlural"],
 			match: {
@@ -154,7 +154,7 @@ test("exports the exact-number selector directly before its plural", async () =>
 	]);
 });
 
-test("other selectors keep their message order around an exact-number pair", async () => {
+test("other selectors stay alphabetical around an exact-number pair", async () => {
 	const exported = await runExport({
 		bundles: [
 			{
@@ -187,9 +187,9 @@ test("other selectors keep their message order around an exact-number pair", asy
 	});
 
 	expect(exported.en.items[0].selectors).toStrictEqual([
-		"gender",
 		"countPluralExact",
 		"countPlural",
+		"gender",
 	]);
 });
 
@@ -232,7 +232,7 @@ test("repairs a plural written before its exact number (sorted by earlier versio
 	]);
 });
 
-test("an exact number already before its plural keeps its place", async () => {
+test("an exact number already before its plural keeps its place on import", async () => {
 	const exported = await runExport({
 		bundles: [
 			{
@@ -263,15 +263,100 @@ test("an exact number already before its plural keeps its place", async () => {
 			),
 		],
 	});
+	// export: alphabetical, with the exact number moved before its plural
 	expect(exported.en.items[0].selectors).toStrictEqual([
 		"countPluralExact",
-		"gender",
 		"countPlural",
+		"gender",
+	]);
+	// import: a file that already has the exact number first stays as is
+	const reimported = await runImport({
+		en: {
+			items: [
+				{
+					...exported.en.items[0],
+					selectors: ["countPluralExact", "gender", "countPlural"],
+				},
+			],
+		},
+	});
+	expect(
+		reimported.messages[0]?.selectors?.map((selector) => selector.name)
+	).toStrictEqual(["countPluralExact", "gender", "countPlural"]);
+});
+
+test("two plurals on the same input each get their own exact number", async () => {
+	const declarations: Declaration[] = [
+		{ type: "input-variable", name: "count" },
+		...["countPlural", "countPlural1"].flatMap((plural): Declaration[] => [
+			{
+				type: "local-variable",
+				name: `${plural}Exact`,
+				value: {
+					type: "expression",
+					arg: { type: "variable-reference", name: "count" },
+				},
+			},
+			{
+				type: "local-variable",
+				name: plural,
+				value: {
+					type: "expression",
+					arg: { type: "variable-reference", name: "count" },
+					annotation: {
+						type: "function-reference",
+						name: "plural",
+						options: [],
+					},
+				},
+			},
+		]),
+	];
+	const exported = await runExport({
+		bundles: [{ id: "things", declarations }],
+		messages: [
+			{
+				id: "things-fr",
+				bundleId: "things",
+				locale: "fr",
+				selectors: [
+					"countPluralExact",
+					"countPlural",
+					"countPlural1Exact",
+					"countPlural1",
+				].map((name) => ({ type: "variable-reference", name })),
+			},
+		],
+		variants: [
+			variant(
+				"things-fr",
+				{
+					countPluralExact: "*",
+					countPlural: "*",
+					countPlural1Exact: "*",
+					countPlural1: "*",
+				},
+				"{count} choses"
+			),
+		],
+	});
+	// alphabetical would be countPlural, countPlural1, countPlural1Exact,
+	// countPluralExact; each exact number moves before its own plural
+	expect(exported.fr.things[0].selectors).toStrictEqual([
+		"countPluralExact",
+		"countPlural",
+		"countPlural1Exact",
+		"countPlural1",
 	]);
 	const reimported = await runImport(exported);
 	expect(
 		reimported.messages[0]?.selectors?.map((selector) => selector.name)
-	).toStrictEqual(["countPluralExact", "gender", "countPlural"]);
+	).toStrictEqual([
+		"countPluralExact",
+		"countPlural",
+		"countPlural1Exact",
+		"countPlural1",
+	]);
 });
 
 test("the input itself pairs with its plural as exact-number selector", async () => {
@@ -429,7 +514,43 @@ test("ICU exact numbers survive message-format export and re-import", async () =
 	]);
 
 	const mfReimported = await runImport(mfExported);
-	expect(normalize(mfReimported)).toStrictEqual(normalize(icuImported));
+	// the same messages, with the selectors in the order message-format writes
+	// them: alphabetical, an exact number directly before its plural
+	expect(
+		Object.fromEntries(
+			mfReimported.messages.map((message) => [
+				`${message.bundleId}/${message.locale}`,
+				message.selectors?.map((selector) => selector.name),
+			])
+		)
+	).toMatchInlineSnapshot(`
+		{
+		  "guests/en": [
+		    "countPluralExact",
+		    "countPlural",
+		    "gender",
+		  ],
+		  "items/en": [
+		    "countPluralExact",
+		    "countPlural",
+		  ],
+		  "items/fr": [
+		    "countPluralExact",
+		    "countPlural",
+		  ],
+		  "place/en": [
+		    "placeOrdinalExact",
+		    "placeOrdinal",
+		  ],
+		  "seats/en": [
+		    "countPluralExact",
+		    "countPlural",
+		  ],
+		}
+	`);
+	expect(normalize(mfReimported, { withoutSelectors: true })).toStrictEqual(
+		normalize(icuImported, { withoutSelectors: true })
+	);
 
 	const icuExported = await icuPlugin.exportFiles!({
 		...(withIds(mfReimported) as any),
@@ -437,7 +558,18 @@ test("ICU exact numbers survive message-format export and re-import", async () =
 	});
 	for (const file of icuExported) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
-		expect(json).toStrictEqual(icuFiles[file.locale as keyof typeof icuFiles]);
+		expect(json).toStrictEqual({
+			...icuFiles[file.locale as keyof typeof icuFiles],
+			// message-format writes `count…` before `gender`, so the plural now
+			// encloses the select. For this message, that selects the same
+			// text for every input.
+			...(file.locale === "en"
+				? {
+						guests:
+							"{count, plural, =0 {{gender, select, female {She invites nobody} other {They invite nobody}}} other {{gender, select, female {She invites } other {They invite }}{count}}}",
+					}
+				: {}),
+		});
 	}
 });
 
@@ -508,7 +640,10 @@ function withIds(imported: Imported): Exportable {
  * Compares imports independent of the order of declarations, variants and
  * matches, which carry no meaning. Selector order does.
  */
-function normalize(imported: Imported) {
+function normalize(
+	imported: Imported,
+	options: { withoutSelectors?: boolean } = {}
+) {
 	const sortBy = <T>(items: T[]) =>
 		[...items].sort((a, b) =>
 			JSON.stringify(a).localeCompare(JSON.stringify(b))
@@ -524,7 +659,7 @@ function normalize(imported: Imported) {
 			imported.messages.map((message) => ({
 				bundleId: message.bundleId,
 				locale: message.locale,
-				selectors: message.selectors,
+				selectors: options.withoutSelectors ? undefined : message.selectors,
 			}))
 		),
 		variants: sortBy(

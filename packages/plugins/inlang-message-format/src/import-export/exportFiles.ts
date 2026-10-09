@@ -130,10 +130,12 @@ function serializeVariants(
 					.filter((declaration) => declaration.type === "local-variable")
 					.map(serializeDeclaration),
 			],
-			// message order: selector order is the MessageFormat 2 preference
-			// order and must survive a round trip
+			// alphabetical, as every earlier version wrote them, so that files
+			// don't change when the plugin is upgraded. Only an exact number
+			// (ICU `=0`) moves directly before its plural, where it has to be
+			// to win over a plural category that also selects the number.
 			selectors: orderSelectors(
-				message.selectors.map((s) => s.name),
+				message.selectors.map((s) => s.name).sort(),
 				bundle.declarations
 			),
 			match: Object.fromEntries(entries),
