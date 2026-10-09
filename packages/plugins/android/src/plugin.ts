@@ -9,7 +9,7 @@ import type {
   VariantImport,
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
-import { mergeEntries, type EntryText } from "./mergeEntries.js";
+import { mergeEntries, type Entry, type EntryText } from "./mergeEntries.js";
 import { scanResources } from "./scanResources.js";
 
 export const PLUGIN_KEY = "plugin.inlang.android";
@@ -51,7 +51,8 @@ function importAndroidFiles(files: ImportArgs["files"]): {
   const variants: VariantImport[] = [];
   const parser = new XMLParser({
     ignoreAttributes: false,
-    attributeNamePrefix: "",
+    // attributes are `@_name`, child elements `name`
+    attributeNamePrefix: "@_",
     trimValues: false,
     parseTagValue: false,
     parseAttributeValue: false,
@@ -61,14 +62,19 @@ function importAndroidFiles(files: ImportArgs["files"]): {
     const validation = XMLValidator.validate(source);
     if (validation !== true)
       throw new Error(`Invalid Android resources XML: ${validation.err.msg}`);
-    const resources = parser.parse(source)?.resources;
+    let resources = parser.parse(source)?.resources;
+    // `<resources></resources>`, e.g. a locale without translations yet
+    if (typeof resources === "string" && resources.trim() === "")
+      resources = {};
     if (!resources || typeof resources !== "object")
       throw new Error("Android resources XML must contain a <resources> root");
     for (const item of array(resources.string)) {
-      if (!item || typeof item !== "object" || !("name" in item))
+      if (!item || typeof item !== "object" || !("@_name" in item))
         throw new Error("Every Android <string> must have a name attribute");
-      const id = String(item.name);
+      const id = String(item["@_name"]);
       assertUnique(seen, file.locale, id);
+      if (!isTranslatable(item)) continue;
+      assertNoProduct(item, id);
       const parsed = parseAndroidPattern(textValue(item));
       bundles.set(
         id,
@@ -83,12 +89,16 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       });
     }
     for (const plural of array(resources.plurals)) {
-      if (!plural || typeof plural !== "object" || !("name" in plural))
+      if (!plural || typeof plural !== "object" || !("@_name" in plural))
         throw new Error("Every Android <plurals> must have a name attribute");
-      const id = String(plural.name);
+      const id = String(plural["@_name"]);
       assertUnique(seen, file.locale, id);
+      if (!isTranslatable(plural)) continue;
+      assertNoProduct(plural, id);
       const parsedItems = array(plural.item).map((item) => {
-        const quantity = String(item.quantity);
+        const quantity = String(
+          item && typeof item === "object" ? item["@_quantity"] : undefined,
+        );
         if (!quantities.has(quantity))
           throw new Error(`Unsupported Android plural quantity "${quantity}"`);
         return { quantity, parsed: parseAndroidPattern(textValue(item)) };
@@ -132,12 +142,14 @@ function importAndroidFiles(files: ImportArgs["files"]): {
 /**
  * Keeps the text of the entries of the existing files that didn't change
  * (comments, whitespace, order, escapes, the XML declaration, and elements
- * that the plugin doesn't import, e.g. `<string-array>`), so that an export
- * only changes the bytes of edited messages.
+ * that the plugin doesn't import, e.g. `<string-array>` or a `<string>` with
+ * `translatable="false"`), so that an export only changes the bytes of edited
+ * messages.
  *
  * A `<string>` or `<plurals>` element is unchanged if the plugin writes the
  * same element for it as for what the previous element imports to. Plurals
- * are compared item by item. Changed elements and items are replaced, removed
+ * are compared item by item. Of changed elements and items, only the content
+ * is replaced, so that their attributes (e.g. `tools:ignore`) are kept; removed
  * ones are removed with the comment directly above them, and new ones are
  * inserted after the one that precedes them in the full export. The result is
  * only used if it imports to what the full export imports to. Otherwise, and
@@ -194,12 +206,23 @@ function keepUnchangedEntriesOfFile(args: {
   const scanned = scanResources(text);
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const indent = scanned.indent ?? "  ";
+  const next = entryTexts(exportedText);
+  // Non-translatable elements are not imported and kept like other text.
+  // If the new data has a message with the name of one, the message
+  // replaces it, so that the file doesn't define the name twice.
+  const entries = scanned.entries.flatMap(({ translatable, ...entry }) =>
+    translatable
+      ? [entry]
+      : next.has(entry.key)
+        ? [{ key: entry.key, start: entry.start, end: entry.end }]
+        : [],
+  );
   const result = mergeEntries({
     text,
-    entries: scanned.entries,
+    entries,
     comments: scanned.comments,
     previous: entryTexts(canonical(text)),
-    next: entryTexts(exportedText),
+    next,
     indentUnit: "  ",
     fileIndentUnit: indent === "" ? "  " : indent,
     emptyIndent: indent,
@@ -256,13 +279,17 @@ function entryTexts(text: string): Map<string, EntryText> {
       .join("\n");
     result.set(entry.key, {
       text: element,
+      ...valueText(text, entry),
       ...(entry.children
         ? {
             shell: /^<[^>]*>/.exec(element)![0],
             children: new Map(
               entry.children.map((child) => [
                 child.key,
-                { text: text.slice(child.start, child.end) },
+                {
+                  text: text.slice(child.start, child.end),
+                  ...valueText(text, child),
+                },
               ]),
             ),
           }
@@ -270,6 +297,13 @@ function entryTexts(text: string): Map<string, EntryText> {
     });
   }
   return result;
+}
+
+/** The content of an element the plugin writes, see `Entry.valueRange`. */
+function valueText(text: string, entry: Entry) {
+  return entry.valueRange
+    ? { valueText: text.slice(entry.valueRange.start, entry.valueRange.end) }
+    : {};
 }
 
 /**
@@ -575,16 +609,42 @@ function pluralDeclaration(bundle: Bundle, selector: string) {
 function array<T>(value: T | T[] | undefined): T[] {
   return value === undefined ? [] : Array.isArray(value) ? value : [value];
 }
+/**
+ * The text of a `<string>` or `<item>`. Attributes (`@_…`) other than
+ * `name`, `quantity` and `product` don't change the text and are accepted,
+ * e.g. `formatted="false"` or `tools:ignore="MissingTranslation"`. They are
+ * kept on export if the element is in the existing file.
+ */
 function textValue(value: unknown): string {
   if (typeof value !== "object" || value === null) return String(value ?? "");
   const nested = Object.keys(value).filter(
-    (key) => key !== "#text" && key !== "name" && key !== "quantity",
+    (key) => key !== "#text" && !key.startsWith("@_"),
   );
   if (nested.length)
     throw new Error(
       `Android inline XML markup is not supported (${nested.join(", ")})`,
     );
   return "#text" in value ? String((value as any)["#text"]) : "";
+}
+/**
+ * Whether a `<string>` or `<plurals>` is translatable.
+ *
+ * Non-translatable resources (`translatable="false"`, e.g. the app name,
+ * URLs or keys) are not imported: Android requires them to exist only in
+ * the default `values/` (lint "ExtraTranslation"), so they must never be
+ * written to the file of another locale. On export with the existing files,
+ * they are kept byte for byte like the other elements that the plugin
+ * doesn't import (`<string-array>`, `<color>`, …).
+ */
+function isTranslatable(element: Record<string, unknown>) {
+  return element["@_translatable"] !== "false";
+}
+function assertNoProduct(element: Record<string, unknown>, id: string) {
+  // several elements with one name, one per product, can't be represented
+  if ("@_product" in element)
+    throw new Error(
+      `Android product-specific resources are not supported ("${id}" has product="${element["@_product"]}")`,
+    );
 }
 function escapeXmlText(value: string) {
   return value

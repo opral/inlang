@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:locale="en"
+    tools:ignore="MissingTranslation">
+
+    <!-- Not translated: names, URLs and keys -->
+    <string name="app_name" translatable="false">Acme Notes</string>
+    <string name="privacy_policy_url" translatable="false">https://acme.example/privacy</string>
+    <string name="maps_api_key" translatable="false">YOUR_MAPS_API_KEY</string>
+    <string name="deep_link_scheme" translatable="false">acmenotes</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_title">Welcome to %1$s</string>
+    <string name="onboarding_subtitle">Your notes, everywhere.</string>
+    <string name="onboarding_continue">Continue</string>
+
+    <!-- Notes -->
+    <string name="notes_empty" tools:ignore="UnusedResources">You don\'t have any notes yet.</string>
+    <string name="notes_search_hint">Search notes&#8230;</string>
+    <string name="notes_synced_at" formatted="false">Last synced %s at %s</string>
+    <string name="notes_storage">"Using %1$d%% of %2$s"</string>
+    <plurals name="notes_count">
+        <item quantity="one">%d note</item>
+        <item quantity="other">%d notes</item>
+    </plurals>
+    <plurals name="notes_deleted" tools:ignore="UnusedQuantity">
+        <item quantity="zero" tools:ignore="ImpliedQuantity">No notes deleted</item>
+        <item quantity="one">%d note deleted</item>
+        <item quantity="other">%d notes deleted</item>
+    </plurals>
+    <plurals name="debug_cache_entries" translatable="false">
+        <item quantity="one">%d cache entry</item>
+        <item quantity="other">%d cache entries</item>
+    </plurals>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_theme">Theme</string>
+    <string-array name="settings_theme_entries">
+        <item>Light</item>
+        <item>Dark</item>
+        <item>System default</item>
+    </string-array>
+    <string-array name="settings_theme_values" translatable="false">
+        <item>light</item>
+        <item>dark</item>
+        <item>system</item>
+    </string-array>
+    <string name="settings_version" translatable="false" tools:ignore="TypographyDashes">Version %1$s</string>
+</resources>

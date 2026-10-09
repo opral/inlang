@@ -67,9 +67,10 @@ describe("export with the existing file", () => {
           `<string name='single'><![CDATA[<b>bold</b> & co]]></string><string name="b">B</string>`,
           `<string name="b">"Bee"</string>`,
         )
+        // only the content of an edited element is replaced
         .replace(
           `<item quantity='other'>"other"</item>`,
-          `<item quantity="other">"others"</item>`,
+          `<item quantity='other'>"others"</item>`,
         ),
     );
   });
@@ -351,10 +352,9 @@ describe("export with the existing file", () => {
     for (const invalid of [
       "<resources><string name='a'>A</resources>",
       "<resources/>",
-      // the plugin can't import a file without elements
-      "<resources></resources>",
       '<!DOCTYPE resources [<!ENTITY a "A">]><resources></resources>',
-      '<resources><string name="a" translatable="false">A</string></resources>',
+      // AAPT rejects a name defined twice
+      '<resources><string name="a" translatable="false">A</string><string name="a">B</string></resources>',
       "not xml",
     ]) {
       const [file] = plugin.exportFiles!({
@@ -400,6 +400,150 @@ describe("export with the existing file", () => {
   });
 });
 
+/**
+ * A `res/values/strings.xml` like real apps have: the `tools` namespace,
+ * non-translatable strings and plurals, lint attributes on strings, plurals
+ * and items, and `formatted="false"`.
+ */
+const realWorld = `<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="en" tools:ignore="MissingTranslation">
+    <!-- Not translated -->
+    <string name="app_name" translatable="false">Acme</string>
+    <string name="privacy_url" translatable="false">https://acme.example/privacy</string>
+
+    <!-- Home -->
+    <string name="welcome" tools:ignore="UnusedResources">Welcome, %1$s!</string>
+    <string name="progress" formatted="false">%d of %d done</string>
+    <string name="maps_api_key" translatable="false" tools:ignore="TypographyDashes">YOUR-API-KEY</string>
+    <plurals name="songs" tools:ignore="UnusedQuantity">
+        <item quantity="one">%d song</item>
+        <item quantity="other" tools:ignore="ImpliedQuantity">%d songs</item>
+    </plurals>
+    <plurals name="debug_items" translatable="false">
+        <item quantity="other">%d items</item>
+    </plurals>
+    <string name="share">Share</string>
+</resources>
+`;
+
+describe('real-world files: translatable="false" and tools: attributes', () => {
+  test("only translatable strings and plurals are imported", () => {
+    const data = importAndroid(realWorld);
+    expect(data.bundles.map((bundle) => bundle.id).sort()).toEqual([
+      "progress",
+      "share",
+      "songs",
+      "welcome",
+    ]);
+  });
+
+  test("a file without edits is written byte for byte", () => {
+    expect(reexport(realWorld)).toBe(realWorld);
+  });
+
+  test("an edited element keeps its attributes", () => {
+    expect(
+      reexport(realWorld, (data) => {
+        setText(data, "welcome", "Hi, %1$s!");
+        setText(data, "progress", "%1$d of %2$d finished");
+        setText(data, "songs", "%1$d tracks", "other");
+      }),
+    ).toBe(
+      realWorld
+        .replace(
+          '<string name="welcome" tools:ignore="UnusedResources">Welcome, %1$s!</string>',
+          '<string name="welcome" tools:ignore="UnusedResources">"Hi, %1$s!"</string>',
+        )
+        .replace(
+          '<string name="progress" formatted="false">%d of %d done</string>',
+          '<string name="progress" formatted="false">"%1$d of %2$d finished"</string>',
+        )
+        .replace(
+          '<item quantity="other" tools:ignore="ImpliedQuantity">%d songs</item>',
+          '<item quantity="other" tools:ignore="ImpliedQuantity">"%1$d tracks"</item>',
+        ),
+    );
+  });
+
+  test("non-translatable elements are kept when messages around them are added or removed", () => {
+    expect(
+      reexport(realWorld, (data) => {
+        removeMessage(data, "welcome");
+        removeMessage(data, "share");
+        addMessage(data, "about", "About");
+      }),
+    ).toBe(
+      realWorld
+        .replace(
+          '    <string name="welcome" tools:ignore="UnusedResources">Welcome, %1$s!</string>\n',
+          "",
+        )
+        .replace('    <string name="share">Share</string>\n', "")
+        // after the element that precedes it in the full export
+        .replace(
+          "    </plurals>\n    <plurals",
+          '    </plurals>\n    <string name="about">"About"</string>\n    <plurals',
+        ),
+    );
+  });
+
+  test("a message with the name of a non-translatable string replaces it instead of defining the name twice", () => {
+    const output = reexport(realWorld, (data) => {
+      addMessage(data, "app_name", "Acme Translated");
+    });
+    expect(output).toBe(
+      realWorld.replace(
+        '<string name="app_name" translatable="false">Acme</string>',
+        '<string name="app_name">"Acme Translated"</string>',
+      ),
+    );
+  });
+
+  test("non-translatable elements are never written to other locales", () => {
+    const de = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="welcome">Willkommen, %1$s!</string>
+</resources>
+`;
+    const imported = plugin.importFiles!({
+      settings,
+      files: [
+        { locale: "en", content: encode(realWorld) },
+        { locale: "de", content: encode(de) },
+      ],
+    }) as Data;
+    const data = identifyRows(imported);
+    for (const files of [
+      undefined,
+      [
+        { path, locale: "en", content: encode(realWorld) },
+        {
+          path: "./res/values-de/strings.xml",
+          locale: "de",
+          content: encode(de),
+        },
+      ],
+    ]) {
+      const exported = plugin.exportFiles!({
+        settings,
+        ...data,
+        files,
+      }) as any[];
+      const deFile = decode(
+        exported.find((file) => file.locale === "de")!.content,
+      );
+      if (files) expect(deFile).toBe(de);
+      for (const name of [
+        "app_name",
+        "privacy_url",
+        "maps_api_key",
+        "debug_items",
+      ])
+        expect(deFile).not.toContain(`name="${name}"`);
+    }
+  });
+});
+
 type Data = { bundles: any[]; messages: any[]; variants: any[] };
 
 function reexport(text: string, edit?: (data: Data) => void): string {
@@ -431,17 +575,25 @@ function importAndroid(content: string): Data {
     settings,
     files: [{ locale: "en", content: encode(content) }],
   }) as Data;
+  return identifyRows(imported);
+}
+
+/** Bundles, messages and variants with ids, from the result of an import. */
+function identifyRows(imported: Data): Data {
   return {
     bundles: imported.bundles,
     messages: imported.messages.map((message) => ({
       ...message,
-      id: message.bundleId,
+      id: `${message.bundleId}${message.locale === "en" ? "" : `-${message.locale}`}`,
     })),
-    variants: imported.variants.map((variant) => ({
-      ...variant,
-      id: `${variant.messageBundleId}-${JSON.stringify(variant.matches)}`,
-      messageId: variant.messageBundleId,
-    })),
+    variants: imported.variants.map((variant) => {
+      const messageId = `${variant.messageBundleId}${variant.messageLocale === "en" ? "" : `-${variant.messageLocale}`}`;
+      return {
+        ...variant,
+        id: `${messageId}-${JSON.stringify(variant.matches)}`,
+        messageId,
+      };
+    }),
   };
 }
 

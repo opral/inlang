@@ -1,8 +1,19 @@
 import type { Comment, Entry } from "./mergeEntries.js";
 
+/**
+ * A `<string>` or `<plurals>` element, or an `<item>` of a plural. The
+ * `valueRange` of a `<string>` or `<item>` is its content, so that an edit
+ * keeps the start tag with its attributes (e.g. `tools:ignore`).
+ */
+export type ScannedEntry = Entry & {
+  /** `false` for `translatable="false"`, which the plugin doesn't import */
+  translatable: boolean;
+  children?: ScannedEntry[];
+};
+
 export type ScannedResources = {
   /** `<string>` and `<plurals>` elements, with the `<item>`s of plurals */
-  entries: Entry[];
+  entries: ScannedEntry[];
   comments: Comment[];
   /** start of the `</resources>` tag */
   closeTagStart: number;
@@ -19,7 +30,7 @@ export type ScannedResources = {
  * doesn't support (e.g. a DOCTYPE with an internal subset).
  */
 export function scanResources(text: string): ScannedResources {
-  const entries: Entry[] = [];
+  const entries: ScannedEntry[] = [];
   const comments: Comment[] = [];
   let indent: string | undefined;
   let closeTagStart: number | undefined;
@@ -28,7 +39,9 @@ export function scanResources(text: string): ScannedResources {
     name: string;
     start: number;
     attributes: Map<string, string>;
-    children: Entry[];
+    /** offset after the start tag */
+    contentStart: number;
+    children: ScannedEntry[];
   };
   const stack: Open[] = [];
   let sawRoot = false;
@@ -69,8 +82,9 @@ export function scanResources(text: string): ScannedResources {
       if (open === undefined || open.name !== name)
         fail(`Unexpected </${name}>`);
       if (stack.length === 0) closeTagStart = pos;
+      const contentEnd = pos;
       pos = end + 1;
-      close(open!, pos);
+      close(open!, pos, contentEnd);
     } else if (text[pos] === "<") {
       const start = pos;
       pos++;
@@ -104,7 +118,13 @@ export function scanResources(text: string): ScannedResources {
       } else if (stack.length === 1 && indent === undefined) {
         indent = lineIndent(start);
       }
-      const open: Open = { name: name!, start, attributes, children: [] };
+      const open: Open = {
+        name: name!,
+        start,
+        attributes,
+        contentStart: pos,
+        children: [],
+      };
       if (selfClosing) {
         close(open, pos);
       } else {
@@ -121,10 +141,16 @@ export function scanResources(text: string): ScannedResources {
   if (stack.length > 0 || closeTagStart === undefined)
     fail("Unclosed <resources>");
 
-  function close(open: Open, end: number) {
+  /** `contentEnd` is the start of the end tag, if the element has one */
+  function close(open: Open, end: number, contentEnd?: number) {
     // the element is a child of the element at the top of the stack
     const depth = stack.length;
     const key = open.attributes.get(depth === 1 ? "name" : "quantity");
+    const valueRange =
+      contentEnd === undefined
+        ? {}
+        : { valueRange: { start: open.contentStart, end: contentEnd } };
+    const translatable = open.attributes.get("translatable") !== "false";
     if (
       depth === 1 &&
       (open.name === "string" || open.name === "plurals") &&
@@ -134,7 +160,8 @@ export function scanResources(text: string): ScannedResources {
         key,
         start: open.start,
         end,
-        ...(open.name === "plurals" ? { children: open.children } : {}),
+        translatable,
+        ...(open.name === "plurals" ? { children: open.children } : valueRange),
       });
     } else if (
       depth === 2 &&
@@ -142,7 +169,13 @@ export function scanResources(text: string): ScannedResources {
       open.name === "item" &&
       key !== undefined
     ) {
-      stack[1]!.children.push({ key, start: open.start, end });
+      stack[1]!.children.push({
+        key,
+        start: open.start,
+        end,
+        translatable,
+        ...valueRange,
+      });
     }
   }
 

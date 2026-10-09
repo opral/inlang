@@ -736,3 +736,126 @@ describe("i18next namespaces with `:`", () => {
 		}
 	);
 });
+
+/**
+ * A `res/values/strings.xml` and `res/values-de/strings.xml` like real
+ * Android apps have them: the `tools` namespace with `tools:locale` and
+ * `tools:ignore`, non-translatable strings and plurals (app name, URLs,
+ * keys), `formatted="false"`, `<string-array>`s and comments.
+ */
+describe("android: a real-world res/values/strings.xml", () => {
+	const fixture = fixtures.find((candidate) => candidate.dir === "android")!;
+	const read = (file: string) =>
+		fs.readFileSync(
+			path.join(fixturesDir, "android-real-world", "source", file),
+			"utf8"
+		);
+	const texts: Texts = {
+		en: read("values/strings.xml"),
+		de: read("values-de/strings.xml"),
+	};
+	const nonTranslatable = [
+		"app_name",
+		"privacy_policy_url",
+		"maps_api_key",
+		"deep_link_scheme",
+		"debug_cache_entries",
+		"settings_version",
+	];
+
+	test("imports the translatable strings and plurals", async () => {
+		const project = await load(fixture, texts);
+		const t = tables(project.version);
+		const messages = await project.db
+			.selectFrom(t.message)
+			.select([t.bundleId, "locale"])
+			.execute();
+		const ids = (locale: string) =>
+			messages
+				.filter((message: any) => message.locale === locale)
+				.map((message: any) => message[t.bundleId])
+				.sort();
+		expect(ids("en")).toEqual([
+			"notes_count",
+			"notes_deleted",
+			"notes_empty",
+			"notes_search_hint",
+			"notes_storage",
+			"notes_synced_at",
+			"onboarding_continue",
+			"onboarding_subtitle",
+			"onboarding_title",
+			"settings_theme",
+			"settings_title",
+		]);
+		expect(ids("de")).toEqual([
+			"notes_count",
+			"notes_empty",
+			"notes_synced_at",
+			"onboarding_continue",
+			"onboarding_subtitle",
+			"onboarding_title",
+			"settings_title",
+		]);
+		await project.close();
+	});
+
+	test("stays byte-identical when exported with the files", async () => {
+		const project = await load(fixture, texts);
+		expect(await exportWith(project, fixture, texts)).toEqual(texts);
+		await project.close();
+	});
+
+	test("an edited message changes only its content and keeps its attributes", async () => {
+		const project = await load(fixture, texts);
+		const t = tables(project.version);
+		const edit = async (bundleId: string, locale: string, value: string) => {
+			const message = await project.db
+				.selectFrom(t.message)
+				.where(t.bundleId, "=", bundleId)
+				.where("locale", "=", locale)
+				.select("id")
+				.executeTakeFirstOrThrow();
+			await project.db
+				.updateTable(t.variant)
+				.set({ pattern: [{ type: "text", value }] })
+				.where(t.messageId, "=", message.id)
+				.execute();
+		};
+		await edit("notes_empty", "en", "No notes yet");
+		await edit("onboarding_continue", "de", "Los geht's");
+		expect(await exportWith(project, fixture, texts)).toEqual({
+			en: texts.en!.replace(
+				`<string name="notes_empty" tools:ignore="UnusedResources">You don\\'t have any notes yet.</string>`,
+				`<string name="notes_empty" tools:ignore="UnusedResources">"No notes yet"</string>`
+			),
+			de: texts.de!.replace(
+				`<string name="onboarding_continue">Weiter</string>`,
+				`<string name="onboarding_continue">"Los geht\\'s"</string>`
+			),
+		});
+		await project.close();
+	});
+
+	test.each(upgrades)(
+		"a full export (no existing files, e.g. SDK $sdk with plugin $plugin) writes no non-translatable resource",
+		async ({ sdk, plugin }) => {
+			const project = await openFixtureProject(fixture, sdk, plugin);
+			await project.importFiles({
+				pluginKey: fixture.key,
+				files: Object.entries(texts).map(([locale, text]) => ({
+					locale,
+					content: encode(text),
+				})),
+			});
+			const files = await exportFixtureFiles(project, fixture);
+			expect(files.map((file) => file.locale).sort()).toEqual(["de", "en"]);
+			for (const file of files) {
+				for (const name of nonTranslatable) {
+					expect(file.content).not.toContain(`name="${name}"`);
+				}
+			}
+			await project.close();
+		}
+	);
+});
