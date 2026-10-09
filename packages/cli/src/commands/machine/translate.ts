@@ -58,8 +58,9 @@ export class PartialMachineTranslateError extends Error {
 
 /**
  * Translates and writes the translation files, but only if something was
- * translated: re-exporting unchanged files can reformat them and must not
- * change files in git.
+ * translated: saving still rewrites settings.json, and plugins that don't
+ * keep unchanged entries reformat their files, which must not change files
+ * in git.
  */
 export async function translateAndSave(args: {
   project: InlangProject;
