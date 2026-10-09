@@ -3,6 +3,7 @@ import path from "node:path";
 import fs from "node:fs";
 import {
 	type Project,
+	type Rows,
 	contentOf,
 	insertRows,
 	selectRows,
@@ -168,6 +169,27 @@ describe.each(fixtures)("$dir", (fixture) => {
 		}
 	});
 
+	test("re-importing the same files into a project changes no rows", async () => {
+		const project = await openProject(fixture, "current", "current");
+		await project.importFiles({
+			pluginKey: fixture.key,
+			files: readSourceFiles(fixture),
+		});
+		const before = await selectRows(project);
+		const exported = await exportFiles(project, fixture);
+		expect(before.variants.length).toBeGreaterThan(0);
+
+		await project.importFiles({
+			pluginKey: fixture.key,
+			files: readSourceFiles(fixture),
+		});
+
+		// no duplicate variants, same ids, same order
+		expect(sortById(await selectRows(project))).toEqual(sortById(before));
+		expect(await exportFiles(project, fixture)).toEqual(exported);
+		await project.close();
+	});
+
 	test("a database written by the published SDK and plugin exports the same files after the upgrade", async () => {
 		const project = await openProject(fixture, "published", "published");
 		await project.importFiles({
@@ -192,6 +214,16 @@ describe.each(fixtures)("$dir", (fixture) => {
 		}
 	});
 });
+
+function sortById(rows: Rows): Rows {
+	const byId = (a: { id: string }, b: { id: string }) =>
+		a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	return {
+		bundles: [...rows.bundles].sort(byId),
+		messages: [...rows.messages].sort(byId),
+		variants: [...rows.variants].sort(byId),
+	};
+}
 
 function withoutBundles(
 	content: ReturnType<typeof contentOf>,

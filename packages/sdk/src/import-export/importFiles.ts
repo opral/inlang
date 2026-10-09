@@ -16,6 +16,11 @@ import {
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ImportFile } from "../project/api.js";
 import { v7 } from "uuid";
+import {
+	findExistingVariant,
+	orderVariantsLikeImport,
+	variantMatchesKey,
+} from "./variantMatches.js";
 
 const messageReferenceKey = (bundleId: string, locale: string) =>
 	JSON.stringify([bundleId, locale]);
@@ -24,7 +29,7 @@ const variantReferenceKey = (
 	bundleId: string,
 	locale: string,
 	matches: unknown
-) => JSON.stringify([bundleId, locale, matches]);
+) => JSON.stringify([bundleId, locale, variantMatchesKey(matches)]);
 
 const INSERT_BATCH_SIZE = 500;
 
@@ -251,8 +256,15 @@ export async function importFiles(args: {
 				.onConflict((oc) => oc.column("id").doUpdateSet(message))
 				.execute();
 		}
+		// the variants of each message in the order of the import, to keep that
+		// order for variants that already existed (see `orderVariantsLikeImport`)
+		const importedVariantIdsByMessage = new Map<string, string[]>();
+		// messages with variants that the plugin gave ids: the plugin manages
+		// those ids, so they are not replaced to reorder the variants
+		const messagesWithPluginVariantIds = new Set<string>();
 		// upsert every variant
 		for (const variant of imported.variants) {
+			const variantHadId = variant.id !== undefined;
 			// match the variant by message id and matches if
 			// no id is provided by the importer
 			if (variant.id === undefined) {
@@ -294,9 +306,20 @@ export async function importFiles(args: {
 					.selectAll()
 					.execute();
 
-				const existingVariant = existingVariants.find(
-					(v) => JSON.stringify(v.matches) === JSON.stringify(variant.matches)
+				const { existing: existingVariant, duplicates } = findExistingVariant(
+					existingVariants,
+					variant.matches
 				);
+				if (duplicates.length > 0) {
+					await trx
+						.deleteFrom("inlang_variant")
+						.where(
+							"id",
+							"in",
+							duplicates.map((duplicate) => duplicate.id)
+						)
+						.execute();
+				}
 
 				// need to reset typescript's type narrowing
 				(variant as ImportedVariant).id = existingVariant?.id;
@@ -308,11 +331,36 @@ export async function importFiles(args: {
 				messageBundleId: undefined,
 				messageLocale: undefined,
 			};
-			await trx
-				.insertInto("inlang_variant")
-				.values(toBeInsertedVariant)
-				.onConflict((oc) => oc.column("id").doUpdateSet(toBeInsertedVariant))
-				.execute();
+			let upserted: { id: string; message_id: string };
+			if (toBeInsertedVariant.id === undefined) {
+				upserted = await trx
+					.insertInto("inlang_variant")
+					.values(toBeInsertedVariant)
+					.returning(["id", "message_id"])
+					.executeTakeFirstOrThrow();
+			} else {
+				await trx
+					.insertInto("inlang_variant")
+					.values(toBeInsertedVariant)
+					.onConflict((oc) => oc.column("id").doUpdateSet(toBeInsertedVariant))
+					.execute();
+				upserted = {
+					id: toBeInsertedVariant.id,
+					message_id: toBeInsertedVariant.message_id,
+				};
+			}
+			if (variantHadId) {
+				messagesWithPluginVariantIds.add(upserted.message_id);
+			} else {
+				const ids = importedVariantIdsByMessage.get(upserted.message_id);
+				if (ids) ids.push(upserted.id);
+				else
+					importedVariantIdsByMessage.set(upserted.message_id, [upserted.id]);
+			}
+		}
+		for (const [messageId, ids] of importedVariantIdsByMessage) {
+			if (messagesWithPluginVariantIds.has(messageId)) continue;
+			await orderVariantsLikeImport(trx, ids);
 		}
 	});
 }
