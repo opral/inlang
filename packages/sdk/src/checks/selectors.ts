@@ -145,6 +145,13 @@ export function pluralRules(
 ): PluralRules | undefined {
 	const annotation = resolveAnnotation(selector, declarations);
 	if (annotation?.name !== "plural") return undefined;
+	return rulesOf(annotation, locale);
+}
+
+function rulesOf(
+	annotation: FunctionReference,
+	locale: string
+): PluralRules | undefined {
 	// `pt_BR` as written in some projects: Intl needs `pt-BR`
 	locale = locale.replace(/_/g, "-");
 	const key = JSON.stringify([locale, annotation.options ?? []]);
@@ -250,9 +257,11 @@ export function isSingleNumberCategory(
  * True when a variant can never be selected in a locale: it matches a plural
  * category the locale's rules never choose. i18next's `_zero` form
  * (`countPlural=zero`, imported next to the exact `count=0`) is unreachable
- * in German, English or French, whose rules select `other` for 0; Latvian
- * `zero` (0, 10–20, 30…) is reachable. False when the plural rules are
- * unknown, see {@link pluralRules}.
+ * in German, English or French, which never select `zero`; Latvian `zero`
+ * (0, 10–20, 30…) is reachable. A plural whose `type` is a variable (i18next's
+ * `type=$pluralType` for keys with cardinal and ordinal forms) uses the type
+ * the variant matches, or both types for its catch-all. False when the plural
+ * rules are unknown, see {@link pluralRules}.
  */
 export function isUnreachableVariant(
 	variant: WithMatches,
@@ -262,8 +271,49 @@ export function isUnreachableVariant(
 	return variant.matches.some((match) => {
 		if (match.type !== "literal-match" || !PLURAL_ORDER.includes(match.value))
 			return false;
-		const rules = pluralRules(match.key, declarations, locale);
-		return rules !== undefined && !rules.categories.includes(match.value);
+		const annotation = resolveAnnotation(match.key, declarations);
+		if (annotation?.name !== "plural") return false;
+		const typeOption = annotation.options?.find(
+			(option) => option.name === "type"
+		);
+		let types: (string | undefined)[] = [undefined];
+		if (typeOption?.value.type === "variable-reference") {
+			// the type the variant selects, read through the selector on that variable
+			const input = resolveInputVariable(typeOption.value.name, declarations);
+			const chosen = variant.matches.find(
+				(other) =>
+					other.type === "literal-match" &&
+					resolveAnnotation(other.key, declarations) === undefined &&
+					resolveInputVariable(other.key, declarations) === input
+			);
+			const value = chosen?.type === "literal-match" ? chosen.value : "*";
+			types =
+				value === "cardinal" || value === "ordinal"
+					? [value]
+					: value === "*"
+						? ["cardinal", "ordinal"]
+						: [];
+		}
+		if (!types.length) return false;
+		const categories = new Set<string>();
+		for (const type of types) {
+			const rules = rulesOf(
+				type
+					? {
+							...annotation,
+							options: (annotation.options ?? []).map((option) =>
+								option.name === "type"
+									? { name: "type", value: { type: "literal", value: type } }
+									: option
+							),
+						}
+					: annotation,
+				locale
+			);
+			if (!rules) return false;
+			for (const category of rules.categories) categories.add(category);
+		}
+		return !categories.has(match.value);
 	});
 }
 

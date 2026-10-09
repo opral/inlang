@@ -132,10 +132,11 @@ export function closestName(
  * order of the variants they appear in, then missing selectors and variants.
  *
  * - `missing-translation`: no message, no variants, or every pattern is empty.
- * - Variants for a plural category the target locale never selects, such as
- *   i18next's `_zero` (`countPlural=zero`) in German, are skipped by the
- *   variant checks below (`empty-variant`, `missing-variable`,
- *   `unknown-variable`, `missing-markup`), see {@link isUnreachableVariant}.
+ * - Variants for a plural category a locale never selects, such as i18next's
+ *   `_zero` (`countPlural=zero`) in German, are ignored on both sides: the
+ *   target's get no `empty-variant`, `missing-variable`, `unknown-variable` or
+ *   `missing-markup` and don't count as a translation, the reference's are
+ *   not compared with. See {@link isUnreachableVariant}.
  * - `empty-variant`: one variant's pattern is empty while another variant of
  *   the message has text, e.g. an ICU `=0 {}`. Checked without a reference too.
  * - `missing-variable`: a variable of the reference form with the same matches
@@ -162,14 +163,22 @@ export function checkTranslation(args: {
 	declarations?: readonly Declaration[];
 }): TranslationIssue[] {
 	const { reference, target, declarations } = args;
+	// Forms for a plural category the locale never selects (i18next's `_zero` in German) are
+	// never shown: their text can't be wrong, and doesn't count as a translation.
 	if (
 		!target ||
-		target.variants.every((variant) => isEmptyPattern(variant.pattern))
+		target.variants.every(
+			(variant) =>
+				isEmptyPattern(variant.pattern) ||
+				isUnreachableVariant(variant, declarations, target.locale)
+		)
 	)
 		return [{ type: "missing-translation" }];
 	const issues: TranslationIssue[] = [];
 	const referenceForms = (reference?.variants ?? []).filter(
-		(variant) => !isEmptyPattern(variant.pattern)
+		(variant) =>
+			!isEmptyPattern(variant.pattern) &&
+			!isUnreachableVariant(variant, declarations, reference!.locale)
 	);
 	const variables = [
 		...new Set(referenceForms.flatMap((form) => variableNames(form.pattern))),
@@ -235,8 +244,7 @@ export function checkTranslation(args: {
 		return forms;
 	};
 	for (const variant of target.variants) {
-		// A form for a plural category the locale never selects (i18next's `_zero` in German)
-		// is never shown: its text can't be wrong. Latvian `zero` (10–20) is checked as usual.
+		// Latvian `zero` (10–20) is reachable and checked as usual.
 		if (isUnreachableVariant(variant, declarations, target.locale)) continue;
 		if (isEmptyPattern(variant.pattern)) {
 			issues.push({
