@@ -8,6 +8,10 @@ import type {
   Variant,
   VariantImport,
 } from "@inlang/sdk";
+import {
+  keepUnchangedJsonEntries,
+  stringifyJsonKeepingEntries,
+} from "@inlang/sdk/json-formatting";
 import { PluginSettings } from "./settings.js";
 
 export const PLUGIN_KEY = "plugin.inlang.apple-xcstrings";
@@ -77,7 +81,8 @@ export const plugin: InlangPlugin<Config> = {
   ],
   importFiles: ({ files, settings }: ImportArgs) =>
     importCatalogs(files, settings),
-  exportFiles: (args: ExportArgs) => exportCatalog(args),
+  exportFiles: (args: ExportArgs) =>
+    args.files?.length ? exportKeepingEntries(args) : exportCatalog(args),
 };
 
 function importCatalogs(
@@ -279,7 +284,262 @@ function importLocalization(id: string, localization: Localization) {
   };
 }
 
-function exportCatalog({ bundles, messages, variants, settings }: ExportArgs) {
+/**
+ * Exports the catalog and keeps the text of the entries of the existing catalog
+ * that didn't change (formatting, key order, `state` and `extractionState`
+ * written by Xcode) and the keys of strings that the plugin doesn't import
+ * (e.g. `comment`), so that an export only changes the bytes of edited
+ * messages.
+ */
+async function exportKeepingEntries(args: ExportArgs) {
+  const previous = args.files?.find(
+    (file) => file.locale === args.settings.baseLocale,
+  );
+  const previousStrings = previous && stringsOf(previous.content);
+  const exportFiles = (exportArgs: Omit<ExportArgs, "files">) =>
+    withUnimportedKeys(exportCatalog(exportArgs), previousStrings);
+  let previousRows: ReturnType<typeof rowsOf> | undefined;
+  try {
+    previousRows =
+      previous && rowsOf(importCatalogs([previous], args.settings));
+  } catch {
+    previousRows = undefined;
+  }
+  // Without a previous catalog that the plugin can read, the full export as
+  // before.
+  if (
+    previous === undefined ||
+    previousStrings === undefined ||
+    previousRows === undefined
+  )
+    return exportFiles(args);
+  // New strings and locales are inserted where Xcode puts them.
+  const exported = inXcodeOrder(exportFiles(args));
+  const keep = (content: Uint8Array) =>
+    keepUnchangedJsonEntries({
+      exported,
+      files: [{ ...previous, content }],
+      settings: args.settings,
+      importFiles: ({ files, settings }) => importCatalogs(files, settings),
+      exportFiles,
+      indent: "  ",
+    });
+  const result = await keep(previous.content);
+  if (result[0]?.content !== exported[0]?.content) return result;
+  // The result is the full export: either nothing of the previous catalog is
+  // kept, or the kept text doesn't import to the new data, e.g. because the
+  // plugin moves the text around `%#@name@` of a substitution into its
+  // variants. Writes the strings that changed as a whole instead of their
+  // changed values, and keeps the text of the other strings.
+  try {
+    const content = rewriteChangedStrings({
+      previous: previous.content,
+      next: exported[0]!.content,
+      canonical: exportFiles({ ...previousRows, settings: args.settings })[0]!
+        .content,
+    });
+    return content === undefined ? exported : await keep(content);
+  } catch {
+    return exported;
+  }
+}
+
+/**
+ * The catalog with strings and localizations in the order Xcode writes them,
+ * i.e. sorted by code units.
+ */
+function inXcodeOrder(
+  files: ReturnType<typeof exportCatalog>,
+): ReturnType<typeof exportCatalog> {
+  const byKey = ([a]: [string, unknown], [b]: [string, unknown]) =>
+    a < b ? -1 : a > b ? 1 : 0;
+  return files.map((file) => {
+    const catalog = JSON.parse(
+      new TextDecoder().decode(file.content),
+    ) as Catalog;
+    catalog.strings = Object.fromEntries(
+      Object.entries(catalog.strings)
+        .sort(byKey)
+        .map(([id, entry]) => [
+          id,
+          entry.localizations
+            ? {
+                ...entry,
+                localizations: Object.fromEntries(
+                  Object.entries(entry.localizations).sort(byKey),
+                ),
+              }
+            : entry,
+        ]),
+    );
+    return {
+      ...file,
+      content: new TextEncoder().encode(
+        `${JSON.stringify(catalog, null, 2)}\n`,
+      ),
+    };
+  });
+}
+
+/**
+ * The previous catalog with the strings replaced whose value in `next`
+ * differs from the value the plugin writes for the previous string
+ * (`canonical`).
+ */
+function rewriteChangedStrings(args: {
+  previous: Uint8Array;
+  next: Uint8Array;
+  canonical: Uint8Array;
+}): Uint8Array | undefined {
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+  const text = decoder.decode(args.previous);
+  const previous = JSON.parse(text.replace(/^\uFEFF/, "")) as Catalog;
+  const next = JSON.parse(decoder.decode(args.next)) as Catalog;
+  const canonical = JSON.parse(decoder.decode(args.canonical)) as Catalog;
+  const strings = Object.fromEntries(
+    Object.entries(previous.strings).map(([id, entry]) => {
+      const nextEntry = own(next.strings, id);
+      return [
+        id,
+        nextEntry !== undefined &&
+        !jsonEquals(own(canonical.strings, id), nextEntry)
+          ? nextEntry
+          : entry,
+      ];
+    }),
+  );
+  const result = stringifyJsonKeepingEntries({
+    previous: text,
+    next: { ...previous, strings },
+  });
+  return result === undefined ? undefined : new TextEncoder().encode(result);
+}
+
+/** `object[key]` if it is an own property. */
+function own<T>(object: Record<string, T>, key: string): T | undefined {
+  return Object.prototype.hasOwnProperty.call(object, key)
+    ? object[key]
+    : undefined;
+}
+
+function jsonEquals(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a))
+    return (
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => jsonEquals(item, b[index]))
+    );
+  if (!a || !b || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(b)) return false;
+  const keysA = Object.keys(a);
+  return (
+    keysA.length === Object.keys(b).length &&
+    keysA.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(b, key) &&
+        jsonEquals(
+          (a as Record<string, unknown>)[key],
+          (b as Record<string, unknown>)[key],
+        ),
+    )
+  );
+}
+
+/** Bundles, messages and variants with ids from the result of an import. */
+function rowsOf(imported: ReturnType<typeof importCatalogs>) {
+  const messages: Message[] = imported.messages.map((message) => ({
+    id: `${message.bundleId}\u0000${message.locale}`,
+    bundleId: message.bundleId,
+    locale: message.locale,
+    selectors: message.selectors ?? [],
+  }));
+  const variants: Variant[] = imported.variants.map((variant, index) => ({
+    id: String(index),
+    messageId: `${variant.messageBundleId}\u0000${variant.messageLocale}`,
+    matches: variant.matches ?? [],
+    pattern: variant.pattern ?? [],
+  }));
+  return { bundles: imported.bundles, messages, variants };
+}
+
+/**
+ * Keys of a string in a catalog that the plugin imports and writes. Other keys,
+ * e.g. `comment` or `shouldTranslate`, are not part of inlang's data.
+ */
+const importedStringKeys = new Set(["extractionState", "localizations"]);
+
+/** The `strings` of a catalog, or `undefined` if it is not a catalog. */
+function stringsOf(content: Uint8Array): Record<string, unknown> | undefined {
+  try {
+    const parsed = JSON.parse(new TextDecoder().decode(content));
+    assertObject(parsed, "Apple .xcstrings catalog");
+    assertObject(parsed.strings, "Apple .xcstrings strings");
+    return parsed.strings;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Adds the keys of the strings of the previous catalog that the plugin doesn't
+ * import (e.g. `comment`, `isCommentAutoGenerated`, `shouldTranslate`) to the
+ * exported catalog, for the strings that it still contains.
+ */
+function withUnimportedKeys(
+  files: ReturnType<typeof exportCatalog>,
+  previousStrings: Record<string, unknown> | undefined,
+): ReturnType<typeof exportCatalog> {
+  if (previousStrings === undefined) return files;
+  return files.map((file) => {
+    const catalog = JSON.parse(
+      new TextDecoder().decode(file.content),
+    ) as Catalog;
+    let changed = false;
+    catalog.strings = Object.fromEntries(
+      Object.entries(catalog.strings).map(([id, entry]) => {
+        const previousEntry = own(previousStrings, id);
+        if (
+          !previousEntry ||
+          typeof previousEntry !== "object" ||
+          Array.isArray(previousEntry)
+        )
+          return [id, entry];
+        const unimported = Object.entries(previousEntry).filter(
+          ([key]) =>
+            !importedStringKeys.has(key) &&
+            !Object.prototype.hasOwnProperty.call(entry, key),
+        );
+        if (unimported.length === 0) return [id, entry];
+        changed = true;
+        // in the order of keys Xcode writes
+        return [
+          id,
+          Object.fromEntries(
+            [...Object.entries(entry), ...unimported].sort(([a], [b]) =>
+              a < b ? -1 : a > b ? 1 : 0,
+            ),
+          ),
+        ];
+      }),
+    );
+    return changed
+      ? {
+          ...file,
+          content: new TextEncoder().encode(
+            `${JSON.stringify(catalog, null, 2)}\n`,
+          ),
+        }
+      : file;
+  });
+}
+
+function exportCatalog({
+  bundles,
+  messages,
+  variants,
+  settings,
+}: Omit<ExportArgs, "files">) {
   assertUniqueIds(bundles, "bundle");
   assertUniqueIds(messages, "message");
   const messageIds = new Set(messages.map((message) => message.id));
