@@ -25,7 +25,7 @@ const temporary: string[] = [];
 
 beforeAll(async () => {
   await build({
-    ...buildOptions({ isProduction: false, outdir }),
+    ...buildOptions({ outdir }),
     absWorkingDir: cliDirectory,
     logLevel: "silent",
   });

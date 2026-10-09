@@ -426,6 +426,10 @@ npx @inlang/cli plugin build --entry ./path/to/index.ts --outdir ./path/to/dist
 
 See how there is also a `--watch` flag, which enables a watch mode to monitor for changes and automatically rebuild the module when changes are detected. This command runs with `esbuild` under the hood. -->
 
+## Telemetry
+
+The CLI collects no telemetry or error reports.
+
 ## Troubleshoot
 
 If something isn't working as expected or you are getting errors, make sure to run on the latest version of the CLI.

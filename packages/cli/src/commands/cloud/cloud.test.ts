@@ -37,16 +37,14 @@ function run(
 ) {
   let output = "";
   const open = vi.fn(async () => env.opens ?? true);
-  const capture = vi.fn(async () => {});
   const done = cloudCommandAction(options, {
     cwd: env.cwd,
     interactive: env.interactive ?? true,
     color: false,
     write: (text) => (output += text),
     open,
-    capture,
   });
-  return done.then(() => ({ output, open, capture }));
+  return done.then(() => ({ output, open }));
 }
 
 test("pre-selects Paraglide JS for Paraglide projects, nothing otherwise", () => {
@@ -90,7 +88,7 @@ test("pre-selects Paraglide JS for Paraglide projects, nothing otherwise", () =>
 });
 
 test("lists the features, prints the form and opens it at a terminal", async () => {
-  const { output, open, capture } = await run(
+  const { output, open } = await run(
     { open: true },
     {
       cwd: directory(),
@@ -109,15 +107,6 @@ test("lists the features, prints the form and opens it at a terminal", async () 
   expect(output).toContain("Opening the form in your browser…");
   expect(output).not.toMatch(/\$|€|price/i);
   expect(open).toHaveBeenCalledWith(FORM);
-  expect(capture).toHaveBeenCalledWith({
-    event: "CLI cloud viewed",
-    properties: {
-      opened_form: true,
-      interactive: true,
-      json: false,
-      product: "unknown",
-    },
-  });
 });
 
 test("doesn't open the browser with --no-open, in CI or when piped", async () => {
@@ -125,22 +114,13 @@ test("doesn't open the browser with --no-open, in CI or when piped", async () =>
     [{ open: false }, true],
     [{ open: true }, false],
   ] as const) {
-    const { output, open, capture } = await run(options, {
+    const { output, open } = await run(options, {
       cwd: directory(),
       interactive,
     });
     expect(open).not.toHaveBeenCalled();
     expect(output).toContain(FORM);
     expect(output).not.toContain("Opening");
-    expect(capture).toHaveBeenCalledWith({
-      event: "CLI cloud viewed",
-      properties: {
-        opened_form: false,
-        interactive,
-        json: false,
-        product: "unknown",
-      },
-    });
   }
 });
 

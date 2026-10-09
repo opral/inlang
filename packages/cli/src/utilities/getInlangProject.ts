@@ -2,8 +2,6 @@ import fs from "node:fs";
 import { loadProjectFromDirectory, type InlangProject } from "@inlang/sdk";
 import { resolve } from "node:path";
 
-export let lastUsedProject: InlangProject | undefined;
-
 /** The project couldn't be opened, e.g. because `settings.json` is missing. */
 export class ProjectLoadError extends Error {
   override name = "ProjectLoadError";
@@ -24,7 +22,6 @@ export async function getInlangProject(args: {
       fs: fs,
     });
 
-    lastUsedProject = project;
     return project;
   } catch (err) {
     throw new ProjectLoadError(

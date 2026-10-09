@@ -2,7 +2,6 @@ import { Command } from "commander";
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import nodePath from "node:path";
-import { capture } from "../../telemetry/capture.js";
 import { styles } from "../../utilities/styles.js";
 
 /** The hosted features, as Parrot's Cloud tab and Fink present them. */
@@ -135,7 +134,6 @@ export const cloud = new Command()
       color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
       write: (text) => process.stdout.write(text),
       open: openInBrowser,
-      capture,
     });
   });
 
@@ -167,7 +165,6 @@ export async function cloudCommandAction(
     color: boolean;
     write: (text: string) => void;
     open: (url: string) => Promise<boolean>;
-    capture: typeof capture;
   },
 ): Promise<void> {
   const paraglide = usesParaglide({ cwd: env.cwd, project: options.project });
@@ -205,15 +202,6 @@ export async function cloudCommandAction(
       ? await env.open(url)
       : false;
   if (opened) env.write("Opening the form in your browser…\n");
-  await env.capture({
-    event: "CLI cloud viewed",
-    properties: {
-      opened_form: opened,
-      interactive: env.interactive,
-      json: Boolean(options.json),
-      product: paraglide ? "Paraglide JS" : "unknown",
-    },
-  });
 }
 
 /** Opens `url` with the platform's opener. Resolves `false` if that isn't possible. */
