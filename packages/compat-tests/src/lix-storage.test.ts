@@ -12,21 +12,34 @@ import {
 	sdks,
 	selectRows,
 	sortRows,
+	tables,
 } from "./harness.js";
 import { editorRows } from "./editorRows.js";
 
 const require = createRequire(import.meta.url);
 
-function sdkManifest(version: Version) {
-	const specifier = version === "published" ? "published-sdk" : "@inlang/sdk";
-	// the package entry is dist/index.js
-	const entry = require.resolve(specifier);
-	return JSON.parse(
-		fs.readFileSync(
-			path.join(path.dirname(entry), "..", "package.json"),
-			"utf8"
-		)
+/** The package.json of the package that `entry` belongs to. */
+function manifestOf(entry: string, name: string) {
+	let dir = path.dirname(entry);
+	for (;;) {
+		const file = path.join(dir, "package.json");
+		if (fs.existsSync(file)) {
+			const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+			if (manifest.name === name) return manifest;
+		}
+		const parent = path.dirname(dir);
+		if (parent === dir) throw new Error(`No package.json of ${name}`);
+		dir = parent;
+	}
+}
+
+/** The installed Lix release that an SDK runs on. */
+function installedLixVersion(version: Version): string {
+	const sdkEntry = require.resolve(
+		version === "published" ? "published-sdk" : "@inlang/sdk"
 	);
+	const lixEntry = createRequire(sdkEntry).resolve("@lix-js/sdk");
+	return manifestOf(lixEntry, "@lix-js/sdk").version;
 }
 
 const settings = { baseLocale: "en", locales: ["en", "de"], modules: [] };
@@ -45,8 +58,8 @@ async function openOnLix(version: Version, lix: unknown): Promise<Project> {
 
 describe("physical storage", () => {
 	test("both SDKs use the same Lix release, so a Lix file has the same format", () => {
-		expect(sdkManifest("current").dependencies["@lix-js/sdk"]).toBe(
-			sdkManifest("published").dependencies["@lix-js/sdk"]
+		expect(installedLixVersion("current")).toBe(
+			installedLixVersion("published")
 		);
 	});
 
@@ -106,10 +119,7 @@ describe("physical storage", () => {
 					"SELECT content FROM lix_file WHERE path = '/settings.json'"
 				)
 			).toEqual(settingsBefore);
-			const t =
-				second === "published"
-					? { variant: "variant" }
-					: { variant: "inlang_variant" };
+			const t = tables(second);
 			const edited = editorRows.variants[0]!;
 			await b.db
 				.updateTable(t.variant)

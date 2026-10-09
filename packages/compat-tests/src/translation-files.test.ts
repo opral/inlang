@@ -1,62 +1,24 @@
 import { describe, expect, test } from "vitest";
 import path from "node:path";
+import fs from "node:fs";
 import {
 	type Project,
-	type Version,
-	decode,
-	importPlugin,
+	contentOf,
 	insertRows,
-	loadFromBlob,
-	newProjectBlob,
+	selectRows,
+	tables,
 } from "./harness.js";
 import {
+	type Files,
 	type Fixture,
+	exportFixtureFiles as exportFiles,
 	fixtures,
 	fixturesDir,
+	openFixtureProject as openProject,
 	readSourceFiles,
-	settingsFor,
+	upgrades,
 } from "./fixtures.js";
 import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
-
-type Files = Array<{ locale: string; name: string; content: string }>;
-
-/**
- * The SDK / plugin combinations that write files after the release:
- *
- * - current SDK + current plugin: apps and CLIs that upgrade
- * - published SDK + current plugin: every project on the published SDK, which
- *   loads the new plugin release from `settings.modules` (major range URL)
- */
-const upgrades: Array<{ sdk: Version; plugin: Version }> = [
-	{ sdk: "current", plugin: "current" },
-	{ sdk: "published", plugin: "current" },
-];
-
-async function openProject(
-	fixture: Fixture,
-	sdk: Version,
-	plugin: Version,
-	blob?: Blob
-): Promise<Project> {
-	return loadFromBlob(
-		sdk,
-		blob ?? (await newProjectBlob(sdk, settingsFor(fixture))),
-		[await importPlugin(fixture.key, plugin)]
-	);
-}
-
-async function exportFiles(project: Project, fixture: Fixture): Promise<Files> {
-	const files = await project.exportFiles({ pluginKey: fixture.key });
-	return files
-		.map((file) => ({
-			locale: file.locale,
-			name: file.name,
-			content: decode(file.content),
-		}))
-		.sort((a, b) =>
-			`${a.name}${a.locale}`.localeCompare(`${b.name}${b.locale}`)
-		);
-}
 
 const asImport = (files: Files) =>
 	files.map((file) => ({
@@ -77,15 +39,16 @@ async function editLikeAnEditor(project: Project, fixture: Fixture) {
 		// Imports of the published plugin store `item_zero` twice for English: as
 		// the exact `count = 0` form and as the plural category `zero` form.
 		// A translator edits the "=0" form.
+		const t = tables(project.version);
 		const message = await project.db
-			.selectFrom("message")
-			.where("bundleId", "=", "item")
+			.selectFrom(t.message)
+			.where(t.bundleId, "=", "item")
 			.where("locale", "=", "en")
 			.select("id")
 			.executeTakeFirstOrThrow();
 		const variants = await project.db
-			.selectFrom("variant")
-			.where("messageId", "=", message.id)
+			.selectFrom(t.variant)
+			.where(t.messageId, "=", message.id)
 			.selectAll()
 			.execute();
 		const exactZero = variants.find((variant: any) =>
@@ -95,14 +58,61 @@ async function editLikeAnEditor(project: Project, fixture: Fixture) {
 		);
 		expect(exactZero).toBeDefined();
 		await project.db
-			.updateTable("variant")
+			.updateTable(t.variant)
 			.set({ pattern: [{ type: "text", value: "Your list is empty" }] })
 			.where("id", "=", exactZero.id)
 			.execute();
 	}
 }
 
+function listFiles(dir: string): string[] {
+	return fs
+		.readdirSync(dir, { recursive: true, withFileTypes: true })
+		.filter((entry) => entry.isFile())
+		.map((entry) => path.relative(dir, path.join(entry.parentPath, entry.name)))
+		.sort();
+}
+
+/**
+ * Bundles that the current plugin imports differently from the published
+ * one, from the same file. See corrections.test.ts.
+ */
+const importChanges: Record<string, string[]> = {
+	// `#` in a plural with an offset keeps the offset (`icu:pound offset=1`)
+	icu1: ["guests"],
+};
+
 describe.each(fixtures)("$dir", (fixture) => {
+	test("hand-written files import into the same messages after the upgrade", async () => {
+		const project = await openProject(fixture, "published", "published");
+		await project.importFiles({
+			pluginKey: fixture.key,
+			files: readSourceFiles(fixture),
+		});
+		const expected = withoutBundles(
+			contentOf(await selectRows(project)),
+			importChanges[fixture.dir] ?? []
+		);
+		await project.close();
+		expect(expected.bundles.length).toBeGreaterThan(0);
+
+		for (const { sdk, plugin } of upgrades) {
+			const upgraded = await openProject(fixture, sdk, plugin);
+			await upgraded.importFiles({
+				pluginKey: fixture.key,
+				files: readSourceFiles(fixture),
+			});
+			expect(
+				withoutBundles(
+					contentOf(await selectRows(upgraded)),
+					importChanges[fixture.dir] ?? []
+				),
+				`${sdk} SDK with the ${plugin} plugin`
+			).toEqual(expected);
+			await upgraded.close();
+		}
+	});
+
 	test("files written by the published plugin stay byte-identical when they are imported and exported again after the upgrade", async () => {
 		const project = await openProject(fixture, "published", "published");
 		await project.importFiles({
@@ -111,6 +121,11 @@ describe.each(fixtures)("$dir", (fixture) => {
 		});
 		const published = await exportFiles(project, fixture);
 		await project.close();
+		// every committed fixture is written, and nothing else
+		const publishedDir = path.join(fixturesDir, fixture.dir, "published");
+		expect(published.map((file) => path.normalize(file.name)).sort()).toEqual(
+			listFiles(publishedDir)
+		);
 		for (const file of published) {
 			await expect(file.content).toMatchFileSnapshot(
 				path.join(fixturesDir, fixture.dir, "published", file.name)
@@ -139,6 +154,7 @@ describe.each(fixtures)("$dir", (fixture) => {
 		});
 		await editLikeAnEditor(project, fixture);
 		const before = await exportFiles(project, fixture);
+		expect(before.length).toBeGreaterThan(0);
 		const blob = await project.toBlob();
 		await project.close();
 
@@ -152,3 +168,16 @@ describe.each(fixtures)("$dir", (fixture) => {
 		}
 	});
 });
+
+function withoutBundles(
+	content: ReturnType<typeof contentOf>,
+	ids: string[]
+): ReturnType<typeof contentOf> {
+	const keep = (key: string | undefined) =>
+		!ids.some((id) => key?.startsWith(`${id}/`));
+	return {
+		bundles: content.bundles.filter((bundle) => !ids.includes(bundle.id)),
+		messages: content.messages.filter((message) => keep(message.key)),
+		variants: content.variants.filter((variant) => keep(variant.message)),
+	};
+}

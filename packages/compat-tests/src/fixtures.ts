@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PluginKey } from "./harness.js";
+import {
+	type PluginKey,
+	type Project,
+	type Version,
+	decode,
+	importPlugin,
+	loadFromBlob,
+	newProjectBlob,
+} from "./harness.js";
 
 export const fixturesDir = fileURLToPath(
 	new URL("../fixtures", import.meta.url)
@@ -159,4 +167,51 @@ export function settingsFor(fixture: Fixture) {
 		modules: [] as string[],
 		[fixture.key]: fixture.pluginSettings,
 	};
+}
+
+/**
+ * The SDK / plugin combinations that write files after the release:
+ *
+ * - current SDK + current plugin: apps and CLIs that upgrade
+ * - published SDK + current plugin: every project on the published SDK, which
+ *   loads the new plugin release from `settings.modules` (major range URL)
+ */
+export const upgrades: Array<{ sdk: Version; plugin: Version }> = [
+	{ sdk: "current", plugin: "current" },
+	{ sdk: "published", plugin: "current" },
+];
+
+/**
+ * A project of `fixture` on an SDK with a plugin version, new or from `blob`.
+ */
+export async function openFixtureProject(
+	fixture: Fixture,
+	sdk: Version,
+	plugin: Version,
+	blob?: Blob
+): Promise<Project> {
+	return loadFromBlob(
+		sdk,
+		blob ?? (await newProjectBlob(sdk, settingsFor(fixture))),
+		[await importPlugin(fixture.key, plugin)]
+	);
+}
+
+export type Files = Array<{ locale: string; name: string; content: string }>;
+
+/** The exported files, in a stable order. File contents are not touched. */
+export async function exportFixtureFiles(
+	project: Project,
+	fixture: Fixture
+): Promise<Files> {
+	const files = await project.exportFiles({ pluginKey: fixture.key });
+	return files
+		.map((file) => ({
+			locale: file.locale,
+			name: file.name,
+			content: decode(file.content),
+		}))
+		.sort((a, b) =>
+			`${a.name}${a.locale}`.localeCompare(`${b.name}${b.locale}`)
+		);
 }

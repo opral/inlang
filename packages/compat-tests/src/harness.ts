@@ -99,10 +99,14 @@ globalThis.fetch = (async (input: string | URL | Request) => {
 	if (entry === undefined) {
 		throw new Error(`Unexpected network request in compat tests: ${url}`);
 	}
+	const response = new Response(
+		pluginSource(entry[0] as PluginKey, servedPlugins),
+		{ headers: { "content-type": "text/javascript" } }
+	);
+	// only after the source was read: a failed read makes the SDK fall back
+	// to its plugin cache, which may hold another version
 	fetchedModules.push(`${servedPlugins} ${url}`);
-	return new Response(pluginSource(entry[0] as PluginKey, servedPlugins), {
-		headers: { "content-type": "text/javascript" },
-	});
+	return response;
 }) as typeof fetch;
 
 /**
@@ -212,26 +216,32 @@ export async function selectRows(project: Project): Promise<Rows> {
 }
 
 /**
+ * Table and column names of the query API of either SDK.
+ */
+export function tables(version: Version) {
+	return version === "published"
+		? {
+				bundle: "bundle",
+				message: "message",
+				variant: "variant",
+				bundleId: "bundleId",
+				messageId: "messageId",
+			}
+		: {
+				bundle: "inlang_bundle",
+				message: "inlang_message",
+				variant: "inlang_variant",
+				bundleId: "bundle_id",
+				messageId: "message_id",
+			};
+}
+
+/**
  * Inserts rows with the query API of either SDK, the way editors such as
  * Fink and Parrot write: row by row, with ids they generate.
  */
 export async function insertRows(project: Project, rows: Rows): Promise<void> {
-	const names =
-		project.version === "published"
-			? {
-					bundle: "bundle",
-					message: "message",
-					variant: "variant",
-					bundleId: "bundleId",
-					messageId: "messageId",
-				}
-			: {
-					bundle: "inlang_bundle",
-					message: "inlang_message",
-					variant: "inlang_variant",
-					bundleId: "bundle_id",
-					messageId: "message_id",
-				};
+	const names = tables(project.version);
 	for (const bundle of rows.bundles) {
 		await project.db
 			.insertInto(names.bundle)

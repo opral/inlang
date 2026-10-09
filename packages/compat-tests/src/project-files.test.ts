@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -16,6 +16,7 @@ import {
 	saveToDirectory,
 	selectRows,
 	servePlugins,
+	tables,
 	sortRows,
 } from "./harness.js";
 import { editorRows, editorSpecs, rowsFromSpecs } from "./editorRows.js";
@@ -65,22 +66,7 @@ const added = rowsFromSpecs(
 );
 
 async function editWith(project: Project) {
-	const t =
-		project.version === "published"
-			? {
-					bundle: "bundle",
-					message: "message",
-					variant: "variant",
-					messageId: "messageId",
-					bundleId: "bundleId",
-				}
-			: {
-					bundle: "inlang_bundle",
-					message: "inlang_message",
-					variant: "inlang_variant",
-					messageId: "message_id",
-					bundleId: "bundle_id",
-				};
+	const t = tables(project.version);
 	await insertRows(project, added);
 	// update the text of the German greeting
 	const greetingDe = await project.db
@@ -249,15 +235,23 @@ function trackedChanges(changes: string[]) {
 	});
 }
 
-// The published plugin can't read the exact-number + plural pair ("cart") it
-// writes, see corrections.test.ts. Projects that contain one can't be opened
-// with the published plugin at all, so they are left out here.
+// The published plugin can't read an exact-number + plural pair ("cart") in
+// either order: not the order it writes, nor the corrected order the current
+// plugin writes ("match is not iterable" on `local countPluralExact = count`).
+// Projects with one can't be opened with the published plugin at all, so
+// they are left out here; corrections.test.ts covers the pair.
 const directoryRows = rowsFromSpecs(
 	editorSpecs.filter((spec) => spec.id !== "cart")
 );
 
+const tempDirs: string[] = [];
+afterAll(() => {
+	for (const dir of tempDirs) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 async function createDirectory(sdk: Version) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-compat-"));
+	tempDirs.push(root);
 	const projectPath = path.join(root, "project.inlang");
 	fs.mkdirSync(projectPath);
 	fs.writeFileSync(path.join(projectPath, "settings.json"), settingsJson);
@@ -323,8 +317,6 @@ describe.each([
 				});
 				await opened.close();
 				const afterSave = snapshotDirectory(root);
-				if (process.env.COMPAT_DEBUG)
-					console.log(creator, reader, served, changedFiles(before, afterSave));
 				expect(trackedChanges(changedFiles(before, afterSave))).toEqual([]);
 				expect(
 					changedFiles(before, afterSave).filter(

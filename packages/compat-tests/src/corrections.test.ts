@@ -5,35 +5,34 @@
  * output that it can't read back, that drops information, or that displays
  * something else than the message says. Everything else must stay
  * byte-identical, see translation-files.test.ts.
+ *
+ * Also the one case where the current plugin imports the same file into
+ * different messages (icu1: `#` with an offset).
+ *
+ * Every case is checked for both upgrade paths: the current SDK with the
+ * current plugin, and the published SDK loading the current plugin.
  */
 import { describe, expect, test } from "vitest";
 import {
 	type Project,
-	type Version,
-	decode,
+	contentOf,
 	encode,
-	importPlugin,
+	decode,
 	insertRows,
-	loadFromBlob,
-	newProjectBlob,
+	selectRows,
+	tables,
 } from "./harness.js";
-import { type Fixture, fixtures, settingsFor } from "./fixtures.js";
+import {
+	type Fixture,
+	fixtures,
+	openFixtureProject as open,
+	readSourceFiles,
+	settingsFor,
+	upgrades,
+} from "./fixtures.js";
 import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
 
 const fixture = (dir: string) => fixtures.find((f) => f.dir === dir)!;
-
-async function open(
-	f: Fixture,
-	sdk: Version,
-	plugin: Version,
-	blob?: Blob
-): Promise<Project> {
-	return loadFromBlob(
-		sdk,
-		blob ?? (await newProjectBlob(sdk, settingsFor(f))),
-		[await importPlugin(f.key, plugin)]
-	);
-}
 
 async function exportLocale(project: Project, f: Fixture, locale = "en") {
 	const files = await project.exportFiles({ pluginKey: f.key });
@@ -43,7 +42,7 @@ async function exportLocale(project: Project, f: Fixture, locale = "en") {
 /**
  * Imports `source` with the published SDK and plugin, then exports the
  * database with the published plugin (before) and, after the upgrade, with
- * the current SDK and plugin (after).
+ * each upgraded SDK / plugin combination (after).
  */
 async function beforeAndAfter(
 	f: Fixture,
@@ -58,10 +57,16 @@ async function beforeAndAfter(
 	const before = JSON.parse(await exportLocale(published, f, locale));
 	const blob = await published.toBlob();
 	await published.close();
-	const current = await open(f, "current", "current", blob);
-	const after = JSON.parse(await exportLocale(current, f, locale));
-	await current.close();
-	return { before, after };
+	const afters = [];
+	for (const { sdk, plugin } of upgrades) {
+		const current = await open(f, sdk, plugin, blob);
+		afters.push({
+			label: `${sdk} SDK with the ${plugin} plugin`,
+			after: JSON.parse(await exportLocale(current, f, locale)),
+		});
+		await current.close();
+	}
+	return { before, afters };
 }
 
 describe("message-format", () => {
@@ -81,8 +86,12 @@ describe("message-format", () => {
 		).rejects.toThrow();
 		await published.close();
 
-		for (const source of ["file", "database"] as const) {
-			const current = await open(f, "current", "current");
+		for (const [source, { sdk, plugin }] of (
+			["file", "database"] as const
+		).flatMap((source) =>
+			upgrades.map((upgrade) => [source, upgrade] as const)
+		)) {
+			const current = await open(f, sdk, plugin);
 			if (source === "file") {
 				await current.importFiles({
 					pluginKey: f.key,
@@ -97,10 +106,10 @@ describe("message-format", () => {
 				"countPlural",
 				"countPluralExact",
 			]);
-			expect(JSON.parse(after).cart[0].selectors, source).toEqual([
-				"countPluralExact",
-				"countPlural",
-			]);
+			expect(
+				JSON.parse(after).cart[0].selectors,
+				`${source}, ${sdk} SDK with the ${plugin} plugin`
+			).toEqual(["countPluralExact", "countPlural"]);
 			// nothing else changes
 			expect(
 				after.replace(
@@ -132,34 +141,59 @@ describe("message-format", () => {
 			await project.close();
 			return blob;
 		})();
-		const settings = settingsFor(f);
-		const before = await loadFromBlob("published", rows, [
-			await importPlugin(f.key, "published"),
-		]);
+		// the project also uses message-format
+		const before = await open(f, "published", "published", rows);
 		await before.settings.set({
 			...(await before.settings.get()),
-			...settings,
+			...settingsFor(f),
 		});
 		const beforeFile = JSON.parse(await exportLocale(before, f));
 		const blob = await before.toBlob();
 		await before.close();
-		const after = await loadFromBlob("current", blob, [
-			await importPlugin(f.key, "current"),
-		]);
-		const afterFile = JSON.parse(await exportLocale(after, f));
-		await after.close();
-		expect({ before: beforeFile.progress, after: afterFile.progress })
-			.toMatchInlineSnapshot(`
-				{
-				  "after": "{rate: number style=percent} done",
-				  "before": "{rate} done",
-				}
-			`);
+		expect(beforeFile.progress).toBe("{rate} done");
+		for (const { sdk, plugin } of upgrades) {
+			const after = await open(f, sdk, plugin, blob);
+			const afterFile = JSON.parse(await exportLocale(after, f));
+			await after.close();
+			expect(afterFile.progress, `${sdk} SDK with the ${plugin} plugin`).toBe(
+				"{rate: number style=percent} done"
+			);
+		}
 	});
 });
 
 describe("icu1", () => {
 	const f = fixture("icu1");
+
+	test("import: # in a plural with an offset keeps the offset, which the published plugin dropped (no file change)", async () => {
+		const poundOptions = async (
+			sdk: "published" | "current",
+			plugin: "published" | "current"
+		) => {
+			const project = await open(f, sdk, plugin);
+			await project.importFiles({
+				pluginKey: f.key,
+				files: readSourceFiles(f),
+			});
+			const content = contentOf(await selectRows(project));
+			await project.close();
+			const guests = content.variants.find(
+				(variant) =>
+					variant.message === "guests/en" &&
+					JSON.stringify(variant.pattern).includes("icu:pound")
+			)!;
+			return (guests.pattern as any[]).find(
+				(part) => part.annotation?.name === "icu:pound"
+			).annotation.options;
+		};
+		expect(await poundOptions("published", "published")).toEqual([]);
+		for (const { sdk, plugin } of upgrades) {
+			expect(
+				await poundOptions(sdk, plugin),
+				`${sdk} SDK with the ${plugin} plugin`
+			).toEqual([{ name: "offset", value: { type: "literal", value: "1" } }]);
+		}
+	});
 
 	test.each([
 		{
@@ -195,20 +229,25 @@ describe("icu1", () => {
 	])(
 		"$name",
 		async ({ message, before: expectedBefore, after: expectedAfter }) => {
-			const { before, after } = await beforeAndAfter(f, { message });
-			expect({ before: before.message, after: after.message }).toEqual({
-				before: expectedBefore,
-				after: expectedAfter,
-			});
+			const { before, afters } = await beforeAndAfter(f, { message });
+			expect(before.message).toBe(expectedBefore);
+			for (const { label, after } of afters) {
+				expect(after.message, label).toBe(expectedAfter);
+			}
 
 			// files written by the published plugin are read back as they are
-			const current = await open(f, "current", "current");
-			await current.importFiles({
-				pluginKey: f.key,
-				files: [{ locale: "en", content: encode(JSON.stringify(before)) }],
-			});
-			expect(JSON.parse(await exportLocale(current, f))).toEqual(before);
-			await current.close();
+			for (const { sdk, plugin } of upgrades) {
+				const current = await open(f, sdk, plugin);
+				await current.importFiles({
+					pluginKey: f.key,
+					files: [{ locale: "en", content: encode(JSON.stringify(before)) }],
+				});
+				expect(
+					JSON.parse(await exportLocale(current, f)),
+					`${sdk} SDK with the ${plugin} plugin`
+				).toEqual(before);
+				await current.close();
+			}
 		}
 	);
 });
@@ -234,15 +273,16 @@ describe("i18next", () => {
 			],
 		});
 		// a translator edits only the "=0" form
+		const t = tables("published");
 		const variants = await published.db
-			.selectFrom("variant")
+			.selectFrom(t.variant)
 			.selectAll()
 			.execute();
 		const exactZero = variants.find((v: any) =>
 			v.matches.some((m: any) => m.key === "count" && m.value === "0")
 		);
 		await published.db
-			.updateTable("variant")
+			.updateTable(t.variant)
 			.set({ pattern: [{ type: "text", value: "Nav preču" }] })
 			.where("id", "=", exactZero.id)
 			.execute();
@@ -251,10 +291,12 @@ describe("i18next", () => {
 		const blob = await published.toBlob();
 		await published.close();
 
-		const current = await open(f, "current", "current", blob);
-		await expect(current.exportFiles({ pluginKey: f.key })).rejects.toThrow(
-			'i18next export cannot represent two different texts for "item_zero" of bundle "item" (lv)'
-		);
-		await current.close();
+		for (const { sdk, plugin } of upgrades) {
+			const current = await open(f, sdk, plugin, blob);
+			await expect(current.exportFiles({ pluginKey: f.key })).rejects.toThrow(
+				'i18next export cannot represent two different texts for "item_zero" of bundle "item" (lv)'
+			);
+			await current.close();
+		}
 	});
 });
