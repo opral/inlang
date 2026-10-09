@@ -2,8 +2,10 @@ import { expect, test } from "vitest";
 import type { Declaration, Pattern } from "../json-schema/pattern.js";
 import type { Match } from "../database/schema.js";
 import { checkTranslation } from "./translations.js";
+import { checkBundle } from "./checkBundle.js";
 import {
 	isPluralSelector,
+	isUnreachableVariant,
 	missingVariants,
 	pluralRules,
 	requiredVariants,
@@ -520,9 +522,406 @@ test("every fixture reference checked against itself is clean", () => {
 			"countPlural=one": [t("One item in "), v("folder")],
 			"countPlural=*": [v("count"), t(" items")],
 		}),
+		// i18next `_zero`: an exact `count=0` and the `zero` category English never selects
+		i18next("en", {
+			zero: [t("Your cart is empty")],
+			one: [v("count"), t(" item")],
+			other: [v("count"), t(" items")],
+		}),
 	];
 	for (const reference of references)
 		expect(
 			checkTranslation({ reference, target: reference, declarations: plural })
 		).toEqual([]);
+});
+
+/** The i18next plugin's import of `_zero`, `_one`, `_other`: `_zero` is two forms. */
+const i18next = (
+	locale: string,
+	forms: { zero: Pattern; one?: Pattern; other: Pattern; extra?: string[] }
+) =>
+	message(locale, ["count", "countPlural"], {
+		"count=0,countPlural=*": forms.zero,
+		"count=*,countPlural=zero": forms.zero,
+		...(forms.one ? { "count=*,countPlural=one": forms.one } : {}),
+		...Object.fromEntries(
+			(forms.extra ?? []).map((category) => [
+				`count=*,countPlural=${category}`,
+				forms.other,
+			])
+		),
+		"count=*,countPlural=other": forms.other,
+	});
+
+test("a plural category the locale never selects is not checked: i18next `_zero` in German and French", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	for (const locale of ["de", "fr"]) {
+		const target = i18next(locale, {
+			zero: [t("Leer")],
+			one: [v("count"), t(" Artikel")],
+			other: [v("count"), t(" Artikel")],
+		});
+		expect(
+			checkTranslation({ reference, target, declarations: plural })
+		).toEqual([]);
+	}
+	// nothing is reported for the unreachable form: not empty, unknown variables or markup
+	const de = message("de", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Leer")],
+		"count=*,countPlural=zero": [],
+		"count=*,countPlural=one": [v("count"), t(" Artikel")],
+		"count=*,countPlural=other": [v("count"), t(" Artikel")],
+	});
+	expect(
+		checkTranslation({ reference, target: de, declarations: plural })
+	).toEqual([]);
+	const markup = message("en", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Empty")],
+		"count=*,countPlural=zero": [
+			{ type: "markup-start", name: "b", options: [], attributes: [] },
+			t("Empty"),
+		],
+		"count=*,countPlural=one": [v("count"), t(" item")],
+		"count=*,countPlural=other": [v("count"), t(" items")],
+	} as never);
+	const typo = message("de", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Leer")],
+		"count=*,countPlural=zero": [v("cuont"), t(" Leer")],
+		"count=*,countPlural=one": [v("count"), t(" Artikel")],
+		"count=*,countPlural=other": [v("count"), t(" Artikel")],
+	});
+	expect(
+		checkTranslation({ reference: markup, target: typo, declarations: plural })
+	).toEqual([]);
+	// the exact number keeps its rule: it may spell the number out, other variables stay needed
+	const folder = i18next("en", {
+		zero: [t("Nothing in "), v("folder")],
+		other: [v("count"), t(" in "), v("folder")],
+	});
+	expect(
+		checkTranslation({
+			reference: folder,
+			target: i18next("de", {
+				zero: [t("Nichts")],
+				one: [v("count"), t(" in "), v("folder")],
+				other: [v("count"), t(" in "), v("folder")],
+			}),
+			declarations: plural,
+		})
+	).toEqual([
+		{
+			type: "missing-variable",
+			name: "folder",
+			variantId: "de:count=0,countPlural=*",
+		},
+	]);
+});
+
+test("a plural category the locale selects keeps every check: Latvian `zero` is 10–20", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	const latvian = message("lv", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Grozs ir tukšs")],
+		"count=*,countPlural=zero": [t("Grozs ir tukšs")],
+		"count=*,countPlural=one": [v("count"), t(" prece")],
+		"count=*,countPlural=other": [v("count"), t(" preces")],
+	});
+	expect(
+		checkTranslation({ reference, target: latvian, declarations: plural })
+	).toEqual([
+		{
+			type: "missing-variable",
+			name: "count",
+			variantId: "lv:count=*,countPlural=zero",
+		},
+	]);
+	const empty = message("lv", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Grozs ir tukšs")],
+		"count=*,countPlural=zero": [],
+		"count=*,countPlural=one": [v("count"), t(" prece")],
+		"count=*,countPlural=other": [v("count"), t(" preces")],
+	});
+	expect(
+		types(checkTranslation({ reference, target: empty, declarations: plural }))
+	).toEqual(["empty-variant"]);
+});
+
+test("isUnreachableVariant: categories outside the locale's rules", () => {
+	const zero = { matches: [match("countPlural", "zero")] };
+	expect(isUnreachableVariant(zero, plural, "de")).toBe(true);
+	expect(isUnreachableVariant(zero, plural, "en")).toBe(true);
+	expect(isUnreachableVariant(zero, plural, "fr")).toBe(true);
+	expect(isUnreachableVariant(zero, plural, "lv")).toBe(false);
+	expect(isUnreachableVariant(zero, plural, "ar")).toBe(false);
+	// French `many` (millions) is rare, not unreachable
+	const many = { matches: [match("countPlural", "many")] };
+	expect(isUnreachableVariant(many, plural, "fr")).toBe(false);
+	expect(isUnreachableVariant(many, plural, "de")).toBe(true);
+	// numbers, the catch-all, other, non-plural selectors and unknown rules are reachable
+	expect(
+		isUnreachableVariant({ matches: [match("count", "0")] }, plural, "de")
+	).toBe(false);
+	expect(
+		isUnreachableVariant({ matches: [match("countPlural", "*")] }, plural, "de")
+	).toBe(false);
+	expect(
+		isUnreachableVariant(
+			{ matches: [match("countPlural", "other")] },
+			plural,
+			"de"
+		)
+	).toBe(false);
+	expect(
+		isUnreachableVariant({ matches: [match("gender", "zero")] }, plural, "de")
+	).toBe(false);
+	expect(isUnreachableVariant(zero, plural, "xx-invalid-")).toBe(false);
+});
+
+test("required and missing variants never demand i18next's `zero` where the locale never selects it", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	const keys = (forms: Match[][]) =>
+		forms.map((matches) =>
+			matches
+				.map((m) => `${m.key}=${m.type === "literal-match" ? m.value : "*"}`)
+				.join(",")
+		);
+	const options = { referenceVariants: reference.variants };
+	for (const locale of ["de", "fr", "en"]) {
+		const target = i18next(locale, {
+			zero: [t("0")],
+			one: [v("count")],
+			other: [v("count")],
+		});
+		const required = keys(requiredVariants(target, plural, options));
+		expect(required).not.toContainEqual(expect.stringContaining("zero"));
+		expect(required).toContain("count=0,countPlural=*");
+		expect(missingVariants(target, plural, options)).toEqual([]);
+		// a translation without the unreachable `zero` form is complete as well
+		const withoutZero = {
+			...target,
+			variants: target.variants.filter(
+				(variant) => !isUnreachableVariant(variant, plural, locale)
+			),
+		};
+		expect(withoutZero.variants).toHaveLength(3);
+		expect(missingVariants(withoutZero, plural, options)).toEqual([]);
+		expect(
+			checkTranslation({ reference, target: withoutZero, declarations: plural })
+		).toEqual([]);
+	}
+	// Latvian selects `zero` (0, 10–20, 30…): it is needed
+	const latvian = message("lv", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("0")],
+		"count=*,countPlural=one": [v("count")],
+		"count=*,countPlural=other": [v("count")],
+	});
+	expect(keys(missingVariants(latvian, plural, options))).toEqual([
+		"count=*,countPlural=zero",
+	]);
+});
+
+test("isUnreachableVariant follows the plural's type, locale spelling and aliases", () => {
+	const ordinal: Declaration[] = [
+		{ type: "input-variable", name: "count" },
+		{
+			type: "local-variable",
+			name: "countOrdinal",
+			value: {
+				type: "expression",
+				arg: { type: "variable-reference", name: "count" },
+				annotation: {
+					type: "function-reference",
+					name: "plural",
+					options: [
+						{ name: "type", value: { type: "literal", value: "ordinal" } },
+					],
+				},
+			},
+		},
+		local("ordinalAlias", "countOrdinal"),
+	];
+	const form = (key: string, value: string) => ({
+		matches: [match(key, value)],
+	});
+	// English ordinals: one (1st), two (2nd), few (3rd), other; Welsh ordinals have zero
+	expect(isUnreachableVariant(form("countOrdinal", "few"), ordinal, "en")).toBe(
+		false
+	);
+	expect(
+		isUnreachableVariant(form("countOrdinal", "zero"), ordinal, "en")
+	).toBe(true);
+	expect(
+		isUnreachableVariant(form("countOrdinal", "zero"), ordinal, "cy")
+	).toBe(false);
+	// the alias reads the same plural
+	expect(isUnreachableVariant(form("ordinalAlias", "few"), ordinal, "de")).toBe(
+		true
+	);
+	expect(isUnreachableVariant(form("ordinalAlias", "few"), ordinal, "en")).toBe(
+		false
+	);
+	// `pt_BR` is read as `pt-BR`: many (millions) is a category, zero isn't
+	expect(
+		isUnreachableVariant(form("countPlural", "many"), plural, "pt_BR")
+	).toBe(false);
+	expect(
+		isUnreachableVariant(form("countPlural", "zero"), plural, "pt_BR")
+	).toBe(true);
+});
+
+/** i18next keys with cardinal and ordinal forms: `.local $countPlural = {$count :plural type=$pluralType}`. */
+const mixed: Declaration[] = [
+	{ type: "input-variable", name: "pluralType" },
+	{ type: "input-variable", name: "count" },
+	{
+		type: "local-variable",
+		name: "countPlural",
+		value: {
+			type: "expression",
+			arg: { type: "variable-reference", name: "count" },
+			annotation: {
+				type: "function-reference",
+				name: "plural",
+				options: [
+					{
+						name: "type",
+						value: { type: "variable-reference", name: "pluralType" },
+					},
+				],
+			},
+		},
+	},
+];
+
+test("a plural with a variable type: i18next's `_zero` next to ordinal forms", () => {
+	const shape = (locale: string, forms: Record<string, Pattern>) =>
+		message(locale, ["pluralType", "count", "countPlural"], forms);
+	const reference = shape("en", {
+		"pluralType=cardinal,count=0,countPlural=*": [t("None")],
+		"pluralType=ordinal,count=*,countPlural=one": [v("count"), t("st")],
+		"pluralType=ordinal,count=*,countPlural=two": [v("count"), t("nd")],
+		"pluralType=ordinal,count=*,countPlural=few": [v("count"), t("rd")],
+		"pluralType=ordinal,count=*,countPlural=other": [v("count"), t("th")],
+		"pluralType=*,count=*,countPlural=zero": [t("None")],
+		"pluralType=*,count=*,countPlural=one": [v("count"), t(" item")],
+		"pluralType=*,count=*,countPlural=other": [v("count"), t(" items")],
+	});
+	const german = shape("de", {
+		"pluralType=cardinal,count=0,countPlural=*": [t("Keine")],
+		"pluralType=ordinal,count=*,countPlural=other": [v("count"), t(".")],
+		"pluralType=*,count=*,countPlural=zero": [t("Keine")],
+		"pluralType=*,count=*,countPlural=one": [v("count"), t(" Artikel")],
+		"pluralType=*,count=*,countPlural=other": [v("count"), t(" Artikel")],
+	});
+	const issues = (target: typeof reference) =>
+		checkTranslation({ reference, target, declarations: mixed }).filter(
+			(issue) => issue.type !== "missing-variant"
+		);
+	expect(issues(german)).toEqual([]);
+	expect(issues(reference)).toEqual([]);
+	// the variant's type decides: English ordinal `few` (3rd) is reachable, cardinal `few` isn't
+	const few = (pluralType: string) => ({
+		matches: [
+			match("pluralType", pluralType),
+			match("count", "*"),
+			match("countPlural", "few"),
+		],
+	});
+	expect(isUnreachableVariant(few("ordinal"), mixed, "en")).toBe(false);
+	expect(isUnreachableVariant(few("cardinal"), mixed, "en")).toBe(true);
+	// the catch-all type is either: `few` is an English ordinal, never German
+	expect(isUnreachableVariant(few("*"), mixed, "en")).toBe(false);
+	expect(isUnreachableVariant(few("*"), mixed, "de")).toBe(true);
+	// a type the runtime doesn't know keeps the variant
+	expect(isUnreachableVariant(few("other"), mixed, "de")).toBe(false);
+});
+
+test("unreachable forms are ignored on both sides: no translation, no reference", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	// only the form German never shows has text
+	const german = message("de", ["count", "countPlural"], {
+		"count=0,countPlural=*": [],
+		"count=*,countPlural=zero": [t("Leer")],
+		"count=*,countPlural=one": [],
+		"count=*,countPlural=other": [],
+	});
+	expect(
+		checkTranslation({ reference, target: german, declarations: plural })
+	).toEqual([{ type: "missing-translation" }]);
+	// a variable only the reference's unreachable form uses is unknown
+	const typo = message("en", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Empty")],
+		"count=*,countPlural=zero": [v("cuont"), t(" empty")],
+		"count=*,countPlural=one": [v("count"), t(" item")],
+		"count=*,countPlural=other": [v("count"), t(" items")],
+	});
+	expect(
+		checkTranslation({
+			reference: typo,
+			target: message("de", ["count", "countPlural"], {
+				"count=0,countPlural=*": [t("Leer")],
+				"count=*,countPlural=one": [v("count"), t(" Artikel")],
+				"count=*,countPlural=other": [v("cuont"), t(" Artikel")],
+			}),
+			declarations: plural,
+		})
+	).toEqual([
+		{
+			type: "missing-variable",
+			name: "count",
+			variantId: "de:count=*,countPlural=other",
+		},
+		{
+			type: "unknown-variable",
+			name: "cuont",
+			variantId: "de:count=*,countPlural=other",
+			suggestion: "count",
+		},
+	]);
+});
+
+test("checkBundle reports nothing for i18next's `_zero` in German and French, `{count}` in Latvian", () => {
+	const forms = (locale: string, zero: Pattern, other: Pattern) =>
+		i18next(locale, { zero, one: other, other });
+	const bundle = {
+		id: "cart.items",
+		declarations: plural,
+		messages: [
+			forms("en", [t("Your cart is empty")], [v("count"), t(" items")]),
+			forms("de", [t("Dein Warenkorb ist leer")], [v("count"), t(" Artikel")]),
+			forms("fr", [t("Votre panier est vide")], [v("count"), t(" articles")]),
+			i18next("lv", {
+				zero: [t("Grozs ir tukšs")],
+				one: [v("count"), t(" prece")],
+				other: [v("count"), t(" preces")],
+				extra: [],
+			}),
+		],
+	};
+	expect(
+		checkBundle({
+			bundle,
+			locales: ["en", "de", "fr", "lv"],
+			referenceLocale: "en",
+		}).map((diagnostic) => [
+			diagnostic.locale,
+			diagnostic.checkId,
+			"variantId" in diagnostic ? diagnostic.variantId : undefined,
+		])
+	).toEqual([["lv", "missing-variable", "lv:count=*,countPlural=zero"]]);
 });
