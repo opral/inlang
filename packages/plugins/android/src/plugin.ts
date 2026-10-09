@@ -42,12 +42,27 @@ export const plugin: InlangPlugin<Config> = {
     settings.locales.flatMap((locale) =>
       androidLocaleSuffixes(locale, settings.baseLocale).map((suffix) => {
         const path = androidPath(settings[PLUGIN_KEY].pathPattern, suffix);
-        return { locale, path, metadata: { path } };
+        return {
+          locale,
+          path,
+          metadata: { path, ...(legacySuffix(suffix) ? { legacy: true } : {}) },
+        };
       }),
     ),
   importFiles: ({ files }: ImportArgs) => {
-    assertOneFilePerLocale(files);
-    return importAndroidFiles(files);
+    // AAPT2 reads `values-iw` and `values-he` as two configurations; of
+    // both, the current code wins, as before
+    const read = files.filter(
+      (file) =>
+        !file.toBeImportedFilesMetadata?.legacy ||
+        !files.some(
+          (other) =>
+            other.locale === file.locale &&
+            !other.toBeImportedFilesMetadata?.legacy,
+        ),
+    );
+    assertOneFilePerLocale(read);
+    return importAndroidFiles(read);
   },
   exportFiles: (args: ExportArgs) => {
     const data = withoutExtraTranslations(args);
@@ -110,6 +125,31 @@ function assertOneFilePerLocale(files: ImportArgs["files"]) {
   }
 }
 
+/** The elements of a file that the importer doesn't import, via XML. */
+function otherElementsOf(content: Uint8Array): string[] {
+  const source = decode(content);
+  if (XMLValidator.validate(source) !== true) throw new Error("invalid");
+  const resources = xmlParser().parse(source)?.resources;
+  if (!resources || typeof resources !== "object") return [];
+  const others: string[] = [];
+  for (const [key, value] of Object.entries(resources)) {
+    if (key.startsWith("@_") || key === "#text") continue;
+    for (const element of array(value as any)) {
+      const name =
+        element && typeof element === "object" ? element["@_name"] : undefined;
+      if (
+        (key === "string" || key === "plurals") &&
+        element &&
+        typeof element === "object" &&
+        isTranslatable(element)
+      )
+        continue;
+      others.push(name === undefined ? `<${key}>` : `<${key} name="${name}">`);
+    }
+  }
+  return others;
+}
+
 function withoutExtraTranslations(args: ExportArgs): ExportArgs {
   const baseLocale = args.settings.baseLocale;
   const base = existingFile(args.files, baseLocale);
@@ -154,6 +194,17 @@ function withoutExtraTranslations(args: ExportArgs): ExportArgs {
     : { ...args, messages };
 }
 
+function xmlParser() {
+  return new XMLParser({
+    ignoreAttributes: false,
+    // attributes are `@_name`, child elements `name`
+    attributeNamePrefix: "@_",
+    trimValues: false,
+    parseTagValue: false,
+    parseAttributeValue: false,
+  });
+}
+
 function importAndroidFiles(files: ImportArgs["files"]): {
   bundles: Bundle[];
   messages: MessageImport[];
@@ -166,14 +217,7 @@ function importAndroidFiles(files: ImportArgs["files"]): {
   const imported = new Set<string>();
   const messages: MessageImport[] = [];
   const variants: VariantImport[] = [];
-  const parser = new XMLParser({
-    ignoreAttributes: false,
-    // attributes are `@_name`, child elements `name`
-    attributeNamePrefix: "@_",
-    trimValues: false,
-    parseTagValue: false,
-    parseAttributeValue: false,
-  });
+  const parser = xmlParser();
   for (const file of files) {
     const source = decode(file.content);
     const validation = XMLValidator.validate(source);
@@ -337,8 +381,15 @@ function assertNothingLost(previous: { path: string; content: Uint8Array }) {
       ...scanned.others,
     ];
   } catch {
-    return;
+    // e.g. a DOCTYPE with entities, which the importer reads
+    try {
+      others = otherElementsOf(previous.content);
+    } catch {
+      // can't be read at all
+      return;
+    }
   }
+  others = others.filter((other) => !/^<(eat-comment|skip)[ >]/.test(other));
   if (others.length > 0)
     throw new Error(
       `Can't write ${previous.path} without removing elements the Android plugin doesn't import (${others.slice(0, 3).join(", ")}${others.length > 3 ? ", …" : ""}). Please report this at https://github.com/opral/inlang/issues with the file.`,
@@ -407,18 +458,37 @@ function keepUnchangedEntriesOfFile(args: {
   }));
   // Items of a plural that loses `formatted="false"` with a `%` that isn't
   // a placeholder (e.g. `50% off`) would be wrong as format strings, so
-  // they are written as changed.
-  const itemEdits = toggled.flatMap((entry) =>
-    (entry.children ?? []).flatMap((item) => {
-      if (
-        !entry.unformatted ||
-        !item.valueRange ||
-        !hasStrayPercent(
-          unquoteAndroid(
-            original.slice(item.valueRange.start, item.valueRange.end),
-          ),
-        )
-      )
+  // they are written as changed. If no other item has a placeholder, the
+  // plural wouldn't read as format strings, so all items are written.
+  const itemEdits = toggled.flatMap((entry) => {
+    if (!entry.unformatted) return [];
+    const items = (entry.children ?? []).flatMap((item) =>
+      item.valueRange && !item.selfClosing
+        ? [
+            {
+              item,
+              source: unquoteAndroid(
+                original.slice(item.valueRange.start, item.valueRange.end),
+              ),
+            },
+          ]
+        : [],
+    );
+    const nextValue = (key: string) =>
+      next.get(entry.key)?.children?.get(key)?.valueText ?? "";
+    const stray = items.filter(({ source }) => hasStrayPercent(source));
+    // the items as they are with the stray ones written
+    const all = !items.some(({ item, source }) =>
+      hasPrintfExpression(
+        stray.some((candidate) => candidate.item === item)
+          ? unquoteAndroid(nextValue(item.key))
+          : source,
+        PRINTF,
+      ),
+    );
+    return (entry.children ?? []).flatMap((item) => {
+      if (!item.valueRange) return [];
+      if (!all && !stray.some((candidate) => candidate.item === item))
         return [];
       const value =
         next.get(entry.key)?.children?.get(item.key)?.valueText ?? "";
@@ -428,8 +498,8 @@ function keepUnchangedEntriesOfFile(args: {
           text: item.selfClosing ? `>${value}</item>` : value,
         },
       ];
-    }),
-  );
+    });
+  });
   /** The text the plugin writes for what `text` imports to. */
   const canonical = (text: string) => {
     const imported = importAndroidFiles([
@@ -834,6 +904,12 @@ function mergeBundle(
 }
 
 const PRINTF = /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?[sdf])|([sdf]))/;
+/**
+ * A Java format specifier (without the space flag, so that `50% off` is
+ * text), e.g. `%.1f`, `%02d`, `%x`, `%n`, `%5$x`.
+ */
+const JAVA_SPECIFIER =
+  /^%(?:\d+\$)?[-#+0,(<]*\d*(?:\.\d+)?(?:[bBhHsScCdoxXeEfgGaAn]|[tT][a-zA-Z])/;
 
 /**
  * The pattern of an Android string. `pluralFormat`: an item of a plural
@@ -864,7 +940,13 @@ function parseAndroidPattern(value: string, pluralFormat = false) {
     }
     const match = source.slice(cursor).match(regex);
     if (!match) {
-      if (source[cursor] === "%" && pluralFormat) {
+      // e.g. `50% off`, but not a Java specifier the plugin doesn't
+      // support, e.g. `%.1f`
+      if (
+        source[cursor] === "%" &&
+        pluralFormat &&
+        !JAVA_SPECIFIER.test(source.slice(cursor))
+      ) {
         text += source[cursor++];
         continue;
       }
@@ -1115,33 +1197,55 @@ function decode(value: Uint8Array) {
  * BCP 47 `-b+zh+Hans`, `-b+es+419`. The language is lowercase. The legacy
  * codes of Hebrew, Indonesian and Yiddish (`iw`, `in`, `ji`) are read too.
  */
+const LEGACY_LANGUAGES: Record<string, string> = {
+  he: "iw",
+  id: "in",
+  yi: "ji",
+};
+
+/** Whether a qualifier has a legacy language code, e.g. `-iw`. */
+function legacySuffix(suffix: string) {
+  const language = /^-(?:b\+)?([a-z]+)/.exec(suffix)?.[1];
+  return (
+    language !== undefined && Object.values(LEGACY_LANGUAGES).includes(language)
+  );
+}
+
 function androidLocaleSuffixes(locale: string, baseLocale: string): string[] {
   if (locale === baseLocale) return [""];
   const [subtag, ...parts] = locale.split("-");
   if (!subtag) throw new Error(`Invalid locale "${locale}"`);
   const language = subtag.toLowerCase();
-  const legacy = ({ he: "iw", id: "in", yi: "ji" } as Record<string, string>)[
-    language
-  ];
-  return [language, ...(legacy ? [legacy] : [])].flatMap((language) => {
-    if (parts.length === 0) return [`-${language}`];
-    // regions uppercase, scripts titlecase
-    const subtags = parts.map((part) =>
-      /^[a-zA-Z]{2}$/.test(part)
-        ? part.toUpperCase()
-        : /^[a-zA-Z]{4}$/.test(part)
-          ? part[0]!.toUpperCase() + part.slice(1).toLowerCase()
-          : part,
-    );
-    const bcp47 = `-b+${[language, ...subtags].join("+")}`;
-    if (
-      parts.length === 1 &&
-      /^[a-z]{2,3}$/.test(language) &&
-      /^[a-zA-Z]{2}$/.test(parts[0]!)
-    )
-      return [`-${language}-r${parts[0]!.toUpperCase()}`, bcp47];
-    return [bcp47];
-  });
+  const legacy = LEGACY_LANGUAGES[language];
+  const suffixes = [language, ...(legacy ? [legacy] : [])].flatMap(
+    (language) => {
+      if (parts.length === 0) return [`-${language}`];
+      // regions uppercase, scripts titlecase, until a singleton (`-u-…`)
+      const singleton = parts.findIndex((part) => part.length === 1);
+      const subtags = parts.map((part, index) =>
+        singleton !== -1 && index >= singleton
+          ? part
+          : /^[a-zA-Z]{2}$/.test(part)
+            ? part.toUpperCase()
+            : /^[a-zA-Z]{4}$/.test(part)
+              ? part[0]!.toUpperCase() + part.slice(1).toLowerCase()
+              : part,
+      );
+      const bcp47 = `-b+${[language, ...subtags].join("+")}`;
+      if (
+        parts.length === 1 &&
+        /^[a-z]{2,3}$/.test(language) &&
+        /^[a-zA-Z]{2}$/.test(parts[0]!)
+      )
+        return [`-${language}-r${parts[0]!.toUpperCase()}`, bcp47];
+      return [bcp47];
+    },
+  );
+  // the locale as written, e.g. `b+zh+hans`, if it differs
+  const asWritten = `-b+${locale.split("-").join("+")}`;
+  return parts.length > 0 && !suffixes.includes(asWritten)
+    ? [...suffixes, asWritten]
+    : suffixes;
 }
 
 function androidPath(pattern: string, suffix: string) {

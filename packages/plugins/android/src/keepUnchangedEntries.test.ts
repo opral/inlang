@@ -868,6 +868,8 @@ describe("locale qualifiers", () => {
       ["en", "./res/values/strings.xml"],
       ["PT-br", "./res/values-pt-rBR/strings.xml"],
       ["PT-br", "./res/values-b+pt+BR/strings.xml"],
+      // as written, e.g. for a case-sensitive file system
+      ["PT-br", "./res/values-b+PT+br/strings.xml"],
       ["he", "./res/values-he/strings.xml"],
       ["he", "./res/values-iw/strings.xml"],
       ["id-ID", "./res/values-id-rID/strings.xml"],
@@ -894,6 +896,42 @@ describe("locale qualifiers", () => {
       ],
     }) as any[];
     expect(file.name).toBe("./res/values-iw/strings.xml");
+  });
+
+  test("of a current and a legacy language code, the current one is read", () => {
+    const imported = plugin.importFiles!({
+      settings: { ...settings, locales: ["en", "he"] },
+      files: [
+        {
+          locale: "he",
+          content: encode('<resources><string name="a">A</string></resources>'),
+          toBeImportedFilesMetadata: { path: "./res/values-he/strings.xml" },
+        },
+        {
+          locale: "he",
+          content: encode(
+            '<resources><string name="a">IW</string></resources>',
+          ),
+          toBeImportedFilesMetadata: {
+            path: "./res/values-iw/strings.xml",
+            legacy: true,
+          },
+        },
+      ],
+    } as any) as Data;
+    expect(imported.variants.map((variant) => variant.pattern)).toEqual([
+      [{ type: "text", value: "A" }],
+    ]);
+  });
+
+  test("extension subtags are not cased", async () => {
+    const files = await plugin.toBeImportedFiles!({
+      settings: { ...settings, locales: ["en", "de-u-co-phonebk"] },
+    } as any);
+    expect(files.map((file) => file.path)).toEqual([
+      "./res/values/strings.xml",
+      "./res/values-b+de+u+co+phonebk/strings.xml",
+    ]);
   });
 
   test("every {locale} and {languageTag} of the path pattern is replaced", async () => {
@@ -1184,6 +1222,63 @@ describe("fallbacks and plural formatting", () => {
     ]);
     expect(reexport(file)).toBe(file);
     expect(exportOf(data)).toContain('"50%% Rabatt"');
+  });
+
+  test("a Java specifier the plugin doesn't support is not read as text in a plural", () => {
+    expect(() =>
+      importAndroid(
+        '<resources><plurals name="p"><item quantity="one">%d file (%.1f MB)</item><item quantity="other">%d files (%.1f MB)</item></plurals></resources>',
+      ),
+    ).toThrow("Unsupported Android format specifier");
+    for (const specifier of ["%02d", "%,d", "%x", "%n", "%5$x"])
+      expect(() =>
+        importAndroid(
+          `<resources><plurals name="p"><item quantity="other">%d at ${specifier}</item></plurals></resources>`,
+        ),
+      ).toThrow("Unsupported Android format specifier");
+  });
+
+  test('a plural that loses formatted="false" is read as format strings even if only the edited item has a placeholder', () => {
+    const file = `<resources>
+    <!-- keep me -->
+    <plurals name="p" formatted="false">
+        <item quantity="one">One</item>
+        <item quantity="other">%1$s at 50%</item>
+    </plurals>
+    <string-array name="a"><item>A</item></string-array>
+</resources>
+`;
+    expect(
+      reexport(file, (data) => setText(data, "p", "%1$d thing", "one")),
+    ).toBe(
+      file
+        .replace(' formatted="false"', "")
+        .replace(">One<", '>"%1$d thing"<')
+        .replace(">%1$s at 50%<", '>"%%1$s at 50%%"<'),
+    );
+  });
+
+  test("a file that only the importer reads (a DOCTYPE with entities) is not overwritten with the full export", () => {
+    const file = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY appname "Acme">]>
+<resources>
+    <string name="app_name" translatable="false">&appname;</string>
+    <string name="hello">Hello</string>
+    <string-array name="arr"><item>A</item></string-array>
+    <eat-comment/>
+</resources>
+`;
+    const data = importAndroid(file);
+    setText(data, "hello", "Hi");
+    expect(() =>
+      plugin.exportFiles!({
+        settings,
+        ...data,
+        files: [{ path, locale: "en", content: encode(file) }],
+      }),
+    ).toThrow(
+      'without removing elements the Android plugin doesn\'t import (<string name="app_name">, <string-array name="arr">)',
+    );
   });
 
   test('a plural that loses formatted="false" gets its items with a % written as format strings', () => {
