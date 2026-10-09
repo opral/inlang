@@ -298,6 +298,8 @@ function keepUnchangedEntriesOfFile(args: {
       )
       .map((variant) => variant.messageId.split("\u0000")[0]!),
   );
+  /** Start tags of `<string>`s with `formatted` added or removed, by name. */
+  const startTags = new Map<string, string>();
   /** The element of the file in the merge, see `ScannedEntry`. */
   const toEntry = (entry: ScannedEntry): Entry | undefined => {
     const exported = exportedEntries.get(entry.key);
@@ -312,18 +314,28 @@ function keepUnchangedEntriesOfFile(args: {
     }
     // Only the content of an edited `<string>` is written if it reads as
     // the new text in the start tag of the file, i.e. with or without
-    // `formatted="false"` as needed. Otherwise the element is replaced.
+    // `formatted="false"` as needed. Otherwise the start tag is written
+    // too, with only `formatted` added or removed.
     const keepsStartTag =
       entry.element !== "string" ||
       exported === undefined ||
       (entry.unformatted ? textOnly.has(entry.key) : !exported.unformatted);
+    let valueRange = entry.valueRange;
+    if (!keepsStartTag && valueRange) {
+      startTags.set(
+        entry.key,
+        withFormatted(
+          text.slice(entry.start, valueRange.start),
+          exported!.unformatted,
+        ),
+      );
+      valueRange = { start: entry.start, end: valueRange.end };
+    }
     return {
       key: entry.key,
       start: entry.start,
       end: entry.end,
-      ...(keepsStartTag && entry.valueRange
-        ? { valueRange: entry.valueRange }
-        : {}),
+      ...(valueRange ? { valueRange } : {}),
       ...(entry.children
         ? { children: entry.children.flatMap((child) => toEntry(child) ?? []) }
         : {}),
@@ -335,7 +347,7 @@ function keepUnchangedEntriesOfFile(args: {
     entries,
     comments: scanned.comments,
     previous: entryTexts(canonical(text)),
-    next: withSelfClosing(next, scanned.entries),
+    next: withStartTags(next, scanned.entries, startTags),
     indentUnit: "  ",
     fileIndentUnit: indent === "" ? "  " : indent,
     emptyIndent: indent,
@@ -424,22 +436,33 @@ function entryTexts(text: string): Map<string, EntryText> {
 }
 
 /**
- * `next` with the content of the elements that are self-closing in the file
- * as the text that replaces their `/>`: `>value</string>`.
+ * `next` with the text that replaces the `valueRange` of the elements of
+ * the file (see `ScannedEntry`): of a self-closing element, the `/>` is
+ * replaced with `>value</string>`, and of an element in `startTags`, the
+ * start tag is replaced too.
  */
-function withSelfClosing(
+function withStartTags(
   next: Map<string, EntryText>,
   entries: ScannedEntry[],
+  startTags: Map<string, string>,
 ): Map<string, EntryText> {
   const adapt = (
     entry: ScannedEntry,
     text: EntryText | undefined,
+    startTag?: string,
   ): EntryText | undefined => {
     if (text === undefined) return undefined;
-    if (entry.selfClosing && text.valueText !== undefined)
+    if (
+      (entry.selfClosing || startTag !== undefined) &&
+      text.valueText !== undefined
+    )
       return {
         ...text,
-        valueText: `>${text.valueText}</${entry.element}>`,
+        valueText:
+          (startTag ?? "") +
+          (entry.selfClosing
+            ? `>${text.valueText}</${entry.element}>`
+            : text.valueText),
       };
     if (!entry.children?.some((child) => child.selfClosing)) return text;
     const children = new Map(text.children);
@@ -451,10 +474,31 @@ function withSelfClosing(
   };
   const result = new Map(next);
   for (const entry of entries) {
-    const adapted = adapt(entry, result.get(entry.key));
+    const adapted = adapt(
+      entry,
+      result.get(entry.key),
+      startTags.get(entry.key),
+    );
     if (adapted !== undefined) result.set(entry.key, adapted);
   }
   return result;
+}
+
+/**
+ * A start tag (without `>` or `/>` if self-closing) with `formatted="false"`
+ * after the name if `unformatted`, else without a `formatted` attribute.
+ */
+function withFormatted(startTag: string, unformatted: boolean) {
+  const without = startTag.replace(
+    /\s+formatted\s*=\s*(?:"[^"]*"|'[^']*')/,
+    "",
+  );
+  return unformatted
+    ? without.replace(
+        /\sname\s*=\s*(?:"[^"]*"|'[^']*')/,
+        (name) => `${name} formatted="false"`,
+      )
+    : without;
 }
 
 /** The content of an element the plugin writes, see `Entry.valueRange`. */

@@ -648,6 +648,39 @@ describe("real-world files: edge cases", () => {
     );
   });
 
+  test('adding or removing formatted="false" keeps the other attributes', () => {
+    const file = `<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="x" tools:ignore="Typos" formatted='false'>50%</string>
+    <string name="y" tools:ignore="Typos">Plain</string>
+    <string name="z" tools:ignore="Typos" />
+</resources>
+`;
+    // an expression: formatted="false" is removed
+    expect(reexport(file, (data) => setText(data, "x", "%1$s at 50"))).toBe(
+      file.replace(
+        `<string name="x" tools:ignore="Typos" formatted='false'>50%</string>`,
+        '<string name="x" tools:ignore="Typos">"%1$s at 50"</string>',
+      ),
+    );
+    // text that reads as printf: formatted="false" is added after the name
+    expect(
+      reexport(file, (data) => {
+        setText(data, "y", "50% of %s");
+        setText(data, "z", "%d%");
+      }),
+    ).toBe(
+      file
+        .replace(
+          '<string name="y" tools:ignore="Typos">Plain</string>',
+          '<string name="y" formatted="false" tools:ignore="Typos">"50% of %s"</string>',
+        )
+        .replace(
+          '<string name="z" tools:ignore="Typos" />',
+          '<string name="z" formatted="false" tools:ignore="Typos" >"%d%"</string>',
+        ),
+    );
+  });
+
   test("translatable and formatted are read like AAPT2 reads booleans", () => {
     const file = `<resources>
     <string name="a" translatable="FALSE">A</string>
