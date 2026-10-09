@@ -1,5 +1,56 @@
 # @inlang/cli
 
+## 3.4.0
+
+### Minor Changes
+
+- 1438de0: Add `inlang check`, which reports a project's settings and plugin errors, translation problems and unused messages, grouped by check or as JSON for CI and editors.
+
+  ```sh
+  npx @inlang/cli check --project ./project.inlang
+  ```
+
+  - All checks run by default: missing and empty translations, empty forms, missing or unknown variables, missing markup, missing plural/select forms and selectors, and unused messages. Per-check flags such as `--missing-translations` or `--unused-messages` run only those checks.
+  - `--locales de,fr` reports only findings for these locales and validates them against the project's settings (`--languageTags` is accepted as an alias).
+  - Unused messages are found with the project's usage-analysis plugin (`@inlang/plugin-m-function-matcher` ≥ 2.3.0 for Paraglide) in the source under the project's parent directory, or `--source <paths...>`. Git-ignored files (outside git: dot directories and a top-level `dist`, `build` and `coverage`), `node_modules`, Paraglide's compiled output and known build tool configs are skipped. When usages can't all be resolved, e.g. a dynamic `` m[`${fieldName}_label`]() ``, `check` lists the file, line and code instead of reporting unused messages. With an older matcher, it asks to update the module URL in `settings.json`.
+  - `--format json` prints the full report (with a `version`).
+  - Exits with 1 when there are findings or project errors, and with 0 otherwise or with `--no-fail`.
+
+  `inlang validate` and `inlang lint` are deprecated and hidden from `--help`. Both keep working and print a deprecation warning: `validate` still only reports settings and plugin errors, and `lint` does nothing else, as in CLI v3.
+
+- 4dfcb04: Add `inlang cloud`. It lists what is coming in inlang Cloud: automatic handoff between designers, developers and translators; AI translation that follows your terminology and tone and fits the design; and smart message keys. It then opens a short form where you can tell us what your team needs. For Paraglide JS projects, Paraglide JS is pre-selected in the form. `--no-open` prints the form's URL instead of opening it; the browser is never opened in CI, when the output is piped, or on Linux without a display. `--json` prints the features and the form's URL as JSON. `inlang --help` points to the command.
+
+### Patch Changes
+
+- 42b5c9b: `machine translate` only changes the translated messages in translation files. The CLI saves with the SDK, which now passes the current files to the plugin's export, so plugins that support it keep every unchanged message, the key order and the formatting of the files as they are.
+- 43f9216: The CLI no longer collects telemetry or error reports. Unexpected errors in a command now exit with code 1 instead of 0.
+- 3d2a49c: `inlang machine translate` puts the variants it translates into an existing message at their place in the source message. It appended them, so with `en` = `one`, `*` and `de` = `*`, `de` became `*`, `one`, and runtimes that select the first matching variant (Paraglide JS) never selected `one`. The target message's variants are now ordered like the source: translated variants go to their source position, existing variants keep their text, and a variant the source doesn't have (e.g. a plural category of the target language) stays after the one it followed. Because variants are ordered by id, the variants from the first one that moves on get new ids. Messages that weren't translated, and their entries in the translation files, don't change.
+- 772c0c8: Make `machine translate` resilient on large projects when using the community-operated service at translate.demosjarco.dev.
+
+  - Requests to the service are limited to 6 in flight, matching the Cloudflare Workers per-invocation connection limit, instead of firing every bundle at once. Google and DeepL are unaffected.
+  - Each request to the service now times out after 20 seconds instead of 15, leaving room for slower models and gateway fallbacks.
+  - Throttled (429), server-error (5xx), timed-out and network-failed requests are retried up to 2 times (3 attempts total), waiting 5 seconds before the first retry and doubling the wait for each retry after it.
+  - When the service is still unavailable for some translations, only those translations are skipped: every translation that succeeded is saved, and the command fails once with a single summary error instead of discarding the whole run.
+
+- 29ade49: `machine translate` no longer rewrites the translation files when nothing was translated. Before, it always re-exported every file, which could reformat files in git without any new translation. When translations are added, the files are still exported as before.
+- b0d8a4f: New messages, variants and bundles get uuid v7 ids instead of random uuid v4 ids, so they keep the order they were created in. Messages and variants are ordered by id (`selectBundleNested`, exports), and the database already creates uuid v7 ids, but `insertBundleNested` / `upsertBundleNested` (used by editors), the deprecated `createMessage` / `createVariant` helpers and `inlang machine translate` created v4 ids: variants a person added in an editor, or the variants of a machine-translated message, came out in random order. Runtimes like Paraglide JS select the first matching variant, so the order is part of the message. Existing ids don't change.
+- Updated dependencies [5c0a84b]
+- Updated dependencies [2390c5a]
+- Updated dependencies [f45a761]
+- Updated dependencies [356a50a]
+- Updated dependencies [ad469a7]
+- Updated dependencies [fa0777c]
+- Updated dependencies [94cf565]
+- Updated dependencies [691caec]
+- Updated dependencies [4ecf2bd]
+- Updated dependencies [b38facf]
+- Updated dependencies [abfd521]
+- Updated dependencies [56923c5]
+- Updated dependencies [b0d8a4f]
+- Updated dependencies [fb83c18]
+- Updated dependencies [3e9bd54]
+  - @inlang/sdk@4.0.0
+
 ## 3.3.9
 
 ### Patch Changes

@@ -1,5 +1,33 @@
 # @inlang/plugin-m-function-matcher
 
+## 2.3.0
+
+### Minor Changes
+
+- 94cf565: Add browser-compatible `checkProject`, `applyFix` and `findUsages` APIs for missing and empty translations, translation checks against a reference locale (missing or unknown variables, missing markup, missing plural/select variants), unused messages and usage locations. Checks expose serializable fixes, explicit analysis status, optional bundle scopes and intentional fallback exclusions. Deletion fixes rerun usage analysis and verify the bundle's revision inside an atomic transaction before removing all locales and variants.
+
+  Plugins can implement `analyzeUsage`; the m-function matcher analyzes ESM JavaScript, JSX, TypeScript, TSX and Svelte source with conservative handling of dynamic references, namespace escapes, parse failures and unsupported formats. Unresolved analysis withholds unused diagnostics and deletion fixes. Analyzers can return source `references`, which `findUsages` exposes for code previews and "find references". `checkTranslation()` runs the translation checks on unsaved input, and `checkBundle()` checks one in-memory bundle synchronously for editors that keep bundles in memory. The selector rules behind `missing-variant` are exported for editors (`selectorGroups`, `requiredVariants`, `missingVariants`, `pluralRules`, …): a translation needs the reference's select values and exact numbers, and an ICU exact number (`=0`) and the plural of the same input are one choice.
+
+### Patch Changes
+
+- 3e9bd54: Usage analysis issues can locate the construct that makes the analysis incomplete. `UsageIssue` has optional `start` and `end` positions (1-based lines, 0-based columns, as for references), which `checkProject` and `findUsages` pass through. The m-function matcher reports one issue per unresolved construct, in source order, e.g. `src/Field.tsx` line 14 for `` m[`${fieldName}_label`]() ``, instead of one issue per reason and file.
+- Updated dependencies [5c0a84b]
+- Updated dependencies [2390c5a]
+- Updated dependencies [f45a761]
+- Updated dependencies [356a50a]
+- Updated dependencies [ad469a7]
+- Updated dependencies [fa0777c]
+- Updated dependencies [94cf565]
+- Updated dependencies [691caec]
+- Updated dependencies [4ecf2bd]
+- Updated dependencies [b38facf]
+- Updated dependencies [abfd521]
+- Updated dependencies [56923c5]
+- Updated dependencies [b0d8a4f]
+- Updated dependencies [fb83c18]
+- Updated dependencies [3e9bd54]
+  - @inlang/sdk@4.0.0
+
 ## 2.2.17
 
 ### Patch Changes
