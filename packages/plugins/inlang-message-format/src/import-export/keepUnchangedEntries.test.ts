@@ -4,6 +4,7 @@ import {
 	newProject,
 	saveProjectToDirectory,
 	loadProjectFromDirectory,
+	type InlangPlugin,
 	type InlangProject,
 } from "@inlang/sdk";
 import { Volume } from "memfs";
@@ -38,7 +39,7 @@ async function load(
 				},
 			},
 		}),
-		providePlugins: [plugin],
+		providePlugins: [plugin as InlangPlugin],
 	});
 	await project.importFiles({
 		pluginKey: PLUGIN_KEY,
@@ -307,7 +308,7 @@ describe("edits", () => {
 		expect(files.en).toContain('"countPlural=few": "One item"');
 		expect(files.en).not.toContain('"countPlural=one"');
 		// nothing else of the file changed
-		expect(files.en.replace(/ {2}"items": \[[\s\S]*?\n {2}\],\n/, "")).toBe(
+		expect(files.en!.replace(/ {2}"items": \[[\s\S]*?\n {2}\],\n/, "")).toBe(
 			handWritten.en.replace(/ {2}"items": \[[\s\S]*?\n {2}\],\n/, "")
 		);
 	});
@@ -517,7 +518,7 @@ test("saveProjectToDirectory leaves unchanged files untouched and changes only t
 	const project = await loadProjectFromDirectory({
 		path: "/repo/project.inlang",
 		fs: volume as any,
-		providePlugins: [plugin],
+		providePlugins: [plugin as InlangPlugin],
 	});
 	await saveProjectToDirectory({
 		path: "/repo/project.inlang",

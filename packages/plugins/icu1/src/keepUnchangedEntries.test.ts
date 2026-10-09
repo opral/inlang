@@ -443,7 +443,9 @@ test("several path patterns keep each file", async () => {
       },
     ],
   });
-  // each file has the messages of all files, and its own formatting
+  // The files are read together, so each file stays as it is: the messages
+  // of the other file are not added (the full export writes all messages to
+  // every file).
   expect(
     exported.map((file) => ({
       name: file.name,
@@ -454,12 +456,12 @@ test("several path patterns keep each file", async () => {
     {
       name: "./a/en.json",
       metadata: { pathPattern: "./a/{locale}.json" },
-      text: '{\n  "x": "X {n,number}",\n  "y": "Y"\n}\n',
+      text: a,
     },
     {
       name: "./b/en.json",
       metadata: { pathPattern: "./b/{locale}.json" },
-      text: '{\n    "x": "X {n, number}",\n    "y": "Y"\n}',
+      text: b,
     },
   ]);
 });

@@ -293,14 +293,14 @@ describe("export with the previous files", () => {
 	});
 });
 
-test("values that the plugin doesn't import are dropped, as in the full export", async () => {
+test("values that the plugin doesn't import are kept (the full export drops them)", async () => {
 	const previous = {
 		"./messages/en.json":
 			'{\n  "a": "A",\n  "count": 42,\n  "list": ["x"]\n}\n',
 	};
 	const rows = await importRows(settings, previous);
 	expect(await exportTexts(settings, rows, previous)).toStrictEqual({
-		"en.json": '{\n  "a": "A"\n}\n',
+		"en.json": '{\n  "a": "A",\n  "count": 42,\n  "list": ["x"]\n}\n',
 	});
 });
 

@@ -264,19 +264,18 @@ describe("export with the existing catalog", () => {
       xcode.indexOf('    "apple" : {'),
       xcode.indexOf('    "cart" : {'),
     );
-    // The members of a new value are written by `JSON.stringify` (`": "`),
-    // not with Xcode's ` : `.
+    // new values use Xcode's ` : ` too
     expect(output).toBe(
       xcode.replace(
         apple,
         [
           '    "banana" : {',
-          '      "extractionState": "manual",',
-          '      "localizations": {',
-          '        "en": {',
-          '          "stringUnit": {',
-          '            "state": "translated",',
-          '            "value": "Banana"',
+          '      "extractionState" : "manual",',
+          '      "localizations" : {',
+          '        "en" : {',
+          '          "stringUnit" : {',
+          '            "state" : "translated",',
+          '            "value" : "Banana"',
           "          }",
           "        }",
           "      }",
@@ -308,12 +307,12 @@ describe("export with the existing catalog", () => {
         [
           '      "localizations" : {',
           '        "de" : {',
-          '          "variations": {',
-          '            "device": {',
-          '              "other": {',
-          '                "stringUnit": {',
-          '                  "state": "translated",',
-          '                  "value": "Klicken"',
+          '          "variations" : {',
+          '            "device" : {',
+          '              "other" : {',
+          '                "stringUnit" : {',
+          '                  "state" : "translated",',
+          '                  "value" : "Klicken"',
           "                }",
           "              }",
           "            }",
