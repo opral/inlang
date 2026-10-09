@@ -9,6 +9,7 @@ import {
 	missingVariants,
 	pluralRules,
 	requiredVariants,
+	selectorGroups,
 	variantCovers,
 } from "./selectors.js";
 
@@ -1155,4 +1156,102 @@ test("exact numbers and plural types are needed only in the select branches that
 			)
 		)
 	).toEqual(["context=*,pluralType=ordinal,countPlural=*"]);
+});
+
+test("a branch the reference doesn't have falls back to its catch-all: the reference's exact numbers are needed there", () => {
+	const declarations: Declaration[] = [
+		{ type: "input-variable", name: "gender" },
+		...plural,
+	];
+	// ICU `=0 {…} one {…} other {…}` without gender; Russian splits by gender (past tense)
+	const reference = message("en", ["countPluralExact", "countPlural"], {
+		"countPluralExact=0,countPlural=*": [t("Nobody came")],
+		"countPluralExact=*,countPlural=one": [v("count"), t(" came")],
+		"countPluralExact=*,countPlural=*": [v("count"), t(" came")],
+	});
+	const options = { referenceVariants: reference.variants };
+	const russian = (forms: Record<string, Pattern>) =>
+		message("ru", ["gender", "countPluralExact", "countPlural"], forms);
+	const categories = (gender: string) =>
+		Object.fromEntries(
+			["one", "few", "many", "*"].map((category) => [
+				`gender=${gender},countPluralExact=*,countPlural=${category}`,
+				[v("count")],
+			])
+		);
+	// `=0` forgotten for female
+	expect(
+		formKeys(
+			missingVariants(
+				russian({
+					"gender=male,countPluralExact=0,countPlural=*": [t("никто")],
+					...categories("male"),
+					...categories("female"),
+					"gender=*,countPluralExact=0,countPlural=*": [t("никто")],
+					...categories("*"),
+				}),
+				declarations,
+				options
+			)
+		)
+	).toEqual(["gender=female,countPluralExact=0,countPlural=*"]);
+	// `=0` only in the catch-all gender
+	expect(
+		formKeys(
+			missingVariants(
+				russian({
+					...categories("male"),
+					...categories("female"),
+					"gender=*,countPluralExact=0,countPlural=*": [t("никто")],
+					...categories("*"),
+				}),
+				declarations,
+				options
+			)
+		)
+	).toEqual([
+		"gender=male,countPluralExact=0,countPlural=*",
+		"gender=female,countPluralExact=0,countPlural=*",
+	]);
+	// a translation without the gender split needs only the reference's forms
+	expect(
+		formKeys(
+			missingVariants(
+				message("de", ["countPluralExact", "countPlural"], {
+					"countPluralExact=0,countPlural=*": [t("Niemand")],
+					"countPluralExact=*,countPlural=one": [v("count")],
+					"countPluralExact=*,countPlural=*": [v("count")],
+				}),
+				declarations,
+				options
+			)
+		)
+	).toEqual([]);
+});
+
+test("selectorGroups of a plural with a variable type: the keys and required keys of every type", () => {
+	const reference = mixedEnglish();
+	const [type, count] = selectorGroups(reference, mixed, {
+		referenceVariants: reference.variants,
+	});
+	expect(type!.selector).toBe("pluralType");
+	expect(type!.keys).toEqual(["cardinal", "ordinal", "*"]);
+	expect(count!.typeSelector).toBe("pluralType");
+	// cardinal one and the ordinal categories, the exact 0, the explicit other and zero
+	expect(count!.keys).toEqual(["0", "one", "two", "few", "other", "zero", "*"]);
+	expect(count!.requiredKeys).toEqual(["0", "one", "two", "few", "*"]);
+	expect(count!.requiredKeysFor!("*")).toEqual(["one", "*"]);
+	expect(count!.requiredKeysFor!("cardinal")).toEqual(["0"]);
+	expect(count!.requiredKeysFor!("ordinal")).toEqual([
+		"one",
+		"two",
+		"few",
+		"*",
+	]);
+	// German has no ordinal categories but other
+	const [, german] = selectorGroups(mixedGerman(), mixed, {
+		referenceVariants: reference.variants,
+	});
+	expect(german!.requiredKeysFor!("ordinal")).toEqual(["*"]);
+	expect(german!.requiredKeys).toEqual(["0", "one", "*"]);
 });

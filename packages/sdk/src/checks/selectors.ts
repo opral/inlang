@@ -360,7 +360,8 @@ export type SelectorGroup = {
 	keys: string[];
 	/**
 	 * The keys the locale needs, see {@link requiredVariants}. For a plural
-	 * with a `typeSelector`, see `requiredKeysFor` instead.
+	 * with a `typeSelector`, the keys any of its types needs; which type needs
+	 * which is `requiredKeysFor`.
 	 */
 	requiredKeys: string[];
 	/**
@@ -375,6 +376,9 @@ export type SelectorGroup = {
 	 * cardinal categories and the catch-all. "ordinal" needs the ordinal
 	 * categories and the catch-all. Any other value ("cardinal") only needs the
 	 * exact numbers used with it; the rest falls through to the catch-all type.
+	 * This is the layout `@inlang/plugin-i18next` imports: cardinal forms in
+	 * the catch-all, `_ordinal_` forms under "ordinal", `_zero`'s exact 0 under
+	 * "cardinal".
 	 */
 	requiredKeysFor?(typeValue: string): string[];
 	/** The match value per selector name for a key ("*" = catch-all). */
@@ -396,6 +400,17 @@ function literalKeys(
 }
 
 const byNumber = (a: string, b: string) => Number(a) - Number(b);
+
+/** Plural keys without duplicates: numbers, categories in CLDR order, "*" last. */
+function orderKeys(keys: readonly string[]): string[] {
+	return [
+		...[...new Set(keys.filter(isNumericKey))].sort(byNumber),
+		...PLURAL_ORDER.filter(
+			(category) => category !== "other" && keys.includes(category)
+		),
+		...(keys.includes("*") ? ["*"] : []),
+	];
+}
 
 /**
  * Groups `message.selectors` for its locale, see {@link SelectorGroup}.
@@ -521,9 +536,25 @@ export function selectorGroups(
 			];
 		};
 		const own = literalKeys(name, variants);
-		const categories = (rules?.categories ?? []).filter(
-			(category) => category !== "other"
+		// the type select's values ("*" = cardinal), for a plural with a variable type
+		const typeValues = typeSelector
+			? ["*", ...literalKeys(typeSelector, all)]
+			: [];
+		// with a variable type: the categories of the types the type select uses, so an editor
+		// can offer every form `requiredKeysFor` needs (English ordinal "two" and "few")
+		const typedCategories = PLURAL_ORDER.filter((category) =>
+			typeValues.some((typeValue) =>
+				typeValue === "*" || typeValue === "ordinal"
+					? rulesOf(
+							withType(annotation, typeValue === "*" ? "cardinal" : typeValue),
+							message.locale
+						)?.categories.includes(category)
+					: false
+			)
 		);
+		const categories = (
+			typeSelector ? typedCategories : (rules?.categories ?? [])
+		).filter((category) => category !== "other");
 		const required = (rules?.requiredCategories ?? []).filter(
 			(category) => category !== "other"
 		);
@@ -550,7 +581,12 @@ export function selectorGroups(
 				...others,
 				"*",
 			],
-			requiredKeys: [...exactNumbers, ...required, "*"],
+			// with a variable type: what any type needs, see `requiredKeysFor`
+			requiredKeys: typeSelector
+				? orderKeys(
+						typeValues.flatMap((typeValue) => requiredKeysFor(typeValue))
+					)
+				: [...exactNumbers, ...required, "*"],
 			...(typeSelector ? { typeSelector, requiredKeysFor } : {}),
 			values: (key) => {
 				if (!exact) return { [name]: key };
@@ -582,9 +618,10 @@ function toMatches(
 
 /**
  * Every match combination (form) a message needs in its locale, in selector
- * order: the cartesian product of the required keys of its
- * {@link selectorGroups}. A message without selectors needs one form without
- * matches.
+ * order: the product of the required keys of its {@link selectorGroups}
+ * (per type for a plural with a `typeSelector`), less the exact numbers and
+ * plural types a select branch doesn't use (see below). A message without
+ * selectors needs one form without matches.
  *
  * Russian `count` (plural) × `gender` (female, male in the reference) needs
  * 4 × 3 = 12 forms. An ICU `=0 {…} one {…} other {…}` needs 0, one and the
@@ -630,37 +667,54 @@ export function requiredVariants(
 		);
 	}
 	// An exact number or a plural type is needed only in the select branches (i18next context,
-	// gender) where a variant of the message or the reference uses it: `context=male` at 0 shows
-	// the male "other" form, as in i18next, when only the catch-all context has `_zero`.
-	const all = [
-		...(options.referenceVariants ?? []),
-		...(options.variants ?? message.variants ?? []),
-	];
+	// gender) where the message or the reference uses it: `context=male` at 0 shows the male
+	// "other" form when only the catch-all context has `_zero`. A value the reference has no
+	// variant for falls back to the reference's catch-all, as at runtime: its `=0` is needed in
+	// every gender a translation adds.
+	const own = options.variants ?? message.variants ?? [];
+	const reference = options.referenceVariants ?? [];
 	const selects = groups.filter((group) => !group.isPlural);
-	const inBranch = (variant: WithMatches, values: Record<string, string>) =>
-		selects.every(
-			(group) =>
-				matchValue(variant, group.selector) === (values[group.selector] ?? "*")
-		);
+	const inBranch = (
+		variant: WithMatches,
+		values: Record<string, string>,
+		fallback: readonly WithMatches[] | undefined
+	) =>
+		selects.every((group) => {
+			const value = matchValue(variant, group.selector);
+			const wanted = values[group.selector] ?? "*";
+			return (
+				value === wanted ||
+				(fallback !== undefined &&
+					value === "*" &&
+					!fallback.some(
+						(other) => matchValue(other, group.selector) === wanted
+					))
+			);
+		});
+	const candidates = (values: Record<string, string>) => [
+		...own.filter((variant) => inBranch(variant, values, undefined)),
+		...reference.filter((variant) => inBranch(variant, values, reference)),
+	];
 	combinations = combinations.filter((values) =>
 		groups.every((group) => {
 			if (!group.isPlural) return true;
 			const number = group.exactSelector
-				? values[group.exactSelector]
-				: undefined;
-			const type = group.typeSelector ? values[group.typeSelector] : undefined;
-			if ((number ?? "*") === "*" && (type ?? "*") === "*") return true;
-			return all.some(
+				? (values[group.exactSelector] ?? "*")
+				: "*";
+			const type = group.typeSelector
+				? (values[group.typeSelector] ?? "*")
+				: "*";
+			if (number === "*" && type === "*") return true;
+			return candidates(values).some(
 				(variant) =>
-					inBranch(variant, values) &&
-					((number ?? "*") === "*" ||
-						variant.matches.some(
-							(match) =>
-								match.type === "literal-match" &&
-								match.value === number &&
-								resolveAnnotation(match.key, declarations) === undefined &&
-								resolveInputVariable(match.key, declarations) === group.input
-						))
+					number === "*" ||
+					variant.matches.some(
+						(match) =>
+							match.type === "literal-match" &&
+							match.value === number &&
+							resolveAnnotation(match.key, declarations) === undefined &&
+							resolveInputVariable(match.key, declarations) === group.input
+					)
 			);
 		})
 	);
