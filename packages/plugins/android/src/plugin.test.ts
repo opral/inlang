@@ -191,11 +191,98 @@ describe("Android resources plugin", () => {
     }
   });
 
+  test('accepts translatable="false", tools: and other attributes, and skips non-translatable resources', async () => {
+    const source = `<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="en" tools:ignore="MissingTranslation">
+  <string name="app_name" translatable="false">Acme</string>
+  <string name="greeting" tools:ignore="UnusedResources">Hello %1$s</string>
+  <string name="progress" formatted="false">%d of %d</string>
+  <plurals name="songs" tools:ignore="UnusedQuantity">
+    <item quantity="one" tools:ignore="ImpliedQuantity">%d song</item>
+    <item quantity="other">%d songs</item>
+  </plurals>
+  <plurals name="debug_items" translatable="false">
+    <item quantity="other">%d items</item>
+  </plurals>
+</resources>`;
+    const imported = await plugin.importFiles!({
+      settings,
+      files: [{ locale: "en", content: new TextEncoder().encode(source) }],
+    });
+    expect(imported.bundles.map((bundle) => bundle.id)).toEqual([
+      "greeting",
+      "progress",
+      "songs",
+    ]);
+    expect(imported.messages.map((message) => message.bundleId)).toEqual([
+      "greeting",
+      "progress",
+      "songs",
+    ]);
+    expect(imported.variants.map((variant) => variant.pattern)).toEqual([
+      [
+        { type: "text", value: "Hello " },
+        expect.objectContaining({ type: "expression" }),
+      ],
+      // formatted="false": text
+      [{ type: "text", value: "%d of %d" }],
+      [
+        expect.objectContaining({ type: "expression" }),
+        { type: "text", value: " song" },
+      ],
+      [
+        expect.objectContaining({ type: "expression" }),
+        { type: "text", value: " songs" },
+      ],
+    ]);
+    // the full export doesn't write non-translatable resources
+    const [file] = await plugin.exportFiles!({
+      ...identify(imported),
+      settings,
+    });
+    const output = new TextDecoder().decode(file!.content);
+    expect(output).not.toContain("app_name");
+    expect(output).not.toContain("debug_items");
+  });
+
+  test("imports an empty <resources> element", async () => {
+    for (const source of [
+      "<resources></resources>",
+      '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n',
+      '<resources xmlns:tools="http://schemas.android.com/tools">\n  <!-- nothing yet -->\n</resources>',
+    ]) {
+      const imported = await plugin.importFiles!({
+        settings,
+        files: [{ locale: "en", content: new TextEncoder().encode(source) }],
+      });
+      expect(imported).toEqual({ bundles: [], messages: [], variants: [] });
+    }
+  });
+
+  test("rejects product-specific resources and inline markup with a clear error", async () => {
+    const importSource = (source: string) =>
+      plugin.importFiles!({
+        settings,
+        files: [{ locale: "en", content: new TextEncoder().encode(source) }],
+      });
+    expect(() =>
+      importSource(
+        '<resources><string name="a" product="tablet">A</string></resources>',
+      ),
+    ).toThrow('Android product-specific resources are not supported ("a"');
+    expect(() =>
+      importSource(
+        '<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2"><string name="a">Hi <xliff:g id="name">%1$s</xliff:g></string></resources>',
+      ),
+    ).toThrow("Android inline XML markup is not supported (xliff:g)");
+  });
+
   test("rejects malformed, unnamed, duplicate, and mixed-content XML", async () => {
     for (const source of [
       '<resources><string name="broken">oops</resources>',
       "<resources><string>missing</string></resources>",
       '<resources><string name="same">a</string><string name="same">b</string></resources>',
+      '<resources><string name="same" translatable="false">a</string><string name="same">b</string></resources>',
       '<resources><string name="rich">before <b>bold</b> after</string></resources>',
       '<resources><plurals name="dup"><item quantity="other">a</item><item quantity="other">b</item></plurals></resources>',
       '<resources><plurals name="missing"><item quantity="one">a</item></plurals></resources>',
