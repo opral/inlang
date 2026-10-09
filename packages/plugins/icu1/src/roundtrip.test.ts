@@ -265,6 +265,27 @@ test("roundtrip: # inside a select nested in a plural with offset", async () => 
   expectParsedMessageEquality(input.en.party, exported.en!.party!);
 });
 
+test("roundtrip: plurals and selects on the same argument", async () => {
+  const input = {
+    en: {
+      deleted:
+        "{count, plural, one {# file} other {# files}} {count, plural, one {was} other {were}} deleted",
+      nested:
+        "{count, plural, =0 {none} other {{count, plural, one {# item} other {# items}}}}",
+    },
+    de: {
+      deleted:
+        "{count, plural, one {# Datei wurde} other {# Dateien wurden}} gelöscht",
+      nested: "{count, plural, =0 {keine} other {# Elemente}}",
+    },
+  };
+
+  const imported = await runImportFiles(input);
+  const exported = await runExportFilesParsed(imported);
+
+  expect(exported).toStrictEqual(input);
+});
+
 test("roundtrip: nested function params inside selectors", async () => {
   const input = {
     en: {
