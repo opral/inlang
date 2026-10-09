@@ -48,5 +48,18 @@ it("respects literal digit options and caches equivalent plural contexts", () =>
   const declarations = plural([{ name: "minimumFractionDigits", value: { type: "literal", value: "2" } }]);
   const result = selectorMatches("amount", declarations, "en", []);
   expect(result.suggestions.find(s => s.value === "other")?.description).toBe("e.g. 0, 1, 2");
-  expect(selectorMatches("amount", declarations, "en", [])).toBe(result);
+  result.allowed!.push("banana");
+  result.suggestions.length = 0;
+  const cached = selectorMatches("amount", declarations, "en", []);
+  expect(cached).not.toBe(result);
+  expect(cached.allowed).toEqual(["one", "other", "*"]);
+  expect(cached.suggestions.map(s => s.value)).toEqual(["one", "other", "*"]);
+});
+
+it("keeps categories known for ICU offsets and shifts the examples", () => {
+  const result = selectorMatches("amount", plural([{ name: "offset", value: { type: "literal", value: "1" } }]), "en", []);
+  expect(result.allowed).toEqual(["one", "other", "*"]);
+  expect(result.label).toBe("Cardinal plural · en · offset 1");
+  expect(result.suggestions.find(s => s.value === "one")?.description).toBe("e.g. 2");
+  expect(selectorMatches("amount", plural([{ name: "offset", value: { type: "literal", value: "x" } }]), "en", []).allowed).toBeUndefined();
 });

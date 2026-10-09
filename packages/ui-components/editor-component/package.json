@@ -45,6 +45,7 @@
 		"@storybook/web-components": "^8.6.12",
 		"@storybook/web-components-vite": "^8.6.12",
 		"@types/chroma-js": "^2.4.4",
+		"happy-dom": "18.0.1",
 		"prettier": "^3.4.2",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",

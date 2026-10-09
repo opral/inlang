@@ -140,14 +140,22 @@ export default class InlangVariant extends LitElement {
   }
 
   private _updateMatch = (selectorName: string, value: string) => {
+    // Unchanged values (e.g. imported categories outside this locale) are not re-validated on blur.
+    const existing = this.variant?.matches.find(match => match.key === selectorName);
+    if (existing && (existing.type === "catchall-match" ? "*" : existing.value) === value) {
+      this.errors = { ...this.errors, [selectorName]: "" };
+      return;
+    }
     const options = this._options(selectorName);
     if (options.allowed && !options.allowed.includes(value)) {
       this.errors = { ...this.errors, [selectorName]: `Choose ${options.allowed.join(", ")}.` };
       return;
     }
+    if (value.trim() === "") {
+      this.errors = { ...this.errors, [selectorName]: "Enter a value, or * for the fallback." };
+      return;
+    }
     this.errors = { ...this.errors, [selectorName]: "" };
-    const existing = this.variant?.matches.find(match => match.key === selectorName);
-    if (existing && (existing.type === "catchall-match" ? "*" : existing.value) === value) return;
     if (this.variant) {
       const newVariant = structuredClone(this.variant);
 
