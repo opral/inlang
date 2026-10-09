@@ -34,6 +34,7 @@
 		"@sinclair/typebox": "0.31.28"
 	},
 	"devDependencies": {
+		"@inlang/plugin-icu1": "workspace:*",
 		"@inlang/tsconfig": "workspace:*",
 		"@types/flat": "^5.0.2",
 		"@types/lodash.merge": "^4.6.7",

@@ -369,6 +369,32 @@ Pluralization is also supported. You can define a variable in your message and t
 }
 ```
 
+#### Exact numbers
+
+An exact number such as ICU `{count, plural, =0 {…} one {…} other {…}}` is a second selector on the same input: an un-annotated local alias (`local countPluralExact = count`) before the plural. The exact number wins over a plural category that also selects it (French "one" selects 0), so keep it first in `selectors`.
+
+```json
+{
+	"items": [
+		{
+			"declarations": [
+				"input count",
+				"local countPluralExact = count",
+				"local countPlural = count: plural"
+			],
+			"selectors": ["countPluralExact", "countPlural"],
+			"match": {
+				"countPlural=*, countPluralExact=0": "No items",
+				"countPlural=one, countPluralExact=*": "One item",
+				"countPlural=*, countPluralExact=*": "{count} items"
+			}
+		}
+	]
+}
+```
+
+This is the shape `@inlang/plugin-icu1` imports and editors create when you add an exact number.
+
 ## Troubleshooting
 
 ### Messages not appearing

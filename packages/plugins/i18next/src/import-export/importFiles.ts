@@ -10,6 +10,7 @@ import type { plugin } from "../plugin.js";
 import { flatten } from "flat";
 import type { BundleImport, MessageImport, VariantImport } from "@inlang/sdk";
 import { matchSpecificity } from "./matchSpecificity.js";
+import { zeroCategorySelectsNonZero } from "./zeroCategory.js";
 import type { PluginSettings } from "../settings.js";
 
 export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
@@ -384,11 +385,14 @@ function parseMessage(args: {
 
 	const variants: VariantImport[] = [variant];
 
-	if (isZero) {
-		// `_zero` additionally serves as the Intl "zero" plural category key
-		// (selected for counts other than 0 in languages like Latvian), so a
-		// second variant keeps category-based selection working alongside
-		// the exact-0 match.
+	if (isZero && zeroCategorySelectsNonZero(args.locale)) {
+		// `_zero` additionally serves as the Intl "zero" plural category key,
+		// which Latvian selects for 10, 11–19, 20, … too. Only there a second
+		// variant keeps category-based selection working alongside the
+		// exact-0 match. Everywhere else (English, French, and Arabic or Welsh,
+		// whose "zero" category is 0 only) the exact-0 variant is all of
+		// `_zero`, so there is no second form that an edit could make diverge.
+		// Export fails if the two Latvian forms diverge, see exportFiles.
 		variants.push({
 			messageBundleId: bundleId,
 			messageLocale: args.locale,

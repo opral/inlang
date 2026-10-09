@@ -13,6 +13,7 @@ import type {
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
 import { flatten } from "flat";
+import { orderSelectors } from "../utils/orderSelectors.js";
 import type {
 	ComplexMessage,
 	ComplexMessageObject,
@@ -68,7 +69,14 @@ function parseBundle(
 	const parsed = parseVariants(key, locale, value);
 	const declarations = unique(parsed.declarations);
 	addInputDeclarationsForLocalReferences(declarations);
-	const selectors = unique(parsed.selectors);
+	const selectorNames = orderSelectors(
+		unique(parsed.selectors).map((selector) => selector.name),
+		declarations
+	);
+	const selectors: VariableReference[] = selectorNames.map((name) => ({
+		type: "variable-reference",
+		name,
+	}));
 
 	const undeclaredSelectors = selectors.filter(
 		(selector) =>
@@ -571,10 +579,17 @@ function parseDeclaration(value: string): Declaration {
 			name: value.slice(6).trim(),
 		};
 	}
-	// local countPlural = count : plural
+	// local countPlural = count: plural
+	// local countPluralExact = count  (un-annotated alias, e.g. ICU `=0`)
+	// local greeting = "hello"
 	else if (value.startsWith("local")) {
-		const match = value.match(/local (\w+) = (\w+): (\w+)(.*)/);
-		const [, name, ref, fn, optionsString] = match!;
+		const match = value.match(
+			/^local\s+([^\s=:]+)\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^\s=:"]+))\s*(?::\s*([^\s=:]+)(.*))?$/
+		);
+		if (match === null) {
+			throw new Error(`Unsupported local declaration: "${value}"`);
+		}
+		const [, name, literal, ref, fn, optionsString] = match;
 		const options: {
 			name: string;
 			value:
@@ -609,20 +624,26 @@ function parseDeclaration(value: string): Declaration {
 
 		return {
 			type: "local-variable",
-			name: name!.trim(),
+			name: name!,
 			value: {
 				type: "expression",
-				arg: {
-					type: "variable-reference",
-					name: ref!.trim(),
-				},
-				annotation: fn
+				arg:
+					literal !== undefined
+						? { type: "literal", value: literal.replace(/\\(.)/g, "$1") }
+						: { type: "variable-reference", name: ref! },
+				// an un-annotated local is an alias of its argument. omit the
+				// annotation instead of storing `undefined` so the declaration
+				// equals the one other plugins and editors create, e.g.
+				// `.local countPluralExact = {$count}` for an ICU `=0`.
+				...(fn
 					? {
-							type: "function-reference",
-							name: fn.trim(),
-							options: options ?? [],
+							annotation: {
+								type: "function-reference" as const,
+								name: fn.trim(),
+								options,
+							},
 						}
-					: undefined,
+					: {}),
 			},
 		};
 	}

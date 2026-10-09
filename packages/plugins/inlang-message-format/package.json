@@ -34,6 +34,7 @@
 		"clean": "rm -rf ./dist ./node_modules"
 	},
 	"devDependencies": {
+		"@inlang/plugin-icu1": "workspace:*",
 		"@inlang/tsconfig": "workspace:*",
 		"esbuild": "^0.24.2",
 		"memfs": "4.6.0",
