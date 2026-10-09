@@ -595,11 +595,13 @@ describe("message-format", () => {
 				en: { "items.title": "Items", items: pluralItems },
 				de: { "items.title": "Artikel", items: "Artikel" },
 			},
+			written: ["0", "title"],
 			publishedImport: "throws",
 		},
 		{
 			name: '`items.title` before it in every locale: the published plugin wrote `items: { "0": {…}, "title": … }` and imports it as other messages (`items.0.match.countPlural=one`, …) without `items`',
 			source: { en: { "items.title": "Items", items: pluralItems } },
+			written: ["0", "title"],
 			publishedImport: "loses items",
 		},
 		{
@@ -611,6 +613,7 @@ describe("message-format", () => {
 					"items.0.note": "Note",
 				},
 			},
+			written: ["0", "title"],
 			publishedImport: "loses items",
 		},
 		{
@@ -622,11 +625,29 @@ describe("message-format", () => {
 					"items.1.note": "Second",
 				},
 			},
-			publishedImport: "loses notes",
+			written: ["0", "1"],
+			publishedImport: ["Note", "Second"],
+		},
+		{
+			name: 'the plural `items.0` after it: the published plugin wrote `items.0` into the object of `items`, `items: [{ "0": {…}, … }]`, and imports it without `items.0`',
+			source: {
+				en: {
+					items: pluralItems,
+					"items.0": [
+						{
+							declarations: ["input n"],
+							selectors: ["n"],
+							match: { "n=1": "One n", "n=*": "Many n" },
+						},
+					],
+				},
+			},
+			written: ["0"],
+			publishedImport: ["One n", "Many n"],
 		},
 	])(
 		"a plural `items` with $name; it is read as the plural and the messages next to it",
-		async ({ source, publishedImport }) => {
+		async ({ source, written: writtenItems, publishedImport }) => {
 			const asImport = (files: Record<string, string>) =>
 				Object.entries(files).map(([locale, content]) => ({
 					locale,
@@ -651,9 +672,7 @@ describe("message-format", () => {
 				])
 			);
 			await published.close();
-			expect(Object.keys(JSON.parse(written.en!).items)).toEqual(
-				publishedImport === "loses notes" ? ["0", "1"] : ["0", "title"]
-			);
+			expect(Object.keys(JSON.parse(written.en!).items)).toEqual(writtenItems);
 			// what the published plugin reads from the files it wrote
 			const reimported = await open(f, "published", "published");
 			if (publishedImport === "throws") {
@@ -663,14 +682,16 @@ describe("message-format", () => {
 						files: asImport(written),
 					})
 				).rejects.toThrow();
-			} else if (publishedImport === "loses notes") {
+			} else if (Array.isArray(publishedImport)) {
+				// it loses these texts
 				await reimported.importFiles({
 					pluginKey: f.key,
 					files: asImport(written),
 				});
 				const read = textsOf(await selectRows(reimported));
-				expect(read.some((text) => text.includes("Note"))).toBe(false);
-				expect(read.some((text) => text.includes("Second"))).toBe(false);
+				for (const text of publishedImport) {
+					expect(read.some((line) => line.endsWith(` ${text}`))).toBe(false);
+				}
 			} else {
 				await reimported.importFiles({
 					pluginKey: f.key,

@@ -230,7 +230,7 @@ function parseVariants(
 	const complexMessage = Array.isArray(value) ? value[0] : undefined;
 	if (typeof complexMessage !== "object" || complexMessage === null) {
 		throw new Error(
-			`The message "${bundleId}" (${locale}) is neither a string nor a complex message (an array with an object of declarations, selectors and match): ${String(JSON.stringify(value)).slice(0, 100)}`
+			`The message "${bundleId}" (${locale}) is neither a string nor a complex message (an array with an object of declarations, selectors and match): ${truncate(String(JSON.stringify(value)), 100)}`
 		);
 	}
 	// multi variant
@@ -816,4 +816,8 @@ function parseDeclaration(value: string): Declaration {
 		};
 	}
 	throw new Error("Unsupported declaration type");
+}
+
+function truncate(text: string, length: number): string {
+	return text.length > length ? `${text.slice(0, length)}...` : text;
 }

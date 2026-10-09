@@ -518,6 +518,77 @@ describe("keys after a complex message that start with its key", () => {
 		expect(exported.en).not.toContain('"Note"');
 	});
 
+	const nPlural = {
+		declarations: ["input n"],
+		selectors: ["n"],
+		match: { "n=1": "one", "n=*": "many" },
+	};
+	test.each([
+		// the plural `items`, the plural `items.0`
+		[
+			"in the object of the complex message",
+			file([{ "0": nPlural, ...plural }]),
+			["items", "items.0"],
+		],
+		// `items.title`, the plural `items`, the plural `items.0`
+		[
+			"in the object of the complex message in the object of a key before it",
+			file({ "0": { "0": nPlural, ...plural }, title: "T" }),
+			["items", "items.0", "items.title"],
+		],
+	])("a complex message %s is read as its message", async (_, en, ids) => {
+		const files = { en };
+		const imported = await importTexts(files);
+		expect(imported.bundles.map((bundle) => bundle.id).sort()).toEqual(ids);
+		expect(textsOf(imported, "items")).toEqual({
+			"countPlural=one": "One item",
+			"countPlural=*": "{count} items",
+		});
+		expect(textsOf(imported, "items.0")).toEqual({
+			"n=1": "one",
+			"n=*": "many",
+		});
+		expect(await exportTexts(rowsOf(imported), { files })).toEqual(files);
+	});
+
+	test.each([
+		["description", "A description"],
+		["$comment", "A comment"],
+		["deprecated", true],
+		["maxLength", 40],
+		["description", null],
+		["meta", {}],
+		["meta", { owner: "team" }],
+		["tags", []],
+		["tags", ["a", "b"]],
+	])(
+		"other keys in a complex message are ignored as before: %s: %j",
+		async (key, value) => {
+			const files = { en: file([{ ...plural, [key]: value }]) };
+			const imported = await importTexts(files);
+			expect(contentOf(imported)).toEqual(
+				contentOf(await importTexts({ en: file([plural]) }))
+			);
+			expect(await exportTexts(rowsOf(imported), { files })).toEqual(files);
+		}
+	);
+
+	test("in the shapes the published plugin wrote, keys that are no message are ignored", async () => {
+		const files = {
+			en: file({
+				"0": { ...plural, note: "Note", deprecated: true, meta: {}, tags: [] },
+				title: "Title",
+			}),
+		};
+		const imported = await importTexts(files);
+		expect(imported.bundles.map((bundle) => bundle.id).sort()).toEqual([
+			"items",
+			"items.0.note",
+			"items.title",
+		]);
+		expect(await exportTexts(rowsOf(imported), { files })).toEqual(files);
+	});
+
 	test("a second complex message object in the array is ignored as before", async () => {
 		const imported = await importTexts({
 			en: {

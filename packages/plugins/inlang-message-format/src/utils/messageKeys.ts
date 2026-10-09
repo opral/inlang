@@ -74,7 +74,23 @@ export function flattenMessageKeys(
 	const result = new Map<string, unknown>();
 	// keys of the messages in an object with a legacy complex message
 	const legacy = new Set<string>();
-	const set = (key: string, value: unknown, inLegacy: boolean) => {
+	/**
+	 * @param lenient whether a value that is no message is ignored, in the
+	 *   legacy shapes, which can have other keys of a complex message
+	 */
+	const set = (
+		key: string,
+		value: unknown,
+		inLegacy: boolean,
+		lenient: boolean
+	) => {
+		if (
+			lenient &&
+			typeof value !== "string" &&
+			!(Array.isArray(value) && value.length > 0 && isComplexMessage(value))
+		) {
+			return;
+		}
 		if (inLegacy) legacy.add(key);
 		// A message in such an object wins over the same key elsewhere, e.g. a
 		// flat `"a.b"` that a later export added for an edit while it kept
@@ -85,19 +101,37 @@ export function flattenMessageKeys(
 		result.set(key, value);
 	};
 	/**
-	 * A complex message `a` as `unflatten` wrote it, with the keys after it
-	 * that start with `a.0.` and `a.<n>.` in its object and array, e.g.
-	 * `[{ declarations, selectors, match, x }, { y }]` for `a`, `a.0.x` and
-	 * `a.1.y`. Other complex messages in the array are ignored as before.
+	 * A complex message `a`. `unflatten` wrote the keys after it that start
+	 * with `a.0.` and `a.<n>.` into its object and array, e.g. `[{
+	 * declarations, selectors, match, "0": {…} }]` for `a` and the complex
+	 * message `a.0`, or `[{ …, x }, { y }]` for `a`, `a.0.x` and `a.1.y`.
+	 *
+	 * Only shapes that can't be a complex message as it is written by hand
+	 * are split: in its object under `"0"` (see `visit`), with an entry after
+	 * it that is no complex message, or with a complex message under `"0"`.
+	 * Otherwise other keys, e.g. a `description`, are ignored as before.
+	 * Further complex message objects in the array are ignored as before.
 	 */
-	const complex = (key: string, items: unknown[], inLegacy: boolean) => {
-		const { declarations, selectors, match, ...rest } = items[0] as Record<
-			string,
-			unknown
-		>;
-		const extra = Object.keys(rest);
-		if (extra.length === 0 && items.length === 1) {
-			set(key, items, inLegacy);
+	const complex = (
+		key: string,
+		items: unknown[],
+		inLegacy: boolean,
+		lenient: boolean,
+		inObject: boolean
+	) => {
+		const [first, ...later] = items as [Record<string, unknown>, ...unknown[]];
+		const { declarations, selectors, match, ...rest } = first;
+		const split =
+			inObject ||
+			isComplexMessageObject(rest["0"]) ||
+			later.some(
+				(item) =>
+					item !== null &&
+					item !== undefined &&
+					isComplexMessageObject(item) === false
+			);
+		if (split === false) {
+			set(key, items, inLegacy, lenient);
 			return;
 		}
 		set(
@@ -109,34 +143,41 @@ export function flattenMessageKeys(
 					)
 				),
 			],
-			inLegacy
+			inLegacy,
+			lenient
 		);
 		// like the messages next to `{ "0": … }`, these win over the same key
 		// elsewhere in the file
-		for (const other of extra) {
-			visit(`${key}.0.${other}`, rest[other], true);
+		if (Object.keys(rest).length > 0) {
+			visit(`${key}.0`, rest, true, true);
 		}
-		items.forEach((item, index) => {
-			if (index === 0 || item === null || item === undefined) return;
+		later.forEach((item, index) => {
+			if (item === null || item === undefined) return;
 			if (isComplexMessageObject(item)) return;
-			visit(`${key}.${index}`, item, true);
+			visit(`${key}.${index + 1}`, item, true, true);
 		});
 	};
-	const visit = (key: string, value: unknown, inLegacy: boolean) => {
+	const visit = (
+		key: string,
+		value: unknown,
+		inLegacy: boolean,
+		lenient: boolean
+	) => {
 		if (isObject(value) && Object.keys(value).length > 0) {
 			const legacyObject = key !== "" && isComplexMessageObject(value["0"]);
 			for (const child of Object.keys(value)) {
 				if (legacyObject && child === "0") {
 					// `unflatten` wrote the complex message `a` as `{ "0": … }`
 					// into the object of a key after it, e.g. `a.b`
-					complex(key, [value[child]], true);
+					complex(key, [value[child]], true, lenient, true);
 					continue;
 				}
 				// `flatten` doesn't join to an empty key
 				visit(
 					key ? `${key}.${child}` : child,
 					value[child],
-					inLegacy || legacyObject
+					inLegacy || legacyObject,
+					lenient
 				);
 			}
 		} else if (
@@ -146,16 +187,16 @@ export function flattenMessageKeys(
 		) {
 			value.forEach((item, index) => {
 				if (item === null || item === undefined) return;
-				visit(key ? `${key}.${index}` : String(index), item, inLegacy);
+				visit(key ? `${key}.${index}` : String(index), item, inLegacy, lenient);
 			});
 		} else if (Array.isArray(value) && value.length > 0) {
-			complex(key, value, inLegacy);
+			complex(key, value, inLegacy, lenient, false);
 		} else {
-			set(key, value, inLegacy);
+			set(key, value, inLegacy, lenient);
 		}
 	};
 	for (const key of Object.keys(json)) {
-		visit(key, json[key], false);
+		visit(key, json[key], false, false);
 	}
 	return result;
 }
