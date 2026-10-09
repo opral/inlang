@@ -461,6 +461,101 @@ describe.each([
 	});
 });
 
+describe.each([
+	{ a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" },
+	{ "a:b": "./{locale}/a-b.json", a: "./{locale}/a.json" },
+])("namespaces %j: a message of `a` stays in `a`", (pathPattern) => {
+	test("a new translation of it, which the file of its locale doesn't have yet", async () => {
+		const files = {
+			"a/en": '{\n  "x": "X",\n  "b:c": "C"\n}\n',
+			"a/de": '{\n  "x": "X de"\n}\n',
+			"a:b/en": '{\n  "d": "D"\n}\n',
+		};
+		const rows = await load(files, pathPattern);
+		addMessage(rows, "a:b:c", "de", "C de");
+		expect(await save(rows, files, pathPattern)).toStrictEqual({
+			...files,
+			"a/de": '{\n  "x": "X de",\n  "b:c": "C de"\n}\n',
+		});
+	});
+
+	test("a plural changed to a plain message", async () => {
+		const files = {
+			"a/en": '{\n  "x": "X",\n  "b:c_one": "One",\n  "b:c_other": "Many"\n}\n',
+			"a:b/en": '{\n  "d": "D"\n}\n',
+		};
+		const rows = await load(files, pathPattern);
+		const message = rows.messages.find(
+			(message) => message.bundleId === "a:b:c"
+		)!;
+		message.selectors = [];
+		rows.variants = [
+			...rows.variants.filter((variant) => variant.messageId !== message.id),
+			{
+				id: "plain",
+				messageId: message.id,
+				matches: [],
+				pattern: [{ type: "text", value: "Plain" }],
+			},
+		];
+		expect(await save(rows, files, pathPattern)).toStrictEqual({
+			...files,
+			"a/en": '{\n  "x": "X",\n  "b:c": "Plain"\n}\n',
+		});
+	});
+
+	test("a plain message changed to a plural", async () => {
+		const files = {
+			"a/en": '{\n  "x": "X",\n  "b:c": "C"\n}\n',
+			"a:b/en": '{\n  "d": "D"\n}\n',
+		};
+		const rows = await load(files, pathPattern);
+		const bundle = rows.bundles.find((bundle) => bundle.id === "a:b:c")!;
+		bundle.declarations = [
+			{ type: "input-variable", name: "count" },
+			{
+				type: "local-variable",
+				name: "countPlural",
+				value: {
+					type: "expression",
+					arg: { type: "variable-reference", name: "count" },
+					annotation: {
+						type: "function-reference",
+						name: "plural",
+						options: [],
+					},
+				},
+			},
+		];
+		const message = rows.messages.find(
+			(message) => message.bundleId === "a:b:c"
+		)!;
+		message.selectors = [{ type: "variable-reference", name: "countPlural" }];
+		rows.variants = [
+			...rows.variants.filter((variant) => variant.messageId !== message.id),
+			...["one", "other"].map((category) => ({
+				id: category,
+				messageId: message.id,
+				matches: [
+					{
+						type: "literal-match" as const,
+						key: "countPlural",
+						value: category,
+					},
+				],
+				pattern: [{ type: "text" as const, value: category }],
+			})),
+		];
+		const saved = await save(rows, files, pathPattern);
+		expect(saved["a:b/en"]).toBe(files["a:b/en"]);
+		expect(JSON.parse(saved["a/en"]!)).toStrictEqual({
+			x: "X",
+			"b:c_one": "one",
+			"b:c_other": "other",
+		});
+	});
+});
+
 test("namespaces `a` and `a:b` that both have `a:b:c`: an edit is written to the file read last, whose text a project load keeps", async () => {
 	const pathPattern = { a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" };
 	const files = {

@@ -397,3 +397,46 @@ test("namespaces `a` and `a:b`: saving without edits creates no file of `a:b` fo
 		await project.close();
 	}
 });
+
+test("namespaces `a` and `a:b`: a new translation of a message of `a` is written to `a`", async () => {
+	const files = {
+		"en/a.json": '{\n  "x": "X",\n  "b:c": "C"\n}\n',
+		"de/a.json": '{\n  "x": "X de"\n}\n',
+		"en/a-b.json": '{\n  "d": "D"\n}\n',
+	};
+	const { dir, project, read, save } = await setup({
+		files,
+		pathPattern: { a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" },
+	});
+	try {
+		await project.db
+			.insertInto("inlang_message")
+			.values({
+				id: "a:b:c-de",
+				bundle_id: "a:b:c",
+				locale: "de",
+				selectors: [],
+			})
+			.execute();
+		await project.db
+			.insertInto("inlang_variant")
+			.values({
+				id: "a:b:c-de-variant",
+				message_id: "a:b:c-de",
+				matches: [],
+				pattern: [{ type: "text", value: "C de" }],
+			})
+			.execute();
+		await save();
+		expect(read()).toStrictEqual({
+			...files,
+			"de/a.json": '{\n  "x": "X de",\n  "b:c": "C de"\n}\n',
+		});
+		expect((await reload(dir)).filter(([id]) => id === "a:b:c")).toStrictEqual([
+			["a:b:c", "de", text("C de")],
+			["a:b:c", "en", text("C")],
+		]);
+	} finally {
+		await project.close();
+	}
+});
