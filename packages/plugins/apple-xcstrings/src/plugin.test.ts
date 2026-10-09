@@ -407,7 +407,7 @@ describe("Apple String Catalog plugin", () => {
                 },
               },
               "Not yet translated": {},
-              "Rate: %.1f": { comment: "a format the plugin can't read" },
+              "%1$@ and %@": { comment: "a format the plugin can't read" },
               "Copyright © 2026": { shouldTranslate: false },
               "onboarding.title": {
                 comment: "Title of the first page",
@@ -430,7 +430,7 @@ describe("Apple String Catalog plugin", () => {
     for (const id of [
       "",
       "Not yet translated",
-      "Rate: %.1f",
+      "%1$@ and %@",
       "Copyright © 2026",
       "onboarding.title",
       "stale",
@@ -473,7 +473,7 @@ describe("Apple String Catalog plugin", () => {
         localizations: { de: { stringUnit: translated("Hallo, %@!") } },
       },
       "Not yet translated": {},
-      "Rate: %.1f": {},
+      "%1$@ and %@": {},
       "settings.title": {
         localizations: { en: { stringUnit: translated("Settings") } },
       },
@@ -491,7 +491,7 @@ describe("Apple String Catalog plugin", () => {
         localizations: { de: { stringUnit: translated("Hallo, %1$@!") } },
       },
       "Not yet translated": { extractionState: "manual" },
-      "Rate: %.1f": { extractionState: "manual" },
+      "%1$@ and %@": { extractionState: "manual" },
       "settings.title": {
         extractionState: "manual",
         localizations: { en: { stringUnit: translated("Settings") } },
@@ -520,26 +520,75 @@ describe("Apple String Catalog plugin", () => {
     });
   });
 
-  test("rejects ambiguous printf arguments and duplicate identities", () => {
-    for (const value of ["%1$@ %d", "%1$@ %1$d"]) {
-      expect(() =>
-        plugin.importFiles!({
-          settings,
-          files: [
-            {
-              locale: "en",
-              content: encode(
-                catalog({
-                  bad: {
-                    localizations: { en: { stringUnit: translated(value) } },
-                  },
-                }),
-              ),
-            },
-          ],
-        }),
-      ).toThrow();
+  test("imports format strings it can't read as text, which is written as it is", async () => {
+    // e.g. ambiguous printf arguments; before, the import of the whole
+    // catalog failed
+    for (const value of ["%1$@ %d", "%1$@ %1$d", "100% %1$@ %q"]) {
+      const source = catalog({
+        bad: {
+          extractionState: "manual",
+          localizations: { en: { stringUnit: translated(value) } },
+        },
+      });
+      const imported = await plugin.importFiles!({
+        settings,
+        files: [{ locale: "en", content: encode(source) }],
+      });
+      expect(imported.variants.map((variant) => variant.pattern)).toEqual([
+        [{ type: "text", value }],
+      ]);
+      const [file] = await plugin.exportFiles!({
+        settings,
+        ...concretize(imported),
+      });
+      expect(JSON.parse(decode(file!.content))).toEqual(JSON.parse(source));
     }
+  });
+
+  test("reads implicit printf arguments with flags, width and precision", async () => {
+    const imported = await plugin.importFiles!({
+      settings,
+      files: [
+        {
+          locale: "en",
+          content: encode(
+            catalog({
+              price: {
+                localizations: {
+                  en: { stringUnit: translated("%@ costs %.2f (%5d, %-3s)") },
+                },
+              },
+              // the space flag is not read: text that has a percent sign
+              sale: {
+                localizations: { en: { stringUnit: translated("50% off") } },
+              },
+            }),
+          ),
+        },
+      ],
+    });
+    const specifiers = (bundleId: string) =>
+      imported.variants
+        .find((variant) => variant.messageBundleId === bundleId)!
+        .pattern!.flatMap((part) =>
+          part.type === "expression"
+            ? [(part.annotation as any).options[0].value.value]
+            : [],
+        );
+    expect(specifiers("price")).toEqual(["@", ".2f", "5d", "-3s"]);
+    expect(specifiers("sale")).toEqual([]);
+    const [file] = await plugin.exportFiles!({
+      settings,
+      ...concretize(imported),
+    });
+    expect(
+      JSON.parse(decode(file!.content)).strings.price.localizations.en
+        .stringUnit.value,
+    ).toBe("%1$@ costs %2$.2f (%3$5d, %4$-3s)");
+    compileWithXcode(file!.content);
+  });
+
+  test("rejects duplicate identities", () => {
     expect(() =>
       plugin.exportFiles!({
         settings,

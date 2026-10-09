@@ -2,9 +2,13 @@
 
 Reads and writes Xcode 15+ `.xcstrings` catalogs through Inlang's v2 message model.
 
-Supported: exact keys, all catalog locales, positional printf variables, one plural variation, or one Apple device variation per message. Nested or multiple variations fail explicitly rather than being flattened.
+Supported: catalog versions 1.x (Xcode 15 writes 1.0, Xcode 26 writes 1.1 and 1.2), exact keys, all catalog locales, positional and implicit printf variables (with flags, width and precision, e.g. `%.2f`), one plural variation, or one Apple device variation per message. Nested or multiple variations fail explicitly rather than being flattened. A key or value that isn't a format string the plugin can read (e.g. positional and implicit arguments mixed, `%1$@ %@`) is imported as text and written back unchanged.
 
-Strings without a localization of the source language, e.g. strings extracted from code that nobody translated yet (`"Welcome" : { }`), strings with `"shouldTranslate" : false`, stale or manual strings, use their key as the source language value, like Xcode does at runtime. The plugin imports that value as the source language message, so that editors show it and it can be translated. It doesn't write it back: such a string keeps its shape on export, and translating it only adds the translated locale. A source language message whose value is the key is never written, Xcode uses the key.
+Strings without a localization of the source language use their key as the source language value, as Xcode does at runtime. This covers strings extracted from code that nobody translated yet (`"Welcome" : { }`), strings with `"shouldTranslate" : false`, and stale or manual strings. The plugin imports that value as the source language message, so editors show it and translators can translate it. The plugin doesn't write it back: such a string keeps its shape on export, and translating it only adds the translated locale.
+
+A source language value equal to the key is written only if the catalog already has it, e.g. Xcode's `"Pos %1$@ %2$lld"` for the key `"Pos %@ %lld"`.
+
+Strings with `"shouldTranslate" : false` also get a source language message, so lint rules and machine translation may offer to translate them. A translation of such a string is written next to `shouldTranslate`, which Xcode compiles as usual.
 
 This is a content adapter. Catalog workflow metadata such as comments, extraction state, translation state, and `shouldTranslate` is not represented by Inlang's v2 message tables and is regenerated on export.
 

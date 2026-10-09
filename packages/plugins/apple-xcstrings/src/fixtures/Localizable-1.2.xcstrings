@@ -1,0 +1,40 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+
+    },
+    "%arg items" : {
+
+    },
+    "%arg%% done" : {
+
+    },
+    "Copyright" : {
+      "comment" : "footer"
+    },
+    "Hello, %arg!" : {
+
+    },
+    "Pos %arg %arg" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Pos %1$arg %2$arg"
+          }
+        }
+      }
+    },
+    "Rate: %.1f" : {
+
+    },
+    "Save 50%" : {
+
+    },
+    "Welcome" : {
+
+    }
+  },
+  "version" : "1.2"
+}
