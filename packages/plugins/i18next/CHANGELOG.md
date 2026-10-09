@@ -1,5 +1,58 @@
 # @inlang/plugin-i18next
 
+## 6.4.0
+
+### Minor Changes
+
+- 9be7627: Export exact numbers created by `@inlang/plugin-icu1` and editors, and keep `_zero` files unchanged.
+
+  - An exact `0` on an un-annotated alias of `count` (`.local countPluralExact = {$count}`, ICU `{count, plural, =0 {…}}`) exports as `key_zero`, like an exact `0` on `count` itself. i18next looks up `_zero` whenever `count === 0`, in every language. Where the plural category `zero` covers more than 0 (Latvian: 10, 11–19, 20, …), i18next uses `_zero` for those counts too. An exact 0 can then only be exported next to a `zero` form with the same text; otherwise export fails with an error, because the "=0" text would also show for 10, 11, 20, ….
+  - Exact numbers i18next cannot express (`=1`, `=5`, exact numbers of ordinal plurals) fail the export with an error naming the bundle and number instead of a generic "cannot represent selector" error.
+  - Two forms that map to the same key with different texts fail the export with an error naming the key, bundle and locale, instead of keeping one, except `_zero` where the `zero` category selects no number other than 0 (see below). Files change only where the old output was wrong. `_zero` imports as before, as an exact `count = 0` form plus a `countPlural = zero` form, and keeps its position in the file. Where the `zero` category selects no number other than 0 (English, French, Arabic, Welsh, and tags Intl has no plural rules for), i18next shows the exact text for `_zero`. The export writes it, as earlier versions did, also if only the "=0" form was edited. In Latvian, where `zero` also selects 10, 11–19, 20, …, earlier versions wrote the "=0" text for all of those counts. Example: an "=0" form "Nav preču" and a `zero` form "{{count}} preču" made `item_zero` "Nav preču" also for 10 items. That now fails until both forms have the same text.
+  - Locales written with underscores (`pt_BR`) resolve their plural rules.
+
+### Patch Changes
+
+- d9cb529: Saving a project no longer rewrites whole translation files. Only the entries of edited, added or removed messages change; every other entry keeps its text (escapes, `{{ name }}` spacing), key order and formatting (indentation, line endings, final newline), so diffs in git show just the edits. New keys are inserted after the key that precedes them in the export. Files without a previous version (e.g. a new locale), and previous files that are not valid JSON, are written whole as before. Exports of large projects are also faster.
+
+  Keys with `:` are exported as they are imported: in a project with one file per locale (`pathPattern` is a string), `"err:notFound"` stays a key of the locale file instead of becoming a namespace `err`, which made saving overwrite the whole file with that one key. With namespaces, `common:err:notFound` is written as the key `err:notFound` of `common` instead of `err`.
+
+- dc4b3eb: Namespaces with `:` in their name (e.g. `"app:errors"` in `pathPattern`) are saved to their own file. Before, the bundle id `app:errors:notFound` was split at its first `:` and written as the key `errors:notFound` of a namespace `app`: to the file of another namespace, or to a file outside the project's `pathPattern`, while the namespace's own file kept the old texts, so edits were lost on the next load. The namespace of a bundle id is now the namespace of `pathPattern` that the id starts with. If two namespaces match, like `a` and `a:b` for `a:b:c` (the key `b:c` of `a` and the key `c` of `a:b` have the same bundle id), the message stays in the namespace whose files have it (also when its plural or context forms change, and a new translation goes there too), and a new message goes to the longer namespace, `a:b`. If both files have the key, the file read last wins as when loading the project; edits are written to it, and the other file keeps its text. Deleting such a message removes it from both files, which are then written in full.
+
+  Every `{locale}` of a `pathPattern` is replaced when files are read, as when they are saved, so a pattern like `./{locale}/common.{locale}.json` reads the file it writes.
+
+- 5423aa7: Export ICU `#` (imported by `@inlang/plugin-icu1` as `icu:pound`) that no longer sits in a plural, for example after an editor removed the plural.
+
+  - `#` without a plural offset exports as `{{count, number}}`, which i18next formats like ICU formats `#`. It used to export as `{{count, icu:pound}}`, an unknown i18next format.
+  - `#` with a plural offset displays `count - offset`, which i18next cannot express. The export fails with an error naming the bundle, locale and offset instead of "Not implemented".
+  - Other functions with options fail the export with an error naming the options, function, variable, bundle and locale instead of "Not implemented".
+
+- 4ecf2bd: Deleting every message of a translation file now persists. If all messages of a locale (or of an i18next namespace of a locale) were deleted, the export had nothing to write for that file, so `saveProjectToDirectory` left it on disk as it was, and the deleted messages came back on the next load.
+
+  The plugin contract of `exportFiles` with `files` is extended: a plugin also returns a file for every previous file that the project read, that holds messages the project no longer has and that the export doesn't otherwise write, without those messages. Whether the project read a file is the new `ExistingFile.imported`: `saveProjectToDirectory` sets it for files whose content is what `loadProjectFromDirectory` imported or what a save wrote. A file the project never read (e.g. of a locale added to the settings after loading, or changed on disk since) is never emptied; hosts that can't tell leave `imported` out. `keepUnchangedJsonEntries` does this for the JSON plugins (message-format, i18next, json, next-intl, icu1, apple-xcstrings): every key that imports to a message is removed (walking into objects that hold messages), everything else (`$schema`, keys the plugin doesn't read) and the formatting stay, so a file whose messages were all deleted becomes `{}`, or `{ "$schema": … }`. The file is kept, not deleted: the plugin still lists it for the locale, the next message of the locale goes there, and tools may expect it. The previous file's `path` is the exported file's `name` and its `metadata.pathPattern`, so `saveProjectToDirectory` writes it to exactly that file, also one of a `pathPattern` array; other hosts that pass `files` should write a file with a `metadata.pathPattern` there too. Files that hold no deleted message (e.g. an empty file, or an i18next namespace whose messages another namespace overrides) stay byte-identical.
+
+  `@inlang/plugin-apple-strings` writes the `.strings` file of such a locale without its entries and their comments; other comments (e.g. a license header) stay. `@inlang/plugin-android` writes the `strings.xml` of such a locale without its messages; elements it doesn't import (non-translatable strings, `<string-array>`s, …) and heading comments stay. This includes the base locale's `values/strings.xml`: deleting every message of the base locale removes Android's default strings, so the app needs other default resources. If such a file can't be written without removing elements the plugin doesn't import, it is left as it is instead of failing the export.
+
+  A file counts as read only as the locale (and namespace) it was read or written as, so a file that a settings change assigns to another locale (e.g. a new base locale for `values/`) is not emptied.
+
+- abfd521: `keepUnchangedJsonEntries` now checks the kept files in the order a project load reads them. Its safety net re-imports the files as they will be on disk and only keeps their text if they read like the full export, but it read the exported files in the order the plugin returned them and the files the export doesn't replace after them. When two files have the same message (e.g. overlapping i18next namespaces), the file read last wins, so a different order could accept kept text with a stale copy of an edited message, and the edit was lost on the next load. The files are now read in the order of `files` (`toBeImportedFiles`, like `loadProjectFromDirectory`), an exported file at the place of the file it replaces (at every place for several files of a `pathPattern` array, which the host writes it to); a new file (no place known yet) before the next exported file of its locale that has a place, so plugins that export in load order like i18next keep their order, else last. The JSON plugins bundle the helper.
+- Updated dependencies [5c0a84b]
+- Updated dependencies [2390c5a]
+- Updated dependencies [f45a761]
+- Updated dependencies [356a50a]
+- Updated dependencies [ad469a7]
+- Updated dependencies [fa0777c]
+- Updated dependencies [94cf565]
+- Updated dependencies [691caec]
+- Updated dependencies [4ecf2bd]
+- Updated dependencies [b38facf]
+- Updated dependencies [abfd521]
+- Updated dependencies [56923c5]
+- Updated dependencies [b0d8a4f]
+- Updated dependencies [fb83c18]
+- Updated dependencies [3e9bd54]
+  - @inlang/sdk@4.0.0
+
 ## 6.3.0
 
 ### Minor Changes
