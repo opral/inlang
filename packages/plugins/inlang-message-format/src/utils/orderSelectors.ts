@@ -1,8 +1,9 @@
 import type { Declaration } from "@inlang/sdk";
 
 /**
- * Returns the selector names in message order. An exact-number selector that
- * comes after the plural of the same input is moved directly before it.
+ * Returns the selector names in the given order, except that an exact-number
+ * selector that comes after the plural of the same input is moved directly
+ * before it. Import passes the file order, export the alphabetical order.
  *
  * That pair is how `@inlang/plugin-icu1` and editors (`addExactNumber`)
  * express ICU `{count, plural, =0 {…} one {…} other {…}}`:
@@ -18,9 +19,10 @@ import type { Declaration } from "@inlang/sdk";
  *
  * Selector order is the MessageFormat 2 preference order, so the exact number
  * must come first to win over a plural category that also selects the number
- * (French "one" selects 0). Earlier versions of this plugin sorted selectors
- * alphabetically on export, which put `countPlural` first; such files are
- * repaired on import and export.
+ * (French "one" selects 0). Export sorts selectors alphabetically like every
+ * earlier version, so that upgrading the plugin doesn't change files, and
+ * only then moves the exact number. Earlier versions put `countPlural` first;
+ * such files are repaired on import and export.
  *
  * An exact-number selector is an un-annotated selector that reads the same
  * input as a `plural` local: the input itself (`count`) or an alias

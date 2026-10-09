@@ -303,9 +303,11 @@ test("ICU exact numbers other than 0 are reported, not exported as wrong plurals
 	);
 });
 
-// `_zero` is one text in i18next. It is imported as one form wherever the
-// Intl "zero" category selects nothing but 0 (or does not exist), so an edit
-// cannot leave a second, diverging copy behind.
+// `_zero` imports as the exact 0 form and the "zero" category form, like in
+// every earlier version, so that its position among the plural keys survives
+// a round trip. Where the category selects nothing but 0 (or does not exist),
+// i18next shows the exact text for `_zero`, so export writes the exact form
+// also when only it was edited.
 test.each([
 	[
 		"en",
@@ -334,31 +336,43 @@ test.each([
 			item_other: "{{count}} عنصر",
 		},
 	],
-])("`_zero` imports as a single exact-0 form in %s", async (locale, file) => {
-	const imported = await runImport({ [locale]: file });
-	const zeroForms = imported.variants.filter((variant) =>
-		variant.pattern?.some(
-			(part) => part.type === "text" && part.value === file.item_zero
-		)
-	);
-	expect(zeroForms.map((variant) => variant.matches)).toStrictEqual([
-		[
-			{ type: "literal-match", key: "count", value: "0" },
-			{ type: "catchall-match", key: "countPlural" },
-		],
-	]);
-	expect(await runExport(withIds(imported))).toStrictEqual({ [locale]: file });
+])(
+	"`_zero` imports as exact 0 and the zero category in %s, and an edit of the exact form exports",
+	async (locale, file) => {
+		const imported = await runImport({ [locale]: file });
+		const zeroForms = imported.variants.filter((variant) =>
+			variant.pattern?.some(
+				(part) => part.type === "text" && part.value === file.item_zero
+			)
+		);
+		expect(zeroForms.map((variant) => variant.matches)).toStrictEqual([
+			[
+				{ type: "literal-match", key: "count", value: "0" },
+				{ type: "catchall-match", key: "countPlural" },
+			],
+			[
+				{ type: "catchall-match", key: "count" },
+				{ type: "literal-match", key: "countPlural", value: "zero" },
+			],
+		]);
+		expect(await runExport(withIds(imported))).toStrictEqual({
+			[locale]: file,
+		});
 
-	// an edit of the exact-0 form is exported
-	zeroForms[0]!.pattern = [{ type: "text", value: "edited" }];
-	const edited = await runExport(withIds(imported));
-	expect(edited).toStrictEqual({ [locale]: { ...file, item_zero: "edited" } });
-	const t = await runtime(edited);
-	expect(t("item", { lng: locale, count: 0 })).toBe("edited");
-	expect(t("item", { lng: locale, count: 1 })).toBe(
-		file.item_one.replace("{{count}}", "1")
-	);
-});
+		// an edit of only the exact-0 form is exported: the category form is
+		// never shown for `_zero` in this language
+		zeroForms[0]!.pattern = [{ type: "text", value: "edited" }];
+		const edited = await runExport(withIds(imported));
+		expect(edited).toStrictEqual({
+			[locale]: { ...file, item_zero: "edited" },
+		});
+		const t = await runtime(edited);
+		expect(t("item", { lng: locale, count: 0 })).toBe("edited");
+		expect(t("item", { lng: locale, count: 1 })).toBe(
+			file.item_one.replace("{{count}}", "1")
+		);
+	}
+);
 
 // Latvian's "zero" category also selects 10, 11–19, 20, 30, …, and i18next
 // uses `_zero` for those counts too. Two forms are needed there: exact 0 and
@@ -407,9 +421,10 @@ test("`_zero` imports as exact 0 and the zero category in Latvian", async () => 
 	);
 });
 
-test("an exact 0 and a different zero-category text are rejected", async () => {
-	await expect(
-		runExport(
+test("an exact 0 and a different zero-category text: the exact text where the category selects only 0", async () => {
+	// Arabic "zero" selects only 0, where the exact form wins
+	expect(
+		await runExport(
 			exactPluralBundle("item", {
 				ar: [
 					[{ countPluralExact: "0", countPlural: "*" }, "No items"],
@@ -418,9 +433,58 @@ test("an exact 0 and a different zero-category text are rejected", async () => {
 				],
 			})
 		)
+	).toStrictEqual({
+		ar: { item_zero: "No items", item: "{{count}} items" },
+	});
+	// Latvian "zero" also selects 10, 11–19, …: i18next can't hold both texts
+	await expect(
+		runExport(
+			exactPluralBundle("item", {
+				lv: [
+					[{ countPluralExact: "0", countPlural: "*" }, "No items"],
+					[{ countPluralExact: "*", countPlural: "zero" }, "Zero items"],
+					[{ countPluralExact: "*", countPlural: "*" }, "{{count}} items"],
+				],
+			})
+		)
 	).rejects.toThrow(
-		'i18next export cannot represent two different texts for "item_zero" of bundle "item" (ar)'
+		'i18next export cannot represent two different texts for "item_zero" of bundle "item" (lv)'
 	);
+});
+
+// Files keep their key order on import and export, also where `_zero` comes
+// after the other plural keys.
+test.each([
+	["zero first", ["item_zero", "item_one", "item_other"]],
+	["zero last", ["item_one", "item_other", "item_zero"]],
+	["zero between", ["item_one", "item_zero", "item_other"]],
+])("`_zero` keeps its position among the plural keys (%s)", async (_, keys) => {
+	const texts: Record<string, string> = {
+		item_zero: "No items",
+		item_one: "One item",
+		item_other: "{{count}} items",
+	};
+	const content =
+		JSON.stringify(
+			Object.fromEntries(keys.map((key) => [key, texts[key]])),
+			undefined,
+			"\t"
+		) + "\n";
+	for (const locale of ["en", "lv"]) {
+		const imported = await importFiles({
+			settings: {} as any,
+			files: [{ locale, content: new TextEncoder().encode(content) }],
+		});
+		const [file] = await exportFiles({
+			settings: {
+				baseLocale: "en",
+				locales: [locale],
+				"plugin.inlang.i18next": { pathPattern: "./{locale}.json" },
+			},
+			...withIds(imported),
+		});
+		expect(new TextDecoder().decode(file!.content)).toBe(content);
+	}
 });
 
 // In Latvian, i18next uses `_zero` for every count of the "zero" category
@@ -476,19 +540,18 @@ test("locales with underscores resolve their plural rules", async () => {
 	expect(zeroCategorySelectsNonZero("lv_LV")).toBe(true);
 	expect(zeroCategorySelectsNonZero("lv-LV")).toBe(true);
 
+	// pt_BR has no "zero" category: an edit of only the exact form exports
 	const imported = await runImport({
 		pt_BR: { item_zero: "Nenhum", item_one: "Um", item_other: "{{count}}" },
 	});
-	expect(
-		imported.variants.filter((variant) =>
-			variant.matches?.some(
-				(match) =>
-					match.type === "literal-match" &&
-					match.key === "countPlural" &&
-					match.value === "zero"
-			)
+	imported.variants.find((variant) =>
+		variant.matches?.some(
+			(match) => match.type === "literal-match" && match.key === "count"
 		)
-	).toStrictEqual([]);
+	)!.pattern = [{ type: "text", value: "Nada" }];
+	expect(await runExport(withIds(imported))).toStrictEqual({
+		pt_BR: { item_zero: "Nada", item_one: "Um", item_other: "{{count}}" },
+	});
 });
 
 async function icuImport(files: Record<string, Record<string, string>>) {

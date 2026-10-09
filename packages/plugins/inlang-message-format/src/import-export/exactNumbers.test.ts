@@ -3,6 +3,7 @@ import type { Bundle, Declaration, Message, Variant } from "@inlang/sdk";
 import icuPlugin from "@inlang/plugin-icu1";
 import { importFiles } from "./importFiles.js";
 import { exportFiles } from "./exportFiles.js";
+import { orderSelectors } from "../utils/orderSelectors.js";
 
 // `{count, plural, =0 {…} one {…} other {…}}` as `@inlang/plugin-icu1` imports
 // it and editors create it (`addExactNumber`): an un-annotated local alias for
@@ -142,7 +143,7 @@ test("exports the exact-number selector directly before its plural", async () =>
 				"local countPluralExact = count",
 				"local countPlural = count: plural",
 			],
-			// not sorted alphabetically: the exact number must stay first, see
+			// not alphabetical: the exact number must come first, see
 			// orderSelectors in exportFiles.ts
 			selectors: ["countPluralExact", "countPlural"],
 			match: {
@@ -154,7 +155,7 @@ test("exports the exact-number selector directly before its plural", async () =>
 	]);
 });
 
-test("other selectors keep their message order around an exact-number pair", async () => {
+test("other selectors stay alphabetical around an exact-number pair", async () => {
 	const exported = await runExport({
 		bundles: [
 			{
@@ -187,9 +188,9 @@ test("other selectors keep their message order around an exact-number pair", asy
 	});
 
 	expect(exported.en.items[0].selectors).toStrictEqual([
-		"gender",
 		"countPluralExact",
 		"countPlural",
+		"gender",
 	]);
 });
 
@@ -232,7 +233,7 @@ test("repairs a plural written before its exact number (sorted by earlier versio
 	]);
 });
 
-test("an exact number already before its plural keeps its place", async () => {
+test("an exact number already before its plural keeps its place on import", async () => {
 	const exported = await runExport({
 		bundles: [
 			{
@@ -263,12 +264,23 @@ test("an exact number already before its plural keeps its place", async () => {
 			),
 		],
 	});
+	// export: alphabetical, with the exact number moved before its plural
 	expect(exported.en.items[0].selectors).toStrictEqual([
 		"countPluralExact",
-		"gender",
 		"countPlural",
+		"gender",
 	]);
-	const reimported = await runImport(exported);
+	// import: a file that already has the exact number first stays as is
+	const reimported = await runImport({
+		en: {
+			items: [
+				{
+					...exported.en.items[0],
+					selectors: ["countPluralExact", "gender", "countPlural"],
+				},
+			],
+		},
+	});
 	expect(
 		reimported.messages[0]?.selectors?.map((selector) => selector.name)
 	).toStrictEqual(["countPluralExact", "gender", "countPlural"]);
@@ -429,7 +441,11 @@ test("ICU exact numbers survive message-format export and re-import", async () =
 	]);
 
 	const mfReimported = await runImport(mfExported);
-	expect(normalize(mfReimported)).toStrictEqual(normalize(icuImported));
+	// the same message, with the selectors in the order message-format writes
+	// them: alphabetical, an exact number before its plural
+	expect(normalize(mfReimported)).toStrictEqual(
+		normalize(icuImported, { sortSelectors: true })
+	);
 
 	const icuExported = await icuPlugin.exportFiles!({
 		...(withIds(mfReimported) as any),
@@ -437,7 +453,17 @@ test("ICU exact numbers survive message-format export and re-import", async () =
 	});
 	for (const file of icuExported) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
-		expect(json).toStrictEqual(icuFiles[file.locale as keyof typeof icuFiles]);
+		expect(json).toStrictEqual({
+			...icuFiles[file.locale as keyof typeof icuFiles],
+			// message-format writes `count…` before `gender`, so the plural now
+			// encloses the select. The message is the same.
+			...(file.locale === "en"
+				? {
+						guests:
+							"{count, plural, =0 {{gender, select, female {She invites nobody} other {They invite nobody}}} other {{gender, select, female {She invites } other {They invite }}{count}}}",
+					}
+				: {}),
+		});
 	}
 });
 
@@ -508,7 +534,10 @@ function withIds(imported: Imported): Exportable {
  * Compares imports independent of the order of declarations, variants and
  * matches, which carry no meaning. Selector order does.
  */
-function normalize(imported: Imported) {
+function normalize(
+	imported: Imported,
+	options: { sortSelectors?: boolean } = {}
+) {
 	const sortBy = <T>(items: T[]) =>
 		[...items].sort((a, b) =>
 			JSON.stringify(a).localeCompare(JSON.stringify(b))
@@ -524,7 +553,13 @@ function normalize(imported: Imported) {
 			imported.messages.map((message) => ({
 				bundleId: message.bundleId,
 				locale: message.locale,
-				selectors: message.selectors,
+				selectors: options.sortSelectors
+					? orderSelectors(
+							(message.selectors ?? []).map((selector) => selector.name).sort(),
+							imported.bundles.find((bundle) => bundle.id === message.bundleId)
+								?.declarations ?? []
+						).map((name) => ({ type: "variable-reference", name }))
+					: message.selectors,
 			}))
 		),
 		variants: sortBy(
