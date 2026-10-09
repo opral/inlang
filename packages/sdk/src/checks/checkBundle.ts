@@ -56,8 +56,8 @@ export type CheckBundleArgs = {
  *   (an exported ICU `=0 {}`), the reference locale's included.
  * - `missing-variant`: also checked for the reference locale, against its own
  *   selectors.
- * - `missing-variable`, `unknown-variable`, `missing-markup`: compared with
- *   the reference locale's message.
+ * - `missing-variable`, `unknown-variable`, `missing-markup`,
+ *   `missing-selector`: compared with the reference locale's message.
  */
 export function checkBundle(args: CheckBundleArgs): CheckDiagnostic[] {
 	const { bundle, referenceLocale } = args;
@@ -153,6 +153,17 @@ export function checkBundle(args: CheckBundleArgs): CheckDiagnostic[] {
 					variantId: issue.variantId!,
 					name: issue.name,
 					message: `Message ${id} is missing the <${issue.name}> markup in ${where}.`,
+				});
+			else if (issue.type === "missing-selector")
+				diagnostics.push({
+					...base,
+					fixes: [],
+					locale,
+					checkId: "missing-selector",
+					messageId,
+					name: issue.input,
+					selector: issue.selector,
+					message: `Message ${id} doesn't choose by {${issue.input}} in ${where} like ${JSON.stringify(referenceLocale)} does.`,
 				});
 			else
 				diagnostics.push({

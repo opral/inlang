@@ -81,7 +81,12 @@ for (const size of sizes.length ? sizes : [1000, 10000, 25000]) {
 		const fixtureMs = performance.now() - fixtureStart;
 		globalThis.gc?.();
 		const baselineMemory = process.memoryUsage();
+		// No source snapshot: missing translations and the translation checks (patterns), as by default.
 		const catalog = await measure(() => checkProject({ project }));
+		// IDs and locales only.
+		const idsOnly = await measure(() =>
+			checkProject({ project, checks: ["missing-translation"] })
+		);
 		const coldStart = performance.now();
 		const first = await checkProject({ project, files });
 		const coldMs = performance.now() - coldStart;
@@ -112,6 +117,7 @@ for (const size of sizes.length ? sizes : [1000, 10000, 25000]) {
 				fixtureMs: Math.round(fixtureMs),
 				usedRatio,
 				catalog,
+				idsOnly,
 				coldMs: +coldMs.toFixed(2),
 				warm,
 				scoped,
@@ -122,6 +128,8 @@ for (const size of sizes.length ? sizes : [1000, 10000, 25000]) {
 				baselineRssMiB: +(baselineMemory.rss / 1024 ** 2).toFixed(1),
 				heapMiB: +(process.memoryUsage().heapUsed / 1024 ** 2).toFixed(1),
 				rssMiB: +(process.memoryUsage().rss / 1024 ** 2).toFixed(1),
+				// peak resident set size of the whole process so far
+				maxRssMiB: +(process.resourceUsage().maxRSS / 1024).toFixed(1),
 			})
 		);
 	} finally {

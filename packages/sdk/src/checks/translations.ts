@@ -7,7 +7,10 @@ import type { Match } from "../database/schema.js";
 import {
 	isNumericKey,
 	isSingleNumberCategory,
+	matchValue,
 	missingVariants,
+	pluralRules,
+	resolveInputVariable,
 	selectorGroups,
 } from "./selectors.js";
 
@@ -39,7 +42,14 @@ export type TranslationIssue =
 			suggestion?: string;
 	  }
 	| { type: "missing-markup"; name: string; variantId?: string }
-	| { type: "missing-variant"; matches: Match[] };
+	| { type: "missing-variant"; matches: Match[] }
+	| {
+			type: "missing-selector";
+			/** The reference's selector ("countPlural"). */
+			selector: string;
+			/** The input it reads ("count"). */
+			input: string;
+	  };
 
 /** True when a pattern has no visible text, variables or markup. */
 export function isEmptyPattern(pattern: Pattern | undefined): boolean {
@@ -113,18 +123,25 @@ export function closestName(
 
 /**
  * Compares a translation with its reference. Deterministic order: a missing
- * translation alone; otherwise variable, markup and variant issues in the order
- * of the variants they appear in.
+ * translation alone; otherwise empty forms, variable and markup issues in the
+ * order of the variants they appear in, then missing selectors and variants.
  *
  * - `missing-translation`: no message, no variants, or every pattern is empty.
  * - `empty-variant`: one variant's pattern is empty while another variant of
  *   the message has text, e.g. an ICU `=0 {}`. Checked without a reference too.
- * - `missing-variable`: a reference variable is absent from a non-empty
- *   variant. Variants for one exact number on a plural selector (`0`, or a
- *   category that selects one number such as German `one`) may spell the
- *   number out and are exempt. Variables used only as selectors are not required.
+ * - `missing-variable`: a variable of the reference form with the same matches
+ *   (or, when the reference has no such form, of any reference form) is absent
+ *   from a non-empty variant. A variant for one exact number on a plural
+ *   selector (`0`, or a category that selects one number such as German `one`)
+ *   may spell that number out: its input variable is not required. Variables
+ *   used only as selectors are not required. Not checked against an empty
+ *   reference.
  * - `unknown-variable`: a variant uses a variable no reference pattern uses.
- * - `missing-markup`: a reference markup tag is absent from a non-empty variant.
+ * - `missing-markup`: a markup tag of the same reference form (as for
+ *   variables) is absent from a non-empty variant.
+ * - `missing-selector`: the reference chooses by an input (a select's values,
+ *   exact numbers, or a plural the target locale needs more than one form of)
+ *   and the translation has no selector on that input.
  * - `missing-variant`: a form the target needs has no variant, see
  *   {@link missingVariants}. The reference's select values and exact numbers
  *   are needed in the target too. The catch-all is a plural's "other"; an
@@ -142,28 +159,45 @@ export function checkTranslation(args: {
 	)
 		return [{ type: "missing-translation" }];
 	const issues: TranslationIssue[] = [];
-	const referencePatterns = (reference?.variants ?? [])
-		.map((variant) => variant.pattern)
-		.filter((pattern) => !isEmptyPattern(pattern));
-	const variables = [...new Set(referencePatterns.flatMap(variableNames))];
-	const markup = [...new Set(referencePatterns.flatMap(markupNames))];
-	// A variant for one exact number may spell it out: "=0" (on the plural selector, or on the
-	// exact-number selector ICU's `=0 {…} one {…}` imports next to it), or a category that
-	// selects one number such as German "one".
+	const referenceForms = (reference?.variants ?? []).filter(
+		(variant) => !isEmptyPattern(variant.pattern)
+	);
+	const variables = [
+		...new Set(referenceForms.flatMap((form) => variableNames(form.pattern))),
+	];
+	const markup = [
+		...new Set(referenceForms.flatMap((form) => markupNames(form.pattern))),
+	];
 	const groups = selectorGroups(target, declarations);
-	const spellsOut = (match: Match) => {
-		if (match.type !== "literal-match") return false;
-		const group = groups.find((value) => value.names.includes(match.key));
-		if (!group?.isPlural) return false;
-		return (
-			isNumericKey(match.value) ||
-			(match.key === group.selector &&
-				isSingleNumberCategory(
-					match.key,
-					declarations,
-					target.locale,
-					match.value
-				))
+	// A variant for one exact number may spell that number out: "=0" (on the plural selector,
+	// or on the exact-number selector ICU's `=0 {…} one {…}` imports next to it), or a
+	// category that selects one number such as German "one". Only that input is exempt.
+	const spelledOut = (variant: VariantLike): string[] =>
+		variant.matches.flatMap((match) => {
+			if (match.type !== "literal-match") return [];
+			const group = groups.find((value) => value.names.includes(match.key));
+			if (!group?.isPlural) return [];
+			return isNumericKey(match.value) ||
+				(match.key === group.selector &&
+					isSingleNumberCategory(
+						match.key,
+						declarations,
+						target.locale,
+						match.value
+					))
+				? [group.input]
+				: [];
+		});
+	// The reference form with the same matches, else every reference form.
+	const sameForm = (variant: VariantLike) => {
+		const keys = [
+			...new Set([
+				...variant.matches.map((match) => match.key),
+				...(reference?.selectors ?? []).map((selector) => selector.name),
+			]),
+		];
+		return referenceForms.find((form) =>
+			keys.every((key) => matchValue(form, key) === matchValue(variant, key))
 		);
 	};
 	for (const variant of target.variants) {
@@ -175,34 +209,55 @@ export function checkTranslation(args: {
 			});
 			continue;
 		}
-		if (reference) {
-			const variantId = variant.id;
-			const own = variableNames(variant.pattern);
-			const exactNumber = variant.matches.some(spellsOut);
-			const missing = exactNumber
-				? []
-				: variables.filter((name) => !own.includes(name));
-			for (const name of missing)
-				issues.push({ type: "missing-variable", name, variantId });
-			for (const name of own)
-				if (!variables.includes(name)) {
-					const suggestion = closestName(
-						name,
-						missing.length ? missing : variables
-					);
-					issues.push({
-						type: "unknown-variable",
-						name,
-						variantId,
-						...(suggestion ? { suggestion } : {}),
-					});
-				}
-			const tags = markupNames(variant.pattern);
-			for (const name of markup)
-				if (!tags.includes(name))
-					issues.push({ type: "missing-markup", name, variantId });
-		}
+		if (!reference || referenceForms.length === 0) continue;
+		const variantId = variant.id;
+		const form = sameForm(variant);
+		const expected = form ? variableNames(form.pattern) : variables;
+		const exempt = spelledOut(variant);
+		const own = variableNames(variant.pattern);
+		const missing = expected.filter(
+			(name) =>
+				!own.includes(name) &&
+				!exempt.includes(resolveInputVariable(name, declarations))
+		);
+		for (const name of missing)
+			issues.push({ type: "missing-variable", name, variantId });
+		for (const name of own)
+			if (!variables.includes(name)) {
+				const suggestion = closestName(
+					name,
+					missing.length ? missing : variables
+				);
+				issues.push({
+					type: "unknown-variable",
+					name,
+					variantId,
+					...(suggestion ? { suggestion } : {}),
+				});
+			}
+		const tags = markupNames(variant.pattern);
+		for (const name of form ? markupNames(form.pattern) : markup)
+			if (!tags.includes(name))
+				issues.push({ type: "missing-markup", name, variantId });
 	}
+	if (reference)
+		for (const group of selectorGroups(reference, declarations)) {
+			if (groups.some((value) => value.input === group.input)) continue;
+			// select values and exact numbers; a plural's categories follow each locale
+			const values = group.keys.filter(
+				(key) => key !== "*" && (!group.isPlural || isNumericKey(key))
+			);
+			const pluralNeeded =
+				group.isPlural &&
+				(pluralRules(group.selector, declarations, target.locale)
+					?.requiredCategories.length ?? 1) > 1;
+			if (values.length || pluralNeeded)
+				issues.push({
+					type: "missing-selector",
+					selector: group.selector,
+					input: group.input,
+				});
+		}
 	for (const matches of missingVariants(target, declarations, {
 		referenceVariants: reference?.variants,
 	}))

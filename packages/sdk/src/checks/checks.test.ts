@@ -639,6 +639,7 @@ test("translation checks compare each locale with the reference locale", async (
 		"unknown-variable",
 		"missing-markup",
 		"missing-variant",
+		"missing-selector",
 	]);
 	// German as the reference: English now has a variable German doesn't use.
 	expect(
