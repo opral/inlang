@@ -450,3 +450,30 @@ it("removing an ICU plural removes its exact numbers too and exports plain text"
 		de: { items: "{count, number} Elemente" },
 	});
 });
+
+it("does not add a second exact form where the number is already on the plural (countPlural=0)", async () => {
+	const [bundle] = await importIcu({
+		en: { items: "{count, plural, =0 {No items} one {# item} other {# items}}" },
+		de: { items: "{count, plural, one {# Element} other {# Elemente}}" },
+	});
+	// German got its `0` form on the plural (the SDK accepts countPlural=0 without an exact selector)
+	const withZero: Bundle = {
+		...bundle!,
+		messages: bundle!.messages.map((m) =>
+			m.locale === "de"
+				? {
+						...m,
+						variants: [
+							{ id: "de0", matches: [{ type: "literal-match", key: "countPlural", value: "0" }], pattern: text("Keine") },
+							...m.variants,
+						],
+					}
+				: m
+		),
+	};
+	expect(missing(withZero, "de")).toEqual([]);
+	const zero = addExactNumber(withZero, { selector: "count", value: 0, locale: "de", createId });
+	const de = zero.messages.find((m) => m.locale === "de")!;
+	expect(de.variants).toHaveLength(3);
+	expect(missing(zero, "de")).toEqual([]);
+});

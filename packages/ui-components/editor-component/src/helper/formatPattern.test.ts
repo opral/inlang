@@ -176,3 +176,25 @@ it("formatMessage selects a variant and drops markup", () => {
 		formatMessage({ ...args, variants: [variants[0]!], values: { count: 2 } })
 	).toBe("");
 });
+
+it("formats an ICU # (icu:pound) as the number minus its offset, with locale number formatting", () => {
+	const pound = (offset?: string) => ({
+		type: "expression" as const,
+		arg: { type: "variable-reference" as const, name: "count" },
+		annotation: {
+			type: "function-reference" as const,
+			name: "icu:pound",
+			options: offset ? [{ name: "offset", value: { type: "literal" as const, value: offset } }] : [],
+		},
+	});
+	const text = (value: string) => ({ type: "text" as const, value });
+	expect(
+		formatPattern({ pattern: [text("You and "), pound("1"), text(" others")], values: { count: 5 }, locale: "en" })
+	).toEqual([{ type: "text", value: "You and 4 others" }]);
+	expect(formatPattern({ pattern: [pound()], values: { count: "1234" }, locale: "de" })).toEqual([
+		{ type: "text", value: "1.234" },
+	]);
+	expect(formatPattern({ pattern: [pound("1")], values: { count: 1235 }, locale: "en" })).toEqual([
+		{ type: "text", value: "1,234" },
+	]);
+});

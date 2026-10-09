@@ -12,6 +12,7 @@ import {
 	pluralRules,
 	resolveInputVariable,
 	selectorGroups,
+	variantCovers,
 } from "@inlang/sdk/browser";
 import type { Match } from "./declarations.js";
 
@@ -417,7 +418,8 @@ function pluralSelectorOf(bundle: SelectorBundle, selector: string): string {
 function addRows(
 	message: BundleMessage,
 	values: Record<string, string>,
-	createId: () => string
+	createId: () => string,
+	declarations: readonly Declaration[]
 ): void {
 	const fixed = Object.keys(values);
 	const others = message.selectors.filter((s) => !fixed.includes(s.name));
@@ -432,10 +434,18 @@ function addRows(
 			rows.set(rowOf(variant), variant);
 	}
 	for (const [row, template] of rows) {
+		// `variantCovers` (SDK): an exact number on the plural (`countPlural=0`) is the form too
+		const wanted = fixed.map(
+			(name): Match =>
+				values[name] === "*"
+					? { type: "catchall-match", key: name }
+					: { type: "literal-match", key: name, value: values[name]! }
+		);
 		const exists = message.variants.some(
 			(variant) =>
 				rowOf(variant) === row &&
-				fixed.every((name) => matchValue(variant, name) === values[name])
+				(fixed.every((name) => matchValue(variant, name) === values[name]) ||
+					variantCovers(variant, wanted, declarations))
 		);
 		if (exists) continue;
 		const form: BundleVariant = {
@@ -549,7 +559,12 @@ export function addExactNumber<B extends SelectorBundle>(
 			}
 		}
 		if (message.locale === args.locale)
-			addRows(message, { [exactName]: number, [plural]: "*" }, createId);
+			addRows(
+				message,
+				{ [exactName]: number, [plural]: "*" },
+				createId,
+				declarations
+			);
 		return message;
 	});
 	return { ...bundle, declarations, messages };
@@ -659,7 +674,7 @@ export function addSelectValue<B extends SelectorBundle>(
 		messages: bundle.messages.map((original) => {
 			const message = copy(original);
 			if (message.locale === args.locale)
-				addRows(message, { [selector]: value }, createId);
+				addRows(message, { [selector]: value }, createId, bundle.declarations);
 			return message;
 		}),
 	};

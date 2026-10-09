@@ -2,11 +2,11 @@ import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import {
 	isEmptyPattern,
 	isNumericKey,
-	isPluralSelector,
 	matchValue,
 	missingVariants,
 	pluralRules,
 	selectorGroups,
+	variantCovers,
 } from "@inlang/sdk/browser";
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -343,23 +343,25 @@ export default class InlangMessageForms extends LitElement {
 		);
 	}
 
-	/** The variant of a combination; the catch-all of a plural is also found as an explicit "other". */
+	/**
+	 * The variant of a combination. Besides the exact matches, the forms the SDK's
+	 * `variantCovers` takes for it count: a plural's explicit "other" for its catch-all
+	 * and an exact number on the plural (`countPlural=0`) for `countPluralExact=0`.
+	 */
 	private _find(combination: Record<string, string>): VariantRow | undefined {
 		const names = Object.keys(combination);
 		const exact = this._variants.find((variant) =>
 			names.every((name) => matchValue(variant, name) === combination[name])
 		);
 		if (exact) return exact;
+		const matches = names.map(
+			(name): Match =>
+				combination[name] === "*"
+					? { type: "catchall-match", key: name }
+					: { type: "literal-match", key: name, value: combination[name]! }
+		);
 		return this._variants.find((variant) =>
-			names.every((name) => {
-				const value = matchValue(variant, name);
-				return (
-					value === combination[name] ||
-					(combination[name] === "*" &&
-						value === "other" &&
-						isPluralSelector(name, this.declarations))
-				);
-			})
+			variantCovers(variant, matches, this.declarations)
 		);
 	}
 

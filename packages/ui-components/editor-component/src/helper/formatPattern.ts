@@ -178,6 +178,24 @@ function formatValue(
 	locale: string
 ): string {
 	const name = annotation?.name;
+	if (name === "icu:pound") {
+		// ICU `#` (as @inlang/plugin-icu1 imports it): the number minus the plural's offset
+		const number = typeof value === "number" ? value : Number(value);
+		if (
+			(typeof value === "string" && value.trim() === "") ||
+			!Number.isFinite(number)
+		)
+			return String(value);
+		const option = annotation!.options?.find((o) => o.name === "offset");
+		const offset = Number(
+			option?.value.type === "literal" ? option.value.value : 0
+		);
+		return formatNumber(
+			number - (Number.isFinite(offset) ? offset : 0),
+			locale,
+			{}
+		);
+	}
 	if (name && NUMBER_FUNCTIONS.includes(name)) {
 		const number = typeof value === "number" ? value : Number(value);
 		if (
