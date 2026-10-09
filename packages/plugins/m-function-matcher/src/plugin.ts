@@ -1,3 +1,4 @@
+import { analyzeUsage } from "./analyzeUsage.js";
 import { PluginSettings } from "./settings.js";
 import { config } from "./ideExtension/config.js";
 import type { InlangPlugin } from "@inlang/sdk";
@@ -13,6 +14,7 @@ export const plugin: InlangPlugin<{
 	description:
 		"A plugin for the inlang SDK that uses a JSON file per language tag to store translations.",
 	key,
+	analyzeUsage,
 	meta: {
 		"app.inlang.ideExtension": config,
 	},

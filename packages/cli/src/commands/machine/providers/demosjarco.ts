@@ -164,7 +164,7 @@ export function createDemosjarcoTranslateProvider(
           return outcome.result;
         }
         if (retry < MAX_RETRIES) {
-          await sleep(retryDelayMs(retry));
+          await retryWait.sleep(retryDelayMs(retry));
         }
       }
 
@@ -203,6 +203,11 @@ function createConcurrencyLimiter(limit: number) {
   };
 }
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
+/**
+ * The wait between retries. Tests replace `retryWait.sleep` to skip it; replacing
+ * `setTimeout` by delay would also shorten unrelated timers (such as Lix's 5 s close watchdog).
+ */
+export const retryWait = {
+  sleep: (ms: number) =>
+    new Promise<void>((resolve) => setTimeout(resolve, ms)),
+};

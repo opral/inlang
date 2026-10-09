@@ -23,3 +23,5 @@ export type {
 	VariantImport,
 } from "./plugin/schema.js";
 export * from "./database/schema.js";
+
+export * from "./checks/index.js";
