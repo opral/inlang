@@ -20,7 +20,6 @@ import {
 	sortRows,
 } from "./harness.js";
 import { editorRows, editorSpecs, rowsFromSpecs } from "./editorRows.js";
-import { withVariantOrder } from "./fixtures.js";
 
 const settings = {
 	$schema: "https://inlang.com/schema/project-settings",
@@ -166,44 +165,6 @@ describe.each(["published", "current"] as const)(
 		});
 	}
 );
-
-/**
- * Messages of `directoryRows` that the published plugin writes with a variant
- * after the catch-all, with the order the current plugin writes.
- */
-const variantOrderChanges: Record<string, string[]> = {
-	"items_count/en": ["countPlural=one", "countPlural=*"],
-	"items_count/de": ["countPlural=one", "countPlural=*"],
-	"invite/en": [
-		"countPlural=one, gender=female",
-		"countPlural=one, gender=*",
-		"countPlural=*, gender=female",
-		"countPlural=*, gender=*",
-	],
-	"pronoun/en": ["gender=female", "gender=male", "gender=*"],
-};
-
-/**
- * A directory snapshot with the variants of messages in
- * `messages/{locale}.json` in another order, see `withVariantOrder`.
- */
-function withVariantOrderIn(
-	snapshot: Map<string, string>,
-	orders: Record<string, string[]>
-): Map<string, string> {
-	const files = [...snapshot]
-		.filter(([file]) => /^messages\/[^/]+\.json$/.test(file))
-		.map(([file, content]) => ({
-			locale: path.basename(file, ".json"),
-			name: file,
-			content: Buffer.from(content, "base64").toString("utf8"),
-		}));
-	const result = new Map(snapshot);
-	for (const file of withVariantOrder(files, orders)) {
-		result.set(file.name, Buffer.from(file.content).toString("base64"));
-	}
-	return result;
-}
 
 /**
  * Every file under `root`, path → bytes.
@@ -356,13 +317,11 @@ describe.each([
 				});
 				await opened.close();
 				const afterSave = snapshotDirectory(root);
-				// the published plugin wrote messages with a variant after the
-				// catch-all in that order; the current plugin writes the catch-all
-				// last (see translation-files.test.ts)
-				const expected =
-					creator === "published" && served === "current"
-						? withVariantOrderIn(before, variantOrderChanges)
-						: before;
+				// The published plugin wrote messages with a variant after the
+				// catch-all, which the current plugin writes last (see
+				// translation-files.test.ts). With the files that the current SDK
+				// passes, the current plugin keeps unchanged messages as they are.
+				const expected = before;
 				expect(trackedChanges(changedFiles(expected, afterSave))).toEqual([]);
 				expect(
 					changedFiles(before, afterSave).filter(

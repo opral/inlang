@@ -61,7 +61,7 @@ You can define a single `pathPattern` or provide an array of patterns. The place
 ```
 
 > [!NOTE]
-> When exporting, all messages are written to every path pattern in the array (one file per pattern and locale). Multiple patterns are a one-way merge for import.
+> Multiple patterns are a one-way merge for import. When exporting, a file that doesn't exist yet gets all messages of its locale (one file per pattern and locale). Existing files keep their messages: an edited or deleted message only changes in the files that have it, and a new message is added to every file of its locale.
 
 ## Messages
 

@@ -84,14 +84,23 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	}
 
 	// merge the bundle declarations
-	const uniqueBundleIds = [...new Set(bundles.map((bundle) => bundle.id))];
-	const uniqueBundles: BundleImport[] = uniqueBundleIds.map((id) => {
-		const _bundles = bundles.filter((bundle) => bundle.id === id);
-		const declarations = removeDuplicates(
-			_bundles.flatMap((bundle) => bundle.declarations)
-		);
-		return { id, declarations };
-	});
+	const bundlesById = new Map<string, BundleImport[]>();
+	for (const bundle of bundles) {
+		const group = bundlesById.get(bundle.id!);
+		if (group === undefined) {
+			bundlesById.set(bundle.id!, [bundle]);
+		} else {
+			group.push(bundle);
+		}
+	}
+	const uniqueBundles: BundleImport[] = [...bundlesById].map(
+		([id, _bundles]) => {
+			const declarations = removeDuplicates(
+				_bundles.flatMap((bundle) => bundle.declarations)
+			);
+			return { id, declarations };
+		}
+	);
 
 	return { bundles: uniqueBundles, messages, variants };
 };

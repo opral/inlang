@@ -1,11 +1,31 @@
 import type { ExportFile, InlangPlugin, Pattern } from "@inlang/sdk";
 import type { PluginSettings } from "../settings.js";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
 import { getMessagePath } from "./messageId.js";
+import { importFiles } from "./importFiles.js";
 
 type JsonPlugin = InlangPlugin<{ [PLUGIN_KEY]: PluginSettings }>;
 
-export const exportFiles: NonNullable<JsonPlugin["exportFiles"]> = async ({
+/**
+ * Writes the files and keeps the text of the entries of the previous files
+ * (`files`) that didn't change.
+ */
+export const exportFiles: NonNullable<JsonPlugin["exportFiles"]> = async (
+	args
+) =>
+	keepUnchangedJsonEntries({
+		exported: await exportWholeFiles(args),
+		files: args.files,
+		settings: args.settings,
+		importFiles,
+		exportFiles: exportWholeFiles,
+	});
+
+/**
+ * Writes whole files, without the previous files.
+ */
+const exportWholeFiles: NonNullable<JsonPlugin["exportFiles"]> = async ({
 	bundles,
 	messages,
 	variants,
@@ -20,17 +40,21 @@ export const exportFiles: NonNullable<JsonPlugin["exportFiles"]> = async ({
 			: [];
 	const defaultNamespace = namespaces[0];
 
+	const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+	const variantsByMessageId = new Map<string, typeof variants>();
+	for (const variant of variants) {
+		const messageVariants = variantsByMessageId.get(variant.messageId) ?? [];
+		messageVariants.push(variant);
+		variantsByMessageId.set(variant.messageId, messageVariants);
+	}
+
 	for (const message of messages) {
-		const bundle = bundles.find(
-			(candidate) => candidate.id === message.bundleId
-		);
+		const bundle = bundlesById.get(message.bundleId);
 		if (bundle === undefined) {
 			continue;
 		}
 
-		const messageVariants = variants.filter(
-			(candidate) => candidate.messageId === message.id
-		);
+		const messageVariants = variantsByMessageId.get(message.id) ?? [];
 		if (
 			message.selectors.length > 0 ||
 			messageVariants.length > 1 ||

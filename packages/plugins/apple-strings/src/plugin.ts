@@ -8,6 +8,12 @@ import type {
   VariantImport,
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
+import {
+  mergeEntries,
+  type Comment,
+  type Entry,
+  type EntryText,
+} from "./mergeEntries.js";
 
 export const PLUGIN_KEY = "plugin.inlang.apple-strings";
 type Config = { [PLUGIN_KEY]: PluginSettings };
@@ -17,6 +23,7 @@ type ImportArgs = Parameters<
 type ExportArgs = Parameters<
   NonNullable<InlangPlugin<Config>["exportFiles"]>
 >[0];
+type ExportFile = { locale: string; name: string; content: Uint8Array };
 
 export const plugin: InlangPlugin<Config> = {
   key: PLUGIN_KEY,
@@ -27,12 +34,15 @@ export const plugin: InlangPlugin<Config> = {
       path: settings[PLUGIN_KEY].pathPattern.replace("{locale}", locale),
     })),
   importFiles: ({ files }: ImportArgs) => importAppleStrings(files),
-  exportFiles: (args: ExportArgs) => exportAppleStrings(args),
+  exportFiles: (args: ExportArgs) =>
+    keepUnchangedEntries(exportAppleStrings(args), args),
 };
 
-function importAppleStrings(
-  files: ImportArgs["files"],
-): ReturnType<NonNullable<InlangPlugin<Config>["importFiles"]>> {
+function importAppleStrings(files: ImportArgs["files"]): {
+  bundles: Bundle[];
+  messages: MessageImport[];
+  variants: VariantImport[];
+} {
   const bundles = new Map<string, Bundle>();
   const messages: MessageImport[] = [];
   const variants: VariantImport[] = [];
@@ -58,12 +68,128 @@ function importAppleStrings(
   return { bundles: [...bundles.values()], messages, variants };
 }
 
+/**
+ * Keeps the text of the entries of the existing files that didn't change
+ * (comments, whitespace, order, escapes, encoding), so that an export only
+ * changes the bytes of edited messages.
+ *
+ * An entry is unchanged if the plugin writes the same line for it as for what
+ * the previous entry imports to. Changed entries are replaced, removed
+ * entries are removed with the comment directly above them, and new entries
+ * are inserted after the entry that precedes them in the full export. The
+ * result is only used if it imports to what the full export imports to.
+ * Otherwise, and if a previous file can't be read, the full export is used.
+ */
+function keepUnchangedEntries(
+  exported: ExportFile[],
+  args: ExportArgs,
+): ExportFile[] {
+  if (!args.files?.length) return exported;
+  return exported.map((file) => {
+    const previous = args.files!.find(
+      (candidate) => candidate.locale === file.locale,
+    );
+    if (previous === undefined) return file;
+    try {
+      const content = keepUnchangedEntriesOfFile({
+        previous: previous.content,
+        exported: file.content,
+        locale: file.locale,
+        settings: args.settings,
+      });
+      return content === undefined ? file : { ...file, content };
+    } catch {
+      // e.g. the previous file can't be parsed or imported
+      return file;
+    }
+  });
+}
+
+function keepUnchangedEntriesOfFile(args: {
+  previous: Uint8Array;
+  exported: Uint8Array;
+  locale: string;
+  settings: ExportArgs["settings"];
+}): Uint8Array | undefined {
+  const { text, encoding } = decodeKeepingEncoding(args.previous);
+  const exportedText = decode(args.exported);
+  /** The text the plugin writes for what `text` imports to. */
+  const canonical = (text: string) => {
+    const imported = importAppleStrings([
+      { locale: args.locale, content: encode(text) },
+    ]);
+    const files = exportAppleStrings({
+      ...rowsOf(imported),
+      settings: args.settings,
+    });
+    const file = files.find((candidate) => candidate.locale === args.locale);
+    return file === undefined ? "" : decode(file.content);
+  };
+  const scanned = scanStringsFile(text);
+  const result = mergeEntries({
+    text,
+    entries: scanned.entries,
+    comments: scanned.comments,
+    previous: entryTexts(canonical(text)),
+    next: entryTexts(exportedText),
+    indentUnit: "",
+    fileIndentUnit: "",
+    insertIntoEmpty: (lines) => ({
+      start: text.length,
+      end: text.length,
+      text:
+        (text === "" || /\n\s*$/.test(text) ? "" : newlineOf(text)) +
+        lines.map((line) => line + newlineOf(text)).join(""),
+    }),
+  });
+  if (result === undefined) return undefined;
+  // Only use the result if it imports to what the full export imports to.
+  if (canonical(result) !== canonical(exportedText)) return undefined;
+  return encodeWithEncoding(result, encoding);
+}
+
+/** The lines of a file the plugin writes, by key. */
+function entryTexts(text: string): Map<string, EntryText> {
+  return new Map(
+    scanStringsFile(text).entries.map((entry) => [
+      entry.key,
+      {
+        text: text.slice(entry.start, entry.end),
+        valueText:
+          entry.valueRange &&
+          text.slice(entry.valueRange.start, entry.valueRange.end),
+      },
+    ]),
+  );
+}
+
+function newlineOf(text: string) {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+/** Bundles, messages and variants with ids from the result of an import. */
+function rowsOf(imported: ReturnType<typeof importAppleStrings>) {
+  const messages: Message[] = imported.messages.map((message) => ({
+    id: `${message.bundleId}\u0000${message.locale}`,
+    bundleId: message.bundleId,
+    locale: message.locale,
+    selectors: message.selectors ?? [],
+  }));
+  const variants: Variant[] = imported.variants.map((variant, index) => ({
+    id: String(index),
+    messageId: `${variant.messageBundleId}\u0000${variant.messageLocale}`,
+    matches: variant.matches ?? [],
+    pattern: variant.pattern ?? [],
+  }));
+  return { bundles: imported.bundles, messages, variants };
+}
+
 function exportAppleStrings({
   bundles,
   messages,
   variants,
   settings,
-}: ExportArgs) {
+}: Omit<ExportArgs, "files">) {
   const files = new Map<string, string[]>();
   for (const message of messages) {
     const bundle = requiredBundle(bundles, message);
@@ -97,18 +223,33 @@ function exportAppleStrings({
 }
 
 function parseStringsFile(source: string) {
-  const entries: Array<{ key: string; value: string }> = [];
+  return scanStringsFile(source).entries;
+}
+
+/**
+ * Parses a .strings file into its entries and comments, with their positions.
+ */
+function scanStringsFile(source: string) {
+  const entries: Array<Entry & { value: string }> = [];
+  const comments: Comment[] = [];
   let cursor = 0;
   const whitespaceAndComments = () => {
     while (cursor < source.length) {
       if (/\s/.test(source[cursor]!)) {
         cursor++;
       } else if (source.startsWith("//", cursor)) {
+        const start = cursor;
         cursor = source.indexOf("\n", cursor + 2);
         if (cursor === -1) cursor = source.length;
+        // without a carriage return of the line break
+        comments.push({
+          start,
+          end: source[cursor - 1] === "\r" ? cursor - 1 : cursor,
+        });
       } else if (source.startsWith("/*", cursor)) {
         const end = source.indexOf("*/", cursor + 2);
         if (end === -1) throw new Error("Unterminated Apple .strings comment");
+        comments.push({ start: cursor, end: end + 2 });
         cursor = end + 2;
       } else break;
     }
@@ -135,27 +276,30 @@ function parseStringsFile(source: string) {
   };
   whitespaceAndComments();
   while (cursor < source.length) {
+    const start = cursor;
     const key = unescapeString(quoted());
     whitespaceAndComments();
     if (source[cursor] === ";") {
       cursor++;
       if (entries.some((entry) => entry.key === key))
         throw new Error(`Duplicate Apple .strings key "${key}"`);
-      entries.push({ key, value: key });
+      entries.push({ key, value: key, start, end: cursor });
       whitespaceAndComments();
       continue;
     }
     if (source[cursor++] !== "=") throw new Error(`Expected = after "${key}"`);
     whitespaceAndComments();
+    const valueStart = cursor;
     const value = unescapeString(quoted());
+    const valueRange = { start: valueStart, end: cursor };
     whitespaceAndComments();
     if (source[cursor++] !== ";") throw new Error(`Expected ; after "${key}"`);
     if (entries.some((entry) => entry.key === key))
       throw new Error(`Duplicate Apple .strings key "${key}"`);
-    entries.push({ key, value });
+    entries.push({ key, value, start, end: cursor, valueRange });
     whitespaceAndComments();
   }
-  return entries;
+  return { entries, comments };
 }
 
 function parsePattern(value: string) {
@@ -305,6 +449,41 @@ function unescapeString(value: string) {
 }
 function encode(value: string) {
   return new TextEncoder().encode(value);
+}
+
+type Encoding = "utf-8" | "utf-16le" | "utf-16be";
+
+/**
+ * Decodes a file like `decode` and returns its encoding. A UTF-8 byte order
+ * mark is kept in the text.
+ */
+function decodeKeepingEncoding(value: Uint8Array): {
+  text: string;
+  encoding: Encoding;
+} {
+  if (value[0] === 0xff && value[1] === 0xfe)
+    return { text: decode(value), encoding: "utf-16le" };
+  if (value[0] === 0xfe && value[1] === 0xff)
+    return { text: decode(value), encoding: "utf-16be" };
+  return {
+    text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(value),
+    encoding: "utf-8",
+  };
+}
+
+function encodeWithEncoding(text: string, encoding: Encoding): Uint8Array {
+  if (encoding === "utf-8") return encode(text);
+  // with a byte order mark, as read by `decode`
+  const bytes = new Uint8Array(2 + text.length * 2);
+  const littleEndian = encoding === "utf-16le";
+  bytes[0] = littleEndian ? 0xff : 0xfe;
+  bytes[1] = littleEndian ? 0xfe : 0xff;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    bytes[2 + index * 2] = littleEndian ? code & 0xff : code >> 8;
+    bytes[3 + index * 2] = littleEndian ? code >> 8 : code & 0xff;
+  }
+  return bytes;
 }
 function decode(value: Uint8Array) {
   if (value[0] === 0xff && value[1] === 0xfe)
