@@ -11,6 +11,11 @@
 	},
 	"description": "",
 	"types": "./dist/index.d.ts",
+	"files": [
+		"dist",
+		"!dist/**/*.test.*",
+		"!dist/**/*.test-util.*"
+	],
 	"exports": {
 		".": "./dist/index.js",
 		"./bundled": "./dist/bundled/index.js"
@@ -26,8 +31,9 @@
 	"author": "",
 	"license": "ISC",
 	"devDependencies": {
-		"@nx/storybook": "^18.0.4",
+		"@inlang/plugin-icu1": "workspace:*",
 		"@inlang/tsconfig": "workspace:*",
+		"@nx/storybook": "^18.0.4",
 		"@rollup/plugin-commonjs": "^25.0.7",
 		"@rollup/plugin-json": "^6.1.0",
 		"@rollup/plugin-node-resolve": "^15.2.3",
@@ -40,7 +46,6 @@
 		"@storybook/web-components-vite": "^8.6.12",
 		"@types/chroma-js": "^2.4.4",
 		"happy-dom": "18.0.1",
-		"lit": "^3.1.2",
 		"prettier": "^3.4.2",
 		"react": "^18.2.0",
 		"react-dom": "^18.2.0",
@@ -50,7 +55,7 @@
 		"vitest": "2.1.8"
 	},
 	"peerDependencies": {
-		"@inlang/sdk": "workspace:*"
+		"@inlang/sdk": "workspace:^"
 	},
 	"dependencies": {
 		"@lexical/plain-text": "^0.16.1",
@@ -60,6 +65,7 @@
 		"@sinclair/typebox": "0.31.28",
 		"chroma-js": "^2.4.2",
 		"lexical": "^0.16.1",
+		"lit": "^3.1.2",
 		"uuid": "^11.0.0"
 	}
 }

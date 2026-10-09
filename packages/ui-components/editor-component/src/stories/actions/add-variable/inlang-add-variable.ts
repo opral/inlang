@@ -149,6 +149,7 @@ export default class InlangAddVariable extends LitElement {
   override render() {
     return html`
       <sl-dropdown
+        hoist
         distance="-4"
         class="dropdown"
         @sl-show=${() => {

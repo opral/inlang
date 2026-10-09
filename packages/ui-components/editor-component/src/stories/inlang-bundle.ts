@@ -182,7 +182,7 @@ export default class InlangBundle extends LitElement {
                   <div class="variables">
                     ${this.bundle.declarations.map(
                       (declaration) =>
-                        html`<sl-dropdown
+                        html`<sl-dropdown hoist
                           ><sl-button
                             exportparts="base:variable"
                             slot="trigger"
@@ -261,7 +261,7 @@ export default class InlangBundle extends LitElement {
                 </div>`}
             ${this._bundleActionsPresent
               ? html`<div class="separator"></div>
-                  <sl-dropdown class="bundle-actions">
+                  <sl-dropdown class="bundle-actions" hoist>
                     <sl-button
                       class="text-button"
                       variant="text"

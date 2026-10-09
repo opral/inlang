@@ -13,7 +13,8 @@ it("offers locale-specific cardinal categories and a distinct fallback", () => {
 });
 it("distinguishes ordinal categories and supplies examples", () => {
   const result = selectorMatches("amount", plural([{ name: "type", value: { type: "literal", value: "ordinal" } }]), "en", []);
-  expect(result.allowed).toEqual(["few", "one", "two", "other", "*"]);
+  // CLDR order, as the SDK reports plural categories
+  expect(result.allowed).toEqual(["one", "two", "few", "other", "*"]);
   expect(result.label).toBe("Ordinal plural · en");
   expect(result.suggestions.find(s => s.value === "two")?.description).toContain("2");
 });
