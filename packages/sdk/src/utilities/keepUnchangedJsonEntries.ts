@@ -229,13 +229,17 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	// order can accept kept text that loses an edit on the next load. An
 	// exported file goes to the place of the file it replaces (to every place,
 	// if it replaces several, like the host writes it to every file of a
-	// `pathPattern` array); new files, whose place isn't known, go last.
+	// `pathPattern` array). The place of a new file isn't known: it goes before
+	// the next exported file of its locale that has a place (plugins like
+	// i18next export in the order of `toBeImportedFiles`), else last.
 	const onDisk = () => {
 		const contentOf = (pair: (typeof pairs)[number]) =>
 			pair.kept === undefined || pair.kept === pair.exportedText
 				? pair.file.content
 				: new TextEncoder().encode(pair.kept);
 		const placed = new Set<(typeof pairs)[number]>();
+		/** the first place of a placed pair in `result` */
+		const positions = new Map<(typeof pairs)[number], number>();
 		const result: Array<{
 			locale: string;
 			content: Uint8Array;
@@ -255,19 +259,38 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 				continue;
 			}
 			placed.add(pair);
+			if (!positions.has(pair)) positions.set(pair, result.length);
 			result.push({
 				locale: existing.locale,
 				metadata: existing.metadata,
 				content: contentOf(pair),
 			});
 		}
-		for (const pair of pairs) {
+		// New files: before the place of the next exported file of the locale
+		// that has one, so that the order of a plugin that exports in the order
+		// of `toBeImportedFiles` is kept, else last.
+		for (const [index, pair] of pairs.entries()) {
 			if (placed.has(pair)) continue;
-			result.push({
+			const entry = {
 				locale: pair.file.locale,
 				metadata: pair.file.metadata,
 				content: contentOf(pair),
-			});
+			};
+			const next = pairs
+				.slice(index + 1)
+				.find(
+					(candidate) =>
+						placed.has(candidate) && candidate.file.locale === pair.file.locale
+				);
+			const at = next === undefined ? -1 : positions.get(next)!;
+			if (at === -1) {
+				result.push(entry);
+			} else {
+				result.splice(at, 0, entry);
+				for (const [other, position] of positions) {
+					if (position >= at) positions.set(other, position + 1);
+				}
+			}
 		}
 		return result;
 	};

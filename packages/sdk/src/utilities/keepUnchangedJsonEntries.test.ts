@@ -759,6 +759,65 @@ describe("keepUnchangedJsonEntries", () => {
 		).toEqual([{ type: "text", value: "edited" }]);
 	});
 
+	test("a new file is checked at the place the plugin exports it", async () => {
+		// The same plugin, exporting in load order `y`, `x`; `y` is new.
+		const exportInLoadOrder = async (
+			args: Parameters<typeof exportFiles>[0]
+		): Promise<ExportFile[]> => {
+			const json: Record<string, Record<string, string>> = { x: {}, y: {} };
+			for (const message of args.messages) {
+				const variant = args.variants.find((v) => v.messageId === message.id)!;
+				json[message.bundleId.startsWith("x_") ? "x" : "y"]![message.bundleId] =
+					variant.pattern
+						.map((part) => (part.type === "text" ? part.value : ""))
+						.join("");
+			}
+			return ["y", "x"].map((namespace) => ({
+				locale: "en",
+				name: `${namespace}.json`,
+				metadata: { namespace },
+				content: encode(JSON.stringify(json[namespace], undefined, "\t")),
+			}));
+		};
+		const x = {
+			path: "./x.json",
+			locale: "en",
+			metadata: { namespace: "x" },
+			content: encode('{"x_a": "A", "k": "current"}'),
+		};
+		const rows = rowsFromImport(
+			await importFiles({ files: [x], settings: {} as any } as any)
+		);
+		const k = rows.messages.find((message) => message.bundleId === "k")!;
+		rows.variants.find((v) => v.messageId === k.id)!.pattern = [
+			{ type: "text", value: "edited" },
+		];
+
+		const result = await keepUnchangedJsonEntries({
+			exported: await exportInLoadOrder({ ...rows, settings: {} as any }),
+			files: [x],
+			settings: {} as any,
+			importFiles,
+			exportFiles: exportInLoadOrder,
+		});
+
+		// the next load reads y, then x
+		const reloaded = rowsFromImport(
+			await importFiles({
+				files: ["y", "x"].map((namespace) => ({
+					locale: "en",
+					content: result.find(
+						(file) => file.metadata?.["namespace"] === namespace
+					)!.content,
+				})),
+			})
+		);
+		const reloadedK = reloaded.messages.find((m) => m.bundleId === "k")!;
+		expect(
+			reloaded.variants.find((v) => v.messageId === reloadedK.id)!.pattern
+		).toEqual([{ type: "text", value: "edited" }]);
+	});
+
 	test("a locale with several existing files is written in full", async () => {
 		const exported = await exportFiles({
 			...rowsFromImport(
