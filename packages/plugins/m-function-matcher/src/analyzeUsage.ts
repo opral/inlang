@@ -75,8 +75,8 @@ const parserPlugins = (path: string): ParserPlugins[] => {
 	// TypeScript's experimental decorators (Angular, Nest, Lit) first, then the standard ones.
 	return [
 		[...base, "decorators-legacy"],
-		[...base, ["decorators", { decoratorsBeforeExport: true }]],
-		[...base, ["decorators", { decoratorsBeforeExport: false }]],
+[...base, ["decorators", { decoratorsBeforeExport: true }], "decoratorAutoAccessors"],
+		[...base, ["decorators", { decoratorsBeforeExport: false }], "decoratorAutoAccessors"],
 	];
 };
 const messageModule = (value: unknown): boolean =>
@@ -212,7 +212,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 		}
 		// Overcounting shadowed names is intentional: it can retain a message,
 		// whereas ignoring an ambiguous binding could delete one still in use.
-		const namespaces = new Set<string>(["m"]);
+const namespaces = new Set<string>(["m"]);
+		// `import * as all`: Paraglide's messages.js has `export * as m from "./messages/_index.js"`,
+		// so `all.m` is the message namespace too (and `all.hello` a message).
+		const moduleNamespaces = new Set<string>();
 		for (const statement of programs.flatMap(
 			(program) => program.body as Node[]
 		)) {
@@ -232,11 +235,14 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 						source === "module"
 					)
 						unresolved.add("CommonJS loader references are unsupported.");
-					if (
+if (
 						local &&
 						(imported === "m" || specifier.type === "ImportNamespaceSpecifier")
-					)
+					) {
 						namespaces.add(local);
+						if (specifier.type === "ImportNamespaceSpecifier")
+							moduleNamespaces.add(local);
+					}
 					// Retain imported function names even from custom module paths.
 					// This can retain unrelated/unused imports but cannot delete a use.
 					else if (
@@ -456,6 +462,31 @@ if (
 				!objectKey
 			)
 				unresolved.add("Bundler module loaders cannot be resolved.");
+			// `import.meta.hot.accept("./paraglide/messages.js", (mod) => …)` hands the callback the
+			// modules it names; accepting itself (`accept()`, `accept(cb)`) does not.
+			if (
+				(node.type === "CallExpression" ||
+					node.type === "OptionalCallExpression") &&
+				isNode(node.callee) &&
+				(node.callee.type === "MemberExpression" ||
+					node.callee.type === "OptionalMemberExpression") &&
+				staticMemberName(node.callee) === "accept" &&
+				isNode(node.callee.object) &&
+				(node.callee.object.type === "MemberExpression" ||
+					node.callee.object.type === "OptionalMemberExpression") &&
+				staticMemberName(node.callee.object) === "hot" &&
+				isNode(node.callee.object.object) &&
+				node.callee.object.object.type === "MetaProperty"
+			) {
+				const first = (node.arguments as Node[])[0];
+				if (
+					isNode(first) &&
+					!["FunctionExpression", "ArrowFunctionExpression"].includes(first.type)
+				)
+					unresolved.add(
+						"import.meta.hot.accept with dependencies hands their modules to a callback."
+					);
+			}
 			if (node.type === "ImportExpression")
 				unresolved.add("Dynamic message imports cannot be resolved.");
 			if (
@@ -476,18 +507,25 @@ if (
 				].includes(node.type) &&
 				typeof node.name === "string"
 			) {
-				const [namespace, member] = node.name.split(".");
+const [namespace, member, nested] = node.name.split(".");
 				if (namespace && namespaces.has(namespace)) {
 					if (member) {
 						used.add(member);
 						refer(member, node);
-					} else
+					}
+					// `<all.m.card />`: the message namespace of a namespace import
+					const isNested = member === "m" && moduleNamespaces.has(namespace);
+					if (isNested && nested) {
+						used.add(nested);
+						refer(nested, node);
+					}
+					if (!member || (isNested && !nested))
 						unresolved.add(
 							"A Svelte message namespace escapes through a component or directive."
 						);
 				}
 			}
-			if (
+if (
 				node.type === "JSXMemberExpression" &&
 				isNode(node.object) &&
 				node.object.type === "JSXIdentifier" &&
@@ -496,12 +534,36 @@ if (
 				if (isNode(node.property)) {
 					used.add(node.property.name as string);
 					refer(node.property.name as string, node);
+					// `<all.m />` passes the message namespace of a namespace import as a component
+					if (
+						node.property.name === "m" &&
+						moduleNamespaces.has(node.object.name as string) &&
+						!(parent?.type === "JSXMemberExpression" && key === "object")
+					)
+						unresolved.add("A JSX message namespace cannot be resolved.");
 				}
+			}
+			// `<all.m.card />`
+			if (
+				node.type === "JSXMemberExpression" &&
+				isNode(node.object) &&
+				node.object.type === "JSXMemberExpression" &&
+				isNode(node.object.object) &&
+				node.object.object.type === "JSXIdentifier" &&
+				moduleNamespaces.has(node.object.object.name as string) &&
+				isNode(node.object.property) &&
+				node.object.property.name === "m" &&
+				isNode(node.property)
+			) {
+				used.add(node.property.name as string);
+				refer(node.property.name as string, node);
 			}
 			if (
 				node.type === "JSXIdentifier" &&
 				namespaces.has(node.name as string) &&
-				!(parent?.type === "JSXMemberExpression" && key === "object")
+				// the object of a member is handled above, a property or attribute name is no reference
+				parent?.type !== "JSXMemberExpression" &&
+				!(parent?.type === "JSXAttribute" && key === "name")
 			)
 				unresolved.add("A JSX message namespace cannot be resolved.");
 			if (
@@ -530,13 +592,45 @@ if (
 					(!object || !namespaces.has(object))
 				)
 					unresolved.add("A possible global object alias cannot be resolved.");
-				if (object && namespaces.has(object)) {
+if (object && namespaces.has(object)) {
 					const id = propertyName;
 					if (id === undefined)
 						unresolved.add("Dynamic message access cannot be resolved.");
 					else {
 						used.add(id);
 						refer(id, node, parent, key);
+					}
+					// `all.m` of a namespace import is the message namespace: its members are
+					// messages (below); used any other way (aliased, destructured, passed) it escapes.
+					const isMember =
+						parent &&
+						(parent.type === "MemberExpression" ||
+							parent.type === "OptionalMemberExpression") &&
+						key === "object";
+					const isCallee =
+						parent &&
+						(parent.type === "CallExpression" ||
+							parent.type === "OptionalCallExpression") &&
+						key === "callee";
+					if (id === "m" && moduleNamespaces.has(object) && !isMember && !isCallee)
+						unresolved.add(
+							"A message namespace is aliased, exported, destructured, or passed as a value."
+						);
+				}
+				// `all.m.hello`, `all.m["hello"]`, `all?.m?.hello`
+				const inner = node.object;
+				if (
+					isNode(inner) &&
+					(inner.type === "MemberExpression" ||
+						inner.type === "OptionalMemberExpression") &&
+					moduleNamespaces.has(identifier(inner.object) ?? "") &&
+					staticMemberName(inner) === "m"
+				) {
+					if (propertyName === undefined)
+						unresolved.add("Dynamic message access cannot be resolved.");
+					else {
+						used.add(propertyName);
+						refer(propertyName, node, parent, key);
 					}
 				}
 				// Nested/global message namespaces require binding graph analysis.

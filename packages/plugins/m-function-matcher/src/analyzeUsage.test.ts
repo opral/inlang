@@ -360,3 +360,89 @@ test("typeof a message in a type position counts as a usage", async () => {
 	expect(result.status).toBe("complete");
 	expect(new Set(result.usedBundleIds)).toEqual(new Set(["label", "quoted"]));
 });
+
+// Paraglide's messages.js has `export * as m from "./messages/_index.js"`, so a namespace import of
+// it reaches the messages as `all.m.<id>`.
+test.each([
+	["all.m.hello()", "src/app.ts"],
+	['all["m"].hello()', "src/app.ts"],
+	["all?.m?.hello()", "src/app.ts"],
+	["const view = <all.m.hello />;", "src/app.tsx"],
+])("a namespace import's m is the message namespace: %s", async (code, path) => {
+	const result = await analyze(
+		`import * as all from './paraglide/messages.js'; ${code}`,
+		path
+	);
+	expect(result.status).toBe("complete");
+	expect(result.usedBundleIds).toContain("hello");
+});
+
+test("a namespace import of a barrel reaches the messages as all.m too", async () => {
+	const result = await analyze(
+		`import * as all from '$lib/i18n'; all.m.hello(); all.m["quoted"]();`,
+		"src/app.ts"
+	);
+	expect(result.status).toBe("complete");
+	expect(new Set(result.usedBundleIds)).toEqual(new Set(["m", "hello", "quoted"]));
+});
+
+test.each([
+	"all.m[k]()",
+	"const x = all.m; x.hello()",
+	"const { hello } = all.m",
+	"Reflect.get(all.m, k)()",
+	"use(all.m)",
+	"use(all)",
+	"export { all }",
+	"const view = <all.m />;",
+])("a namespace import's m that escapes withholds unused findings: %s", async (code) => {
+	const result = await analyze(
+		`import * as all from './paraglide/messages.js'; ${code}`,
+		"src/app.tsx"
+	);
+	expect(result.status).toBe("incomplete");
+});
+
+test("Svelte reaches the messages through a namespace import's m", async () => {
+	const result = await analyze(
+		`<script>import * as all from '$lib/paraglide/messages.js';</script>\n<p>{all.m.hello()}</p>\n<all.m.card />`,
+		"src/Page.svelte"
+	);
+	expect(result.status).toBe("complete");
+	expect(new Set(result.usedBundleIds)).toEqual(new Set(["m", "hello", "card"]));
+	expect(
+		(
+			await analyze(
+				`<script>import * as all from '$lib/paraglide/messages.js';</script>\n<all.m />`,
+				"src/Page.svelte"
+			)
+		).status
+	).toBe("incomplete");
+});
+
+test("import.meta.hot callbacks can receive message modules", async () => {
+	const result = await analyze(
+		`import { m } from './messages'; import.meta.hot?.accept("./paraglide/messages.js", (mod) => mod.hello());`,
+		"src/app.ts"
+	);
+	expect(result.status).toBe("incomplete");
+});
+
+test("Lit 3 accessor decorators parse", async () => {
+	const result = await analyze(
+		`import { m } from './messages'; export class El extends LitElement { @property() accessor label = m.label(); }`,
+		"src/el.js"
+	);
+	expect(result.issues).toEqual([]);
+	expect(result.usedBundleIds).toEqual(["label"]);
+});
+
+test.each([
+	"import * as all from './paraglide/messages.js'; const { m: messages } = all; messages.hello()",
+	"import i18n from '$lib/i18n'; i18n.m.hello()",
+	"import { i18n } from '$lib/i18n'; i18n.m.hello()",
+	"export * as messages from './paraglide/messages.js'",
+	"import * as all from './paraglide/messages.js'; export default all",
+])("other ways a namespace of namespaces escapes withhold unused findings: %s", async (code) => {
+	expect((await analyze(code, "src/app.ts")).status).toBe("incomplete");
+});

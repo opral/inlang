@@ -113,7 +113,7 @@ The m-function matcher analyzes ESM JavaScript, JSX, TypeScript, TSX and Svelte 
 
 Known evaluator/loader references, indirect function-constructor access, and dynamic access to or escapes of global objects (`globalThis`, `window`, `self`, `global`, `parent`, `top`, `frames`, `opener`) also make analysis incomplete. These guards are conservative: passing a global object as a value or reading a non-message object’s `constructor` can withhold findings even when the application does not evaluate code. Possible global-object member aliases (such as `window`, `parent`, `top`, `contentWindow` and `defaultView`) also withhold findings. Timer references (`setTimeout`/`setInterval`) require inline function handlers: string handlers, aliases and handlers whose type is unresolved make analysis incomplete. Ordinary static global members and `typeof window` remain supported. Module loaders that take computed names make analysis incomplete too: `import.meta.glob`/`globEager` and any other `import.meta` property except `env`, `url`, `dirname`, `filename` and `hot` (also `import.meta` as a value), webpack's `require.context` and `__webpack_require__`, and `Reflect` lookups on a message namespace or global object.
 
-JSX is parsed in `.js`, `.jsx`, `.mjs` and `.tsx` files, not in `.ts`/`.mts` (where `<string>value` is a type assertion). Decorators parse in both the TypeScript experimental form (Angular, Nest, Lit) and the standard form. `typeof m.welcome` and `typeof m["welcome"]` in a type count as usages.
+JSX is parsed in `.js`, `.jsx`, `.mjs` and `.tsx` files, not in `.ts`/`.mts` (where `<string>value` is a type assertion). Decorators parse in both the TypeScript experimental form (Angular, Nest, Lit) and the standard form. `typeof m.welcome` and `typeof m["welcome"]` in a type count as usages. `import.meta.hot.accept` with dependencies makes analysis incomplete (its callback receives those modules); accepting itself does not.
 
 It retains static reads and function references, not just calls:
 
@@ -128,6 +128,10 @@ translations.welcome();
 
 import * as translations from "./custom-generated-path";
 translations.welcome();
+
+// Paraglide's messages.js re-exports the namespace as `m`
+import * as all from "./paraglide/messages.js";
+all.m.welcome();
 ```
 
 Named function imports are retained conservatively, even from custom paths and even if the imported function is never called. Shadowed names and unrelated namespace imports can also retain messages. This trades detection precision for avoiding deletion of a possible usage.
