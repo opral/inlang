@@ -2,6 +2,7 @@ import type {
 	Bundle,
 	Declaration,
 	ExportFile,
+	Expression,
 	Match,
 	Message,
 	VariableReference,
@@ -150,7 +151,7 @@ function serializePattern(pattern: Variant["pattern"]): string {
 				break;
 			case "expression":
 				if (part.arg.type === "variable-reference") {
-					result += `{${part.arg.name}}`;
+					result += serializeExpression(part.arg.name, part.annotation);
 					break;
 				}
 				throw new Error("Unsupported expression type");
@@ -186,6 +187,43 @@ function serializePattern(pattern: Variant["pattern"]): string {
 		}
 	}
 	return result;
+}
+
+/**
+ * `{name}`, or `{name: function option=value}` with the same syntax as a local
+ * declaration, e.g. `{count: icu:pound offset=1}`.
+ */
+function serializeExpression(
+	name: string,
+	annotation: Expression["annotation"]
+): string {
+	if (annotation === undefined) return `{${name}}`;
+	if (
+		/^[^\s:|{}]+$/.test(name) === false ||
+		/^[^\s=|{}]+$/.test(annotation.name) === false ||
+		annotation.options.some(
+			(option) => /^[^\s=|{}$]+$/.test(option.name) === false
+		)
+	) {
+		throw new Error(
+			`Cannot serialize the function "${annotation.name}" on "${name}": names in an annotated placeholder can't contain whitespace or any of ":=|{}$".`
+		);
+	}
+	const options = annotation.options.map((option) =>
+		option.value.type === "variable-reference"
+			? ` ${option.name}=$${option.value.name}`
+			: ` ${option.name}=${serializeOptionLiteral(option.value.value)}`
+	);
+	return `{${name}: ${annotation.name}${options.join("")}}`;
+}
+
+/**
+ * A literal option value is written as is if it is unambiguous, and quoted
+ * as `|value|` otherwise.
+ */
+function serializeOptionLiteral(value: string): string {
+	if (/^[^\s|\\{}$][^\s|\\{}]*$/.test(value)) return value;
+	return `|${escapeMarkupLiteral(value)}|`;
 }
 
 function escapePatternText(value: string): string {

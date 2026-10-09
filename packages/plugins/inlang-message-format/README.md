@@ -192,6 +192,19 @@ When addressing nested messages, use dot notation (e.g. `navigation.items.count`
 > [!NOTE]
 > The array wrapper is how we distinguish between a nested object containing more messages vs. a complex message object with variants.
 
+### Formatted placeholders
+
+A placeholder can call a function on its variable, with the same syntax as a local declaration: `{variable: function option=value}`. Option values are a literal (`style=percent`), a quoted literal for values with whitespace or special characters (`skeleton=|yyyy MMM d|`), or a variable (`currency=$priceCurrency`).
+
+```json
+{
+	"discount": "{rate: number style=percent} off",
+	"guests": "You and {count: icu:pound offset=1} others"
+}
+```
+
+Other plugins import some placeholders this way. For example, `@inlang/plugin-icu1` imports `#` in `{count, plural, offset:1 … {You and # others}}` as `{count: icu:pound offset=1}`, which displays `count - 1`.
+
 ### Markup Placeholders (Rich Text)
 
 Simple message patterns can include markup placeholders for rich rendering.
