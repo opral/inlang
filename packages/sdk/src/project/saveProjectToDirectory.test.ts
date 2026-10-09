@@ -768,6 +768,8 @@ test("emits a README.md file for coding agents", async () => {
 	expect(readme).toContain("# inlang project");
 	expect(readme).toContain("npx @inlang/cli check");
 	expect(readme).toContain("@inlang/sdk");
+	// The README is written into every project; keep it free of churn.
+	expect(readme).not.toMatch(/\d+\.\d+\.\d+|\b20\d\d\b/);
 });
 
 test("emits a .meta.json file with the sdk version", async () => {
