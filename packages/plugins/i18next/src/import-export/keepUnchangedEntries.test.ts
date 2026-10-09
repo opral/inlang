@@ -407,49 +407,74 @@ describe("namespaces", () => {
 });
 
 // Namespaces `a` and `a:b` both have the bundle id `a:b:c`: the key `b:c` of
-// `a` and the key `c` of `a:b`. The export writes it to `a:b`, the longest
-// namespace. Of two files with the same message, the one read last wins.
-describe("namespaces `a` and `a:b` and an edit of the key `b:c` of `a`", () => {
-	const files = (pathPattern: Record<string, string>) =>
-		Object.fromEntries(
-			Object.keys(pathPattern).map((namespace) => [
-				`${namespace}/en`,
-				namespace === "a"
-					? '{\n  "x": "X",\n  "b:c": "C"\n}\n'
-					: '{\n  "d": "D"\n}\n',
-			])
-		);
-	const edited = async (pathPattern: Record<string, string>) => {
-		const rows = await load(files(pathPattern), pathPattern);
+// `a` and the key `c` of `a:b`. A message is written to the namespace whose
+// previous file has it; one that neither has to the longest namespace.
+describe.each([
+	{ a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" },
+	{ "a:b": "./{locale}/a-b.json", a: "./{locale}/a.json" },
+])("namespaces %j and the key `b:c` of `a`", (pathPattern) => {
+	const files = {
+		"a/en": '{\n  "x": "X",\n  "b:c": "C"\n}\n',
+		"a:b/en": '{\n  "d": "D"\n}\n',
+	};
+	const load_ = async () => {
+		const rows = await load(files, pathPattern);
 		// the order of the messages of a database is arbitrary: `a` first
 		rows.messages.sort(
 			(a, b) => Number(b.bundleId === "a:x") - Number(a.bundleId === "a:x")
 		);
-		setPattern(rows, "a:b:c", "en", [{ type: "text", value: "C edited" }]);
-		return save(rows, files(pathPattern), pathPattern);
+		return rows;
 	};
 
-	test("`a` is read first: it keeps `b:c`, which `a:b` overrides", async () => {
-		const pathPattern = {
-			a: "./{locale}/a.json",
-			"a:b": "./{locale}/a-b.json",
-		};
-		expect(await edited(pathPattern)).toStrictEqual({
-			"a/en": files(pathPattern)["a/en"],
-			"a:b/en": '{\n  "c": "C edited",\n  "d": "D"\n}\n',
+	test("an edit changes only its entry in `a`, the file it was read from", async () => {
+		const rows = await load_();
+		setPattern(rows, "a:b:c", "en", [{ type: "text", value: "C edited" }]);
+		expect(await save(rows, files, pathPattern)).toStrictEqual({
+			...files,
+			"a/en": files["a/en"].replace('"C"', '"C edited"'),
 		});
 	});
 
-	test("`a` is read last: it is written without `b:c`", async () => {
-		const pathPattern = {
-			"a:b": "./{locale}/a-b.json",
-			a: "./{locale}/a.json",
-		};
-		expect(await edited(pathPattern)).toStrictEqual({
-			// whole files: with `b:c`, `a` would override the edit
-			"a:b/en": '{\n\t"d": "D",\n\t"c": "C edited"\n}\n',
-			"a/en": '{\n\t"x": "X"\n}\n',
+	test("removing it removes only its entry from `a`", async () => {
+		const rows = await load_();
+		removeBundle(rows, "a:b:c");
+		expect(await save(rows, files, pathPattern)).toStrictEqual({
+			...files,
+			"a/en": '{\n  "x": "X"\n}\n',
 		});
+	});
+
+	test("a new message that no file has is written to `a:b`", async () => {
+		const rows = await load_();
+		addMessage(rows, "a:b:new", "en", "New");
+		expect(await save(rows, files, pathPattern)).toStrictEqual({
+			...files,
+			"a:b/en": '{\n  "d": "D",\n  "new": "New"\n}\n',
+		});
+	});
+
+	test("without the previous files, it is written to `a:b`", async () => {
+		const rows = await load_();
+		const saved = await save(rows, undefined, pathPattern);
+		expect(JSON.parse(saved["a:b/en"]!)).toStrictEqual({ c: "C", d: "D" });
+		expect(JSON.parse(saved["a/en"]!)).toStrictEqual({ x: "X" });
+	});
+});
+
+test("namespaces `a` and `a:b` that both have `a:b:c`: an edit is written to the file read last, whose text a project load keeps", async () => {
+	const pathPattern = { a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" };
+	const files = {
+		"a/en": '{\n  "b:c": "C of a"\n}\n',
+		"a:b/en": '{\n  "c": "C of a:b"\n}\n',
+	};
+	const rows = await load(files, pathPattern);
+	expect(textOf(variantsOf(rows, "a:b:c", "en").at(-1)!)).toBe("C of a:b");
+	// one message per bundle and locale, like a database
+	rows.variants = [variantsOf(rows, "a:b:c", "en").at(-1)!];
+	setPattern(rows, "a:b:c", "en", [{ type: "text", value: "Edited" }]);
+	// `a` has no message left to export, so it isn't written
+	expect(await save(rows, files, pathPattern)).toStrictEqual({
+		"a:b/en": '{\n  "c": "Edited"\n}\n',
 	});
 });
 

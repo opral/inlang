@@ -1230,10 +1230,11 @@ test("a namespace with `:` in its name is exported to its own file", async () =>
 });
 
 // Namespaces `a` and `a:b` both have the bundle id `a:b:c`: for the key `b:c`
-// of `a` and for the key `c` of `a:b`. The most specific namespace wins, so
-// that every key of `a:b` is written to its file. Only keys of `a` that start
-// with `b:` move to `a:b`.
-test("of two namespaces that a bundle id can belong to, the longest wins", async () => {
+// of `a` and for the key `c` of `a:b`. Without the previous files (which
+// keep a message in the namespace it was read from, see
+// keepUnchangedEntries.test.ts), the most specific namespace wins, so that
+// every key of `a:b` is written to its file.
+test("of two namespaces that a bundle id can belong to, the longest wins without the previous files", async () => {
 	const settings = {
 		baseLocale: "en",
 		locales: ["en"],

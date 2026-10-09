@@ -267,8 +267,41 @@ test("saving a project with namespaces with `:` after edits", async () => {
 });
 
 // Namespaces `a` and `a:b` both have the bundle id `a:b:c`: the key `b:c` of
-// `a` and the key `c` of `a:b`. The longest namespace wins (see
-// roundtrip.test.ts), so an edit of such a key of `a` is written to `a:b`.
+// `a` and the key `c` of `a:b`. A message is written to the namespace whose
+// file has it, so that the file it is read from changes (see exportFiles).
+
+/** the texts of the project in `dir`, as loaded */
+async function reload(dir: string) {
+	const project = await loadProjectFromDirectory({
+		path: nodePath.join(dir, "project.inlang"),
+		fs: nodeFs,
+		providePlugins: [plugin as unknown as InlangPlugin],
+	});
+	try {
+		return (
+			await project.db
+				.selectFrom("inlang_message")
+				.innerJoin(
+					"inlang_variant",
+					"inlang_variant.message_id",
+					"inlang_message.id"
+				)
+				.select([
+					"inlang_message.bundle_id",
+					"inlang_message.locale",
+					"inlang_variant.pattern",
+				])
+				.orderBy("inlang_message.bundle_id")
+				.orderBy("inlang_message.locale")
+				.execute()
+		).map((row) => [row.bundle_id, row.locale, row.pattern]);
+	} finally {
+		await project.close();
+	}
+}
+
+const text = (value: string) => [{ type: "text", value }];
+
 describe.each([
 	{ a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" },
 	{ "a:b": "./{locale}/a-b.json", a: "./{locale}/a.json" },
@@ -277,35 +310,6 @@ describe.each([
 		"en/a.json": '{\n  "x": "X",\n  "b:c": "C"\n}\n',
 		"en/a-b.json": '{\n  "d": "D"\n}\n',
 	};
-	/** the texts of a project loaded from `dir` */
-	const reload = async (dir: string) => {
-		const project = await loadProjectFromDirectory({
-			path: nodePath.join(dir, "project.inlang"),
-			fs: nodeFs,
-			providePlugins: [plugin as unknown as InlangPlugin],
-		});
-		try {
-			return (
-				await project.db
-					.selectFrom("inlang_message")
-					.innerJoin(
-						"inlang_variant",
-						"inlang_variant.message_id",
-						"inlang_message.id"
-					)
-					.select([
-						"inlang_message.bundle_id",
-						"inlang_message.locale",
-						"inlang_variant.pattern",
-					])
-					.orderBy("inlang_message.bundle_id")
-					.execute()
-			).map((row) => [row.bundle_id, row.locale, row.pattern]);
-		} finally {
-			await project.close();
-		}
-	};
-	const text = (value: string) => [{ type: "text", value }];
 
 	test("saving without edits leaves the files as they are", async () => {
 		const { dir, project, read, save } = await setup({
@@ -327,7 +331,7 @@ describe.each([
 		}
 	});
 
-	test("an edit of the key `b:c` of `a` is written to `a:b` and read back", async () => {
+	test("an edit of the key `b:c` changes only its entry in `a`", async () => {
 		const { dir, project, read, save, edit } = await setup({
 			files: ambiguous,
 			pathPattern,
@@ -335,12 +339,10 @@ describe.each([
 		try {
 			await edit("a:b:c", "en", "C edited");
 			await save();
-			expect(JSON.parse(read()["en/a-b.json"]!)).toStrictEqual({
-				d: "D",
-				c: "C edited",
+			expect(read()).toStrictEqual({
+				...ambiguous,
+				"en/a.json": ambiguous["en/a.json"].replace('"C"', '"C edited"'),
 			});
-			// `a` keeps `b:c` if it is read before `a:b`, see
-			// keepUnchangedEntries.test.ts
 			expect(await reload(dir)).toStrictEqual([
 				["a:b:c", "en", text("C edited")],
 				["a:b:d", "en", text("D")],
@@ -350,4 +352,48 @@ describe.each([
 			await project.close();
 		}
 	});
+});
+
+test("namespaces `a:b` and `a`: an edit of a message of `a`, which no other message of the locale is in, is read back", async () => {
+	const files = {
+		"en/a.json": '{\n  "b:c": "C"\n}\n',
+		"en/a-b.json": '{\n  "d": "D"\n}\n',
+	};
+	const { dir, project, read, save, edit } = await setup({
+		files,
+		pathPattern: { "a:b": "./{locale}/a-b.json", a: "./{locale}/a.json" },
+	});
+	try {
+		await edit("a:b:c", "en", "C edited");
+		await save();
+		expect(read()).toStrictEqual({
+			...files,
+			"en/a.json": files["en/a.json"].replace('"C"', '"C edited"'),
+		});
+		expect(await reload(dir)).toStrictEqual([
+			["a:b:c", "en", text("C edited")],
+			["a:b:d", "en", text("D")],
+		]);
+	} finally {
+		await project.close();
+	}
+});
+
+test("namespaces `a` and `a:b`: saving without edits creates no file of `a:b` for a locale that has none", async () => {
+	const files = {
+		"en/a.json": '{\n  "x": "X",\n  "b:c": "C"\n}\n',
+		"de/a-b.json": '{\n  "d": "D"\n}\n',
+	};
+	const { dir, project, read, save } = await setup({
+		files,
+		pathPattern: { a: "./{locale}/a.json", "a:b": "./{locale}/a-b.json" },
+	});
+	try {
+		const before = await reload(dir);
+		await save();
+		expect(read()).toStrictEqual(files);
+		expect(await reload(dir)).toStrictEqual(before);
+	} finally {
+		await project.close();
+	}
 });

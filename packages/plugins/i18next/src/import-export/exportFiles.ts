@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type {
 	Bundle,
+	ExistingFile,
 	Expression,
 	FunctionReference,
 	LiteralMatch,
@@ -9,7 +10,7 @@ import type {
 	Variant,
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
-import { unflatten } from "flat";
+import { flatten, unflatten } from "flat";
 import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
 import { importFiles } from "./importFiles.js";
 import { matchSpecificity } from "./matchSpecificity.js";
@@ -29,7 +30,10 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 		files: args.files,
 		settings: args.settings,
 		importFiles,
-		exportFiles: exportWholeFiles,
+		// with the existing files, which decide the namespace of a bundle id
+		// that two namespaces have (see namespaceOf), so that what the plugin
+		// writes for the previous files is what it writes for the edits
+		exportFiles: (rows) => exportWholeFiles({ ...rows, files: args.files }),
 	});
 
 /**
@@ -40,6 +44,7 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	messages,
 	variants,
 	settings,
+	files,
 }) => {
 	const result: Record<string, Record<string, any>> = {};
 	const resultNamespaces: Record<
@@ -72,10 +77,67 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 		namespaced && typeof pathPattern === "object" && pathPattern !== null
 			? Object.keys(pathPattern)
 			: [];
-	// longest first: the most specific namespace wins, see splitBundleId
+	// longest first, see namespaceOf
 	const namespaces = configuredNamespaces
 		.filter((namespace) => namespace.length > 0)
 		.sort((a, b) => b.length - a.length);
+	const position = new Map(
+		configuredNamespaces.map((namespace, index) => [namespace, index])
+	);
+	const byPosition = (namespace: string) =>
+		position.get(namespace) ?? position.size;
+	const keysOfFiles = namespacesWithSameIds(namespaces)
+		? keysOfExistingFiles(files)
+		: undefined;
+
+	/**
+	 * The namespace and the key of a bundle id `namespace:key` (see
+	 * importFiles), for the message of `locale` with the key suffixes
+	 * (context, plural) that serializeMessage appends to the bundle id.
+	 *
+	 * Namespaces and keys can contain `:`, so the namespace is one of the
+	 * configured namespaces that the id starts with, followed by `:`: the id
+	 * `common:legacy:title` is the key `title` of the namespace `common:legacy`
+	 * if that namespace exists, and the key `legacy:title` of `common`
+	 * otherwise.
+	 *
+	 * Two namespaces can match: the key `b:c` of `a` and the key `c` of `a:b`
+	 * both import to `a:b:c`. Then the message is written to the namespace
+	 * whose existing file of the locale has it, i.e. the file it was read from
+	 * (the one read last if both have it: its text is the one a project load
+	 * keeps), so that an edit changes that file and nothing moves. A message
+	 * that neither file has is written to the longest namespace, so that a key
+	 * of `a:b` is written to its file.
+	 *
+	 * An id that starts with no configured namespace is split at its first
+	 * `:`, as before namespaces were looked up.
+	 */
+	const namespaceOf = (
+		id: string,
+		locale: string,
+		suffixes: string[]
+	): { namespace?: string; key: string } => {
+		const candidates = namespaces.filter((namespace) =>
+			id.startsWith(`${namespace}:`)
+		);
+		if (candidates.length > 0) {
+			const read =
+				candidates.length > 1 && keysOfFiles !== undefined
+					? candidates
+							.filter((namespace) => {
+								const keys = keysOfFiles.get(fileKey(namespace, locale));
+								const key = id.slice(namespace.length + 1);
+								return suffixes.some((suffix) => keys?.has(key + suffix));
+							})
+							.sort((a, b) => byPosition(b) - byPosition(a))
+					: [];
+			const namespace = read[0] ?? candidates[0]!;
+			return { namespace, key: id.slice(namespace.length + 1) };
+		}
+		const separator = id.indexOf(":");
+		if (separator === -1) return { key: id };
+		return { namespace: id.slice(0, separator), key: id.slice(separator + 1) };
+	};
 
 	for (const message of messages) {
 		const bundle = bundlesById.get(message.bundleId)!;
@@ -85,14 +147,18 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 			variantsByMessageId.get(message.id) ?? [],
 			settings?.["plugin.inlang.i18next"]
 		);
+		// the suffixes (context, plural) that serializeMessage appends to the
+		// bundle id
+		const suffixes = serializedMessages.map((serialized) =>
+			serialized.key.slice(bundle.id.length)
+		);
 		const { namespace, key: bundleKey } = namespaced
-			? splitBundleId(bundle.id, namespaces)
+			? namespaceOf(bundle.id, message.locale, suffixes)
 			: { namespace: undefined, key: bundle.id };
 
-		for (const message of serializedMessages) {
-			// the key of the file: the key of the bundle and the suffixes
-			// (context, plural) that serializeMessage appends to the bundle id
-			const key = bundleKey + message.key.slice(bundle.id.length);
+		for (const [index, message] of serializedMessages.entries()) {
+			// the key of the file
+			const key = bundleKey + suffixes[index];
 			// no namespace
 			if (namespace === undefined) {
 				if (result[message.locale] === undefined) {
@@ -122,14 +188,9 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	}));
 	// in the order of `pathPattern`, in which the files are read
 	// (toBeImportedFiles): two namespaces can have the same bundle id (see
-	// splitBundleId), and of two files with the same message, the one read
-	// last wins. keepUnchangedJsonEntries checks what the files read as in the
+	// namespaceOf), and of two files with the same message, the one read last
+	// wins. keepUnchangedJsonEntries checks what the files read as in the
 	// order of the exported files.
-	const position = new Map(
-		configuredNamespaces.map((namespace, index) => [namespace, index])
-	);
-	const byPosition = (namespace: string) =>
-		position.get(namespace) ?? position.size;
 	const withNamespace = Object.entries(resultNamespaces)
 		.sort(([a], [b]) => byPosition(a) - byPosition(b))
 		.flatMap(([namespace, locales]) =>
@@ -151,31 +212,41 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 };
 
 /**
- * The namespace and the key of a bundle id `namespace:key` (see importFiles).
- *
- * Namespaces and keys can contain `:`, so the namespace is the longest of the
- * configured `namespaces` that the id starts with, followed by `:`: the id
- * `common:legacy:title` is the key `title` of the namespace `common:legacy`
- * if that namespace exists, and the key `legacy:title` of `common` otherwise.
- * If two namespaces match (`a` and `a:b` for `a:b:c`, i.e. the key `b:c` of
- * `a` and the key `c` of `a:b`, which import to the same id), the longest one
- * wins, so that every key of `a:b` is written to its file.
- *
- * An id that starts with no configured namespace is split at its first `:`,
- * as before namespaces were looked up.
+ * Whether two of the namespaces can have the same bundle id: `a` and `a:b`
+ * (the key `b:c` of `a` and the key `c` of `a:b` are both `a:b:c`).
  */
-function splitBundleId(
-	id: string,
-	namespaces: string[]
-): { namespace?: string; key: string } {
-	for (const namespace of namespaces) {
-		if (id.startsWith(`${namespace}:`)) {
-			return { namespace, key: id.slice(namespace.length + 1) };
+function namespacesWithSameIds(namespaces: string[]): boolean {
+	return namespaces.some((namespace) =>
+		namespaces.some((other) => other.startsWith(`${namespace}:`))
+	);
+}
+
+const fileKey = (namespace: string, locale: string) =>
+	JSON.stringify([namespace, locale]);
+
+/**
+ * The keys of the existing files, as importFiles reads them, by namespace and
+ * locale. A file that isn't valid JSON has none.
+ */
+function keysOfExistingFiles(
+	files: readonly ExistingFile[] | undefined
+): Map<string, Set<string>> {
+	const result = new Map<string, Set<string>>();
+	for (const file of files ?? []) {
+		const namespace = file.metadata?.namespace;
+		if (typeof namespace !== "string") continue;
+		let keys: string[] = [];
+		try {
+			keys = Object.keys(
+				flatten(JSON.parse(new TextDecoder().decode(file.content)))
+			);
+		} catch {
+			// not valid JSON
 		}
+		const key = fileKey(namespace, file.locale);
+		result.set(key, new Set([...(result.get(key) ?? []), ...keys]));
 	}
-	const separator = id.indexOf(":");
-	if (separator === -1) return { key: id };
-	return { namespace: id.slice(0, separator), key: id.slice(separator + 1) };
+	return result;
 }
 
 function serializeMessage(
