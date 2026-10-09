@@ -1369,3 +1369,65 @@ test("export sorts keys descending when configured", async () => {
 	expect(Object.keys(exportedDesc)).toEqual(["$schema", "nested", "b", "a"]);
 	expect(Object.keys(exportedDesc.nested)).toEqual(["z", "y"]);
 });
+
+test("sorting keeps the order of the variants, declarations and selectors of a message", async () => {
+	const pronoun = [
+		{
+			declarations: ["input gender", "input name"],
+			selectors: ["gender"],
+			match: {
+				"gender=male": "{name} and his friends",
+				"gender=female": "{name} and her friends",
+				"gender=*": "{name} and their friends",
+			},
+		},
+	];
+	const items = [
+		{
+			declarations: [
+				"input count",
+				"local countPlural = count: plural",
+				"local countExact = count",
+			],
+			selectors: ["countExact", "countPlural"],
+			match: {
+				"countExact=0, countPlural=*": "No items",
+				"countExact=*, countPlural=one": "One item",
+				"countExact=*, countPlural=*": "{count} items",
+			},
+		},
+	];
+	const imported = await runImportFiles({
+		zebra: "Zebra",
+		pronoun,
+		nested: { items, apple: "Apple" },
+	});
+	for (const sort of ["asc", "desc"]) {
+		const exported = await runExportFilesParsed(imported, {
+			"plugin.inlang.messageFormat": { sort },
+		});
+		// the messages are sorted
+		expect(Object.keys(exported), sort).toEqual(
+			sort === "asc"
+				? ["$schema", "nested", "pronoun", "zebra"]
+				: ["$schema", "zebra", "pronoun", "nested"]
+		);
+		expect(Object.keys(exported.nested), sort).toEqual(
+			sort === "asc" ? ["apple", "items"] : ["items", "apple"]
+		);
+		// what is in them is not, the catch-all stays last
+		expect(exported.pronoun, sort).toEqual(pronoun);
+		expect(Object.keys(exported.pronoun[0]), sort).toEqual([
+			"declarations",
+			"selectors",
+			"match",
+		]);
+		expect(Object.keys(exported.pronoun[0].match), sort).toEqual(
+			Object.keys(pronoun[0]!.match)
+		);
+		expect(exported.nested.items, sort).toEqual(items);
+		expect(Object.keys(exported.nested.items[0].match), sort).toEqual(
+			Object.keys(items[0]!.match)
+		);
+	}
+});

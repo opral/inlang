@@ -15,6 +15,7 @@
 import { describe, expect, test } from "vitest";
 import {
 	type Project,
+	type Version,
 	contentOf,
 	encode,
 	decode,
@@ -31,7 +32,7 @@ import {
 	upgrades,
 	withVariantOrder,
 } from "./fixtures.js";
-import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
+import { type BundleSpec, editorSpecs, rowsFromSpecs } from "./editorRows.js";
 
 const fixture = (dir: string) => fixtures.find((f) => f.dir === dir)!;
 
@@ -414,6 +415,417 @@ describe("message-format", () => {
 				"{rate: number style=percent} done"
 			);
 		}
+	});
+
+	/**
+	 * Messages with keys that have number segments, and variants with a dot in
+	 * their key, as editors create them.
+	 */
+	const dottedRows = () => {
+		const text = (value: string) => [{ type: "text", value }];
+		const plain = (id: string, value: string): BundleSpec => ({
+			id,
+			messages: { en: { variants: [{ pattern: text(value) }] } },
+		});
+		const select = (
+			id: string,
+			selector: string,
+			variants: Record<string, string>
+		): BundleSpec => ({
+			id,
+			declarations: [{ type: "input-variable", name: selector }],
+			messages: {
+				en: {
+					selectors: [selector],
+					variants: Object.entries(variants).map(([value, pattern]) => ({
+						matches: [
+							value === "*"
+								? { type: "catchall-match", key: selector }
+								: { type: "literal-match", key: selector, value },
+						],
+						pattern: text(pattern),
+					})),
+				},
+			},
+		});
+		return rowsFromSpecs([
+			plain("hello", "Hello"),
+			plain("onboarding.steps.0", "Create an account"),
+			plain("onboarding.steps.1", "Verify your email"),
+			plain("tip.0", "Only tip"),
+			select("rating", "rating", { "4.5": "Great", "*": "Stars" }),
+			select("release", "channel", {
+				"v1.beta": "Beta release",
+				"*": "Stable release",
+			}),
+		]);
+	};
+
+	/** The text of every variant, by message and matches. */
+	const textsOf = (rows: Awaited<ReturnType<typeof selectRows>>) => {
+		const content = contentOf(rows);
+		return content.variants
+			.map(
+				(variant) =>
+					`${variant.message} [${(variant.matches as any[])
+						.map((match) =>
+							match.type === "literal-match"
+								? `${match.key}=${match.value}`
+								: `${match.key}=*`
+						)
+						.join(", ")}] ${(variant.pattern as any[])
+						.map((part) => part.value)
+						.join("")}`
+			)
+			.sort();
+	};
+
+	test("keys with number segments (steps.0) and variants with a dot in their key (rating=4.5): the published plugin wrote arrays and split the keys, and lost the messages on its next import; they are read as they were written for", async () => {
+		const rows = dottedRows();
+		const published = await open(f, "published", "published");
+		await insertRows(published, rows);
+		const expected = textsOf(await selectRows(published));
+		const before = await exportLocale(published, f);
+		const blob = await published.toBlob();
+		await published.close();
+		const written = JSON.parse(before);
+		expect(written.onboarding.steps).toEqual([
+			"Create an account",
+			"Verify your email",
+		]);
+		expect(written.tip).toEqual(["Only tip"]);
+		expect(written.rating[0].match["rating=4"]).toEqual([
+			null,
+			null,
+			null,
+			null,
+			null,
+			"Great",
+		]);
+		expect(written.release[0].match["channel=v1"]).toEqual({
+			beta: "Beta release",
+		});
+		// the published plugin can't read it back
+		const reimported = await open(f, "published", "published");
+		await reimported.importFiles({
+			pluginKey: f.key,
+			files: [{ locale: "en", content: encode(before) }],
+		});
+		expect(textsOf(await selectRows(reimported))).not.toEqual(expected);
+		await reimported.close();
+
+		for (const { sdk, plugin } of upgrades) {
+			const label = `${sdk} SDK with the ${plugin} plugin`;
+			// the file imports into the messages it was written for
+			const current = await open(f, sdk, plugin);
+			await current.importFiles({
+				pluginKey: f.key,
+				files: [{ locale: "en", content: encode(before) }],
+			});
+			expect(textsOf(await selectRows(current)), label).toEqual(expected);
+			// written in full, number segments are object keys and the keys of
+			// variants keep their dots
+			const after = await exportLocale(current, f);
+			await current.close();
+			expect(JSON.parse(after).onboarding.steps, label).toEqual({
+				"0": "Create an account",
+				"1": "Verify your email",
+			});
+			expect(JSON.parse(after).tip, label).toEqual({ "0": "Only tip" });
+			expect(Object.keys(JSON.parse(after).rating[0].match), label).toEqual(
+				expect.arrayContaining(["rating=4.5", "rating=*"])
+			);
+			expect(Object.keys(JSON.parse(after).release[0].match), label).toEqual(
+				expect.arrayContaining(["channel=v1.beta", "channel=*"])
+			);
+			// which is read back as it is
+			const reopened = await open(f, sdk, plugin);
+			await reopened.importFiles({
+				pluginKey: f.key,
+				files: [{ locale: "en", content: encode(after) }],
+			});
+			expect(textsOf(await selectRows(reopened)), label).toEqual(expected);
+			expect(await exportLocale(reopened, f), label).toBe(after);
+			await reopened.close();
+			// the database of the published SDK exports the same
+			const fromDatabase = await open(f, sdk, plugin, blob);
+			expect(await exportLocale(fromDatabase, f), label).toBe(after);
+			await fromDatabase.close();
+		}
+
+		// SDK 4 passes the files: the file the published plugin wrote stays
+		// byte-identical, from the file and from the database
+		for (const project of [
+			await open(f, "current", "current"),
+			await open(f, "current", "current", blob),
+		]) {
+			if ((await selectRows(project)).bundles.length === 0) {
+				await project.importFiles({
+					pluginKey: f.key,
+					files: [{ locale: "en", content: encode(before) }],
+				});
+			}
+			const files = await (project.exportFiles as any)({
+				pluginKey: f.key,
+				files: [
+					{ path: "./messages/en.json", locale: "en", content: encode(before) },
+				],
+			});
+			expect(
+				decode(files.find((file: any) => file.locale === "en").content)
+			).toBe(before);
+			await project.close();
+		}
+	});
+
+	const pluralItems = [
+		{
+			declarations: ["input count", "local countPlural = count: plural"],
+			selectors: ["countPlural"],
+			match: {
+				"countPlural=one": "One item",
+				"countPlural=*": "{count} items",
+			},
+		},
+	];
+	test.each([
+		{
+			name: '`items.title` before it and a plain string in another locale (`selectors: []`): the published plugin wrote `items: { "0": {…}, "title": … }` and can\'t import it',
+			source: {
+				en: { "items.title": "Items", items: pluralItems },
+				de: { "items.title": "Artikel", items: "Artikel" },
+			},
+			written: ["0", "title"],
+			publishedImport: "throws",
+		},
+		{
+			name: '`items.title` before it in every locale: the published plugin wrote `items: { "0": {…}, "title": … }` and imports it as other messages (`items.0.match.countPlural=one`, …) without `items`',
+			source: { en: { "items.title": "Items", items: pluralItems } },
+			written: ["0", "title"],
+			publishedImport: "loses items",
+		},
+		{
+			name: '`items.title` before it and `items.0.note` after it: the published plugin wrote the note into `items["0"]` next to the plural',
+			source: {
+				en: {
+					"items.title": "Items",
+					items: pluralItems,
+					"items.0.note": "Note",
+				},
+			},
+			written: ["0", "title"],
+			publishedImport: "loses items",
+		},
+		{
+			name: '`items.0.note` and `items.1.note` after it: the published plugin wrote `items: [{ …, "note": … }, { "note": … }]` and imports it without the notes',
+			source: {
+				en: {
+					items: pluralItems,
+					"items.0.note": "Note",
+					"items.1.note": "Second",
+				},
+			},
+			written: ["0", "1"],
+			publishedImport: ["Note", "Second"],
+		},
+		{
+			name: 'the plural `items.0` after it: the published plugin wrote `items.0` into the object of `items`, `items: [{ "0": {…}, … }]`, and imports it without `items.0`',
+			source: {
+				en: {
+					items: pluralItems,
+					"items.0": [
+						{
+							declarations: ["input n"],
+							selectors: ["n"],
+							match: { "n=1": "One n", "n=*": "Many n" },
+						},
+					],
+				},
+			},
+			written: ["0"],
+			publishedImport: ["One n", "Many n"],
+		},
+	])(
+		"a plural `items` with $name; it is read as the plural and the messages next to it",
+		async ({ source, written: writtenItems, publishedImport }) => {
+			const asImport = (files: Record<string, string>) =>
+				Object.entries(files).map(([locale, content]) => ({
+					locale,
+					content: encode(content),
+				}));
+			const sourceFiles = Object.fromEntries(
+				Object.entries(source).map(([locale, json]) => [
+					locale,
+					JSON.stringify(json),
+				])
+			);
+			const published = await open(f, "published", "published");
+			await published.importFiles({
+				pluginKey: f.key,
+				files: asImport(sourceFiles),
+			});
+			const expected = textsOf(await selectRows(published));
+			const written = Object.fromEntries(
+				(await published.exportFiles({ pluginKey: f.key })).map((file) => [
+					file.locale,
+					decode(file.content),
+				])
+			);
+			await published.close();
+			expect(Object.keys(JSON.parse(written.en!).items)).toEqual(writtenItems);
+			// what the published plugin reads from the files it wrote
+			const reimported = await open(f, "published", "published");
+			if (publishedImport === "throws") {
+				await expect(
+					reimported.importFiles({
+						pluginKey: f.key,
+						files: asImport(written),
+					})
+				).rejects.toThrow();
+			} else if (Array.isArray(publishedImport)) {
+				// it loses these texts
+				await reimported.importFiles({
+					pluginKey: f.key,
+					files: asImport(written),
+				});
+				const read = textsOf(await selectRows(reimported));
+				for (const text of publishedImport) {
+					expect(read.some((line) => line.endsWith(` ${text}`))).toBe(false);
+				}
+			} else {
+				await reimported.importFiles({
+					pluginKey: f.key,
+					files: asImport(written),
+				});
+				const read = textsOf(await selectRows(reimported));
+				expect(read.some((text) => text.startsWith("items/en "))).toBe(false);
+				expect(read.some((text) => text.startsWith("items.0.match"))).toBe(
+					true
+				);
+			}
+			await reimported.close();
+
+			for (const { sdk, plugin } of upgrades) {
+				const label = `${sdk} SDK with the ${plugin} plugin`;
+				const current = await open(f, sdk, plugin);
+				await current.importFiles({
+					pluginKey: f.key,
+					files: asImport(written),
+				});
+				expect(textsOf(await selectRows(current)), label).toEqual(expected);
+				const after = JSON.parse(await exportLocale(current, f));
+				await current.close();
+				expect(Array.isArray(after.items), label).toBe(true);
+				expect(after["items.title"], label).toBe(
+					"items.title" in source.en ? "Items" : undefined
+				);
+			}
+
+			// SDK 4 passes the files: they stay byte-identical
+			const current = await open(f, "current", "current");
+			await current.importFiles({
+				pluginKey: f.key,
+				files: asImport(written),
+			});
+			const files = await (current.exportFiles as any)({
+				pluginKey: f.key,
+				files: Object.entries(written).map(([locale, content]) => ({
+					path: `./messages/${locale}.json`,
+					locale,
+					content: encode(content),
+				})),
+			});
+			expect(
+				Object.fromEntries(
+					files.map((file: any) => [file.locale, decode(file.content)])
+				)
+			).toEqual(written);
+			await current.close();
+		}
+	);
+
+	test("sort: the published plugin also sorted the variants of a message, which put the catch-all first, where runtimes that try the variants in file order always select it; the order of the variants is kept", async () => {
+		const sorted = {
+			...f,
+			pluginSettings: { ...f.pluginSettings, sort: "asc" },
+		};
+		const handWritten = JSON.stringify(
+			{
+				$schema: "https://inlang.com/schema/inlang-message-format",
+				hello: "Hello",
+				pronoun: [
+					{
+						declarations: ["input gender"],
+						selectors: ["gender"],
+						match: {
+							"gender=male": "He",
+							"gender=female": "She",
+							"gender=*": "They",
+						},
+					},
+				],
+			},
+			undefined,
+			"\t"
+		);
+		const roundtrip = async (sdk: Version, plugin: Version) => {
+			const project = await open(sorted, sdk, plugin);
+			await project.importFiles({
+				pluginKey: f.key,
+				files: [{ locale: "en", content: encode(handWritten) }],
+			});
+			const exported = await exportLocale(project, sorted);
+			await project.close();
+			return exported;
+		};
+		const written = await roundtrip("published", "published");
+		const before = JSON.parse(written);
+		expect(Object.keys(before.pronoun[0].match)).toEqual([
+			"gender=*",
+			"gender=female",
+			"gender=male",
+		]);
+		for (const { sdk, plugin } of upgrades) {
+			expect(
+				await roundtrip(sdk, plugin),
+				`${sdk} SDK with the ${plugin} plugin`
+			).toBe(handWritten);
+		}
+
+		// The file the published plugin wrote is read with the catch-all last,
+		// the order in which runtimes try the variants, and SDK 4, which passes
+		// the files, keeps its bytes.
+		const project = await open(sorted, "current", "current");
+		await project.importFiles({
+			pluginKey: f.key,
+			files: [{ locale: "en", content: encode(written) }],
+		});
+		const variants = await project.db
+			.selectFrom("inlang_variant")
+			.innerJoin(
+				"inlang_message",
+				"inlang_message.id",
+				"inlang_variant.message_id"
+			)
+			.where("inlang_message.bundle_id", "=", "pronoun")
+			.orderBy("inlang_variant.id")
+			.select("inlang_variant.matches")
+			.execute();
+		expect(variants.map((variant: any) => variant.matches[0].type)).toEqual([
+			"literal-match",
+			"literal-match",
+			"catchall-match",
+		]);
+		const files = await (project.exportFiles as any)({
+			pluginKey: f.key,
+			files: [
+				{ path: "./messages/en.json", locale: "en", content: encode(written) },
+			],
+		});
+		expect(
+			decode(files.find((file: any) => file.locale === "en").content)
+		).toBe(written);
+		await project.close();
 	});
 });
 

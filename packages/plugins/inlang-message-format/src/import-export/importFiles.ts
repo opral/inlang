@@ -13,8 +13,9 @@ import type {
 	Message,
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
-import { flatten } from "flat";
+import { flattenMessageKeys, matchEntries } from "../utils/messageKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
+import { orderVariants } from "../utils/orderVariants.js";
 import type {
 	ComplexMessage,
 	ComplexMessageObject,
@@ -31,20 +32,28 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	// inputs that only plain strings declare, by bundle
 	const plainInputs = new Map<string, Set<string>>();
 	const declaredInputs = new Map<string, Set<string>>();
+	// the variants of each message, `variants.slice(start, end)`
+	const ranges: Array<{ message: MessageImport; start: number; end: number }> =
+		[];
 
 	for (const file of files) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
-		const flattened = flatten(json, { safe: true }) as Record<string, string>;
+		const flattened = flattenMessageKeys(json);
 
-		for (const key in flattened) {
+		for (const [key, value] of flattened) {
 			if (key === "$schema") {
 				continue;
 			}
-			const result = parseBundle(key, file.locale, flattened[key]!);
+			const result = parseBundle(
+				key,
+				file.locale,
+				value as SimpleMessage | ComplexMessage
+			);
 			messages.push(result.message);
+			const start = variants.length;
 			variants.push(...result.variants);
-			const inputs =
-				typeof flattened[key] === "string" ? plainInputs : declaredInputs;
+			ranges.push({ message: result.message, start, end: variants.length });
+			const inputs = typeof value === "string" ? plainInputs : declaredInputs;
 			for (const declaration of result.bundle.declarations) {
 				if (declaration.type !== "input-variable") continue;
 				if (!inputs.has(key)) inputs.set(key, new Set());
@@ -81,6 +90,28 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				plainInputs.get(bundle.id)?.has(declaration.name) !== true ||
 				declaredInputs.get(bundle.id)?.has(declaration.name) === true
 		);
+	}
+
+	// The variants in the order export writes them, which is the order in
+	// which runtimes like Paraglide JS 2.26 try them. Files that earlier
+	// versions wrote with a variant that is never selected, e.g. sorted with
+	// the catch-all first, select as the message says. Each message keeps its
+	// place in `variants`.
+	for (const { message, start, end } of ranges) {
+		if (end - start < 2) continue;
+		const declarations = bundlesById.get(message.bundleId)!.declarations;
+		const ordered = orderVariants(
+			variants.slice(start, end) as Array<
+				VariantImport & Pick<Variant, "matches">
+			>,
+			orderSelectors(
+				(message.selectors ?? []).map((selector) => selector.name).sort(),
+				declarations
+			),
+			declarations,
+			message.locale
+		);
+		variants.splice(start, ordered.length, ...ordered);
 	}
 
 	return { bundles, messages, variants };
@@ -196,7 +227,12 @@ function parseVariants(
 			selectors: [],
 		};
 	}
-	const complexMessage = value[0]!;
+	const complexMessage = Array.isArray(value) ? value[0] : undefined;
+	if (typeof complexMessage !== "object" || complexMessage === null) {
+		throw new Error(
+			`The message "${bundleId}" (${locale}) is neither a string nor a complex message (an array with an object of declarations, selectors and match): ${truncate(String(JSON.stringify(value)), 100)}`
+		);
+	}
 	// multi variant
 	const variants: VariantImport[] = [];
 	const selectors: VariableReference[] = (
@@ -215,8 +251,8 @@ function parseVariants(
 
 	const detectedSelectors = new Set<VariableReference>();
 
-	for (const [match, pattern] of Object.entries(complexMessage["match"])) {
-		const parsed = parsePattern(pattern);
+	for (const [match, pattern] of matchEntries(complexMessage["match"])) {
+		const parsed = parsePattern(pattern as string);
 		const parsedMatches = parseMatches(match);
 		for (const declaration of parsed.declarations) {
 			let isDuplicate = false;
@@ -780,4 +816,8 @@ function parseDeclaration(value: string): Declaration {
 		};
 	}
 	throw new Error("Unsupported declaration type");
+}
+
+function truncate(text: string, length: number): string {
+	return text.length > length ? `${text.slice(0, length)}...` : text;
 }

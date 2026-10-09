@@ -4,7 +4,10 @@ import {
 	newProject,
 	saveProjectToDirectory,
 	loadProjectFromDirectory,
+	selectBundleNested,
 	type InlangPlugin,
+	type Match,
+	type Variant,
 	type InlangProject,
 } from "@inlang/sdk";
 import { Volume } from "memfs";
@@ -564,6 +567,103 @@ describe("edits", () => {
 		expect((await exportWith(project, { en })).en).toBe(
 			'{\n\t"a": "A",\n\t"b": "B",\n\t"c": "C"\n}\n'
 		);
+	});
+	test("with sort, an edited message keeps the order of its variants", async () => {
+		const en = `{
+\t"b": [
+\t\t{
+\t\t\t"declarations": ["input gender"],
+\t\t\t"selectors": ["gender"],
+\t\t\t"match": {
+\t\t\t\t"gender=male": "He",
+\t\t\t\t"gender=female": "She",
+\t\t\t\t"gender=*": "They"
+\t\t\t}
+\t\t}
+\t],
+\t"a": "A"
+}
+`;
+		for (const sort of ["asc", "desc"]) {
+			const project = await load({ en }, { sort });
+			await setText(project, "b", "en", "Someone", { gender: "*" });
+			const files = await exportWith(project, { en });
+			// the edited message is written in full, its variants as they were
+			expect(files.en, sort).toBe(
+				en
+					.replace(
+						`"declarations": ["input gender"],
+\t\t\t"selectors": ["gender"],`,
+						`"declarations": [
+\t\t\t\t"input gender"
+\t\t\t],
+\t\t\t"selectors": [
+\t\t\t\t"gender"
+\t\t\t],`
+					)
+					.replace('"They"', '"Someone"')
+			);
+			const whole = JSON.parse((await exportWhole(project)).en!);
+			expect(Object.keys(whole.b[0].match), sort).toEqual([
+				"gender=male",
+				"gender=female",
+				"gender=*",
+			]);
+			await project.close();
+		}
+	});
+});
+
+describe("files the published plugin wrote with sort", () => {
+	// 4.4.5 sorted the variants too, which put the catch-all first
+	const en = `{
+\t"$schema": "https://inlang.com/schema/inlang-message-format",
+\t"invite": [
+\t\t{
+\t\t\t"declarations": [
+\t\t\t\t"input count",
+\t\t\t\t"input gender",
+\t\t\t\t"local countPlural = count: plural"
+\t\t\t],
+\t\t\t"selectors": [
+\t\t\t\t"countPlural",
+\t\t\t\t"gender"
+\t\t\t],
+\t\t\t"match": {
+\t\t\t\t"countPlural=*, gender=*": "They invited {count} guests",
+\t\t\t\t"countPlural=one, gender=*": "They invited one guest",
+\t\t\t\t"countPlural=one, gender=female": "She invited one guest",
+\t\t\t\t"countPlural=other, gender=female": "She invited {count} guests"
+\t\t\t}
+\t\t}
+\t]
+}`;
+
+	test("are loaded with the catch-all last, and stay byte-identical when exported with them", async () => {
+		const project = await load({ en }, { sort: "asc" });
+		const [bundle] = await selectBundleNested(project.db)
+			.where("inlang_bundle.id", "=", "invite")
+			.selectAll()
+			.execute();
+		// the order in which runtimes (Paraglide JS 2.26) try the variants
+		expect(
+			bundle!.messages[0]!.variants.map((variant: Variant) =>
+				variant.matches
+					.map((match: Match) =>
+						match.type === "literal-match"
+							? `${match.key}=${match.value}`
+							: `${match.key}=*`
+					)
+					.join(", ")
+			)
+		).toEqual([
+			"countPlural=one, gender=female",
+			"countPlural=other, gender=female",
+			"countPlural=one, gender=*",
+			"countPlural=*, gender=*",
+		]);
+		expect(await exportWith(project, { en })).toEqual({ en });
+		await project.close();
 	});
 });
 

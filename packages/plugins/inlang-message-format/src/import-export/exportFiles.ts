@@ -9,13 +9,9 @@ import type {
 	Variant,
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
-import type {
-	ComplexMessage,
-	FileSchema,
-	SimpleMessage,
-} from "../fileSchema.js";
-import { unflatten } from "flat";
+import type { ComplexMessage, SimpleMessage } from "../fileSchema.js";
 import { sortMessageKeys } from "../utils/sortKeys.js";
+import { messageKeyPath, nestMessageKeys } from "../utils/messageKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
 import { orderVariants } from "../utils/orderVariants.js";
 import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
@@ -35,7 +31,47 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 		settings: args.settings,
 		importFiles,
 		exportFiles: exportWholeFiles,
+		splitKey: flatKeyPath(args.messages),
 	});
+
+/**
+ * Where the export writes the message of a flat key of a previous file, for
+ * `keepUnchangedJsonEntries`, e.g. `"nav.home"` -> `["nav", "home"]`, and
+ * `"a.b.c"` -> `["a", "b.c"]` if `a.b` is a message too. Keys that are no
+ * message are split at every dot, like the default.
+ *
+ * The nesting depends on the messages of a locale, which `splitKey` doesn't
+ * get. A key that the locales nest differently gets the longest path: a
+ * locale that writes it flat at the top finds it there without `splitKey`.
+ * The SDK also calls `splitKey` with the keys of nested objects, relative to
+ * them; such a key is only read as a message key if it is one. If a path
+ * doesn't fit a file, that file is written in full (nothing is lost).
+ */
+function flatKeyPath(
+	messages: ReadonlyArray<Pick<Message, "bundleId" | "locale">>
+): (key: string) => string[] {
+	const idsByLocale = new Map<string, Set<string>>();
+	for (const message of messages) {
+		let ids = idsByLocale.get(message.locale);
+		if (ids === undefined) idsByLocale.set(message.locale, (ids = new Set()));
+		ids.add(message.bundleId);
+	}
+	const paths = new Map<string, string[]>();
+	return (key) => {
+		let path = paths.get(key);
+		if (path === undefined) {
+			const locales = [...idsByLocale.values()].filter((ids) => ids.has(key));
+			path =
+				locales.length === 0
+					? key.split(".")
+					: locales
+							.map((ids) => messageKeyPath(key, (prefix) => ids.has(prefix)))
+							.reduce((a, b) => (b.length > a.length ? b : a));
+			paths.set(key, path);
+		}
+		return path;
+	};
+}
 
 /**
  * Writes the files of all locales from scratch.
@@ -43,7 +79,8 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 export const exportWholeFiles: NonNullable<
 	(typeof plugin)["exportFiles"]
 > = async ({ bundles, messages, variants, settings }) => {
-	const files: Record<string, FileSchema> = {};
+	// the messages of each locale by key, in the order of `messages`
+	const files: Record<string, Map<string, SimpleMessage | ComplexMessage>> = {};
 
 	// one variant per matches, the last one wins
 	const variantsByMatches = new Map<string, Map<string, Variant>>();
@@ -77,9 +114,9 @@ export const exportWholeFiles: NonNullable<
 
 	for (const message of messages) {
 		const bundle = bundlesById.get(message.bundleId);
-		Object.assign(
-			(files[message.locale] ??= {}),
-			serializeMessage(
+		(files[message.locale] ??= new Map()).set(
+			message.bundleId,
+			serializeVariants(
 				bundle!,
 				message,
 				variantsByMessage.get(message.id)!,
@@ -93,10 +130,10 @@ export const exportWholeFiles: NonNullable<
 	for (const locale in files) {
 		const sortDirection =
 			settings?.["plugin.inlang.messageFormat"]?.sort ?? undefined;
-		const unflattened = unflatten(files[locale]) as Record<string, unknown>;
+		const nested = nestMessageKeys(files[locale]!);
 		const sortedMessages: Record<string, unknown> = sortDirection
-			? sortMessageKeys(unflattened, sortDirection)
-			: unflattened;
+			? sortMessageKeys(nested, sortDirection)
+			: nested;
 		result.push({
 			locale,
 			// beautify the json
@@ -128,22 +165,6 @@ function isPlainMessage(message: Message, variants: Variant[]): boolean {
 		variants.length === 1 &&
 		variants[0]!.matches.length === 0
 	);
-}
-
-function serializeMessage(
-	bundle: Bundle,
-	message: Message,
-	variants: Variant[],
-	bundleHasComplexMessage: boolean
-): Record<string, SimpleMessage | ComplexMessage> {
-	const key = message.bundleId;
-	const value = serializeVariants(
-		bundle,
-		message,
-		variants,
-		bundleHasComplexMessage
-	);
-	return { [key]: value };
 }
 
 function serializeVariants(

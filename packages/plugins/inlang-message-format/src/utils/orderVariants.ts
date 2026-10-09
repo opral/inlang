@@ -250,18 +250,40 @@ const SAMPLE_NUMBERS = [
 	5.5,
 ];
 
-const pluralRulesCache = new Map<string, Intl.PluralRules>();
-function pluralRules(locale: string, ordinal: boolean): Intl.PluralRules {
+/**
+ * `Intl.PluralRules` of a locale with the categories it selected, by number.
+ * Every message of a file selects the same numbers, and `select` is slow.
+ */
+const pluralRulesCache = new Map<
+	string,
+	{ select: (number: number) => string }
+>();
+function pluralRules(
+	locale: string,
+	ordinal: boolean
+): { select: (number: number) => string } {
 	const key = `${locale}\0${ordinal}`;
 	let rules = pluralRulesCache.get(key);
 	if (rules === undefined) {
 		const type = ordinal ? "ordinal" : "cardinal";
+		let intl: Intl.PluralRules;
 		try {
 			// `pt_BR` as `pt-BR`, like the SDK
-			rules = new Intl.PluralRules(locale.replace(/_/g, "-"), { type });
+			intl = new Intl.PluralRules(locale.replace(/_/g, "-"), { type });
 		} catch {
-			rules = new Intl.PluralRules("en", { type });
+			intl = new Intl.PluralRules("en", { type });
 		}
+		const categories = new Map<number, string>();
+		rules = {
+			select: (number) => {
+				let category = categories.get(number);
+				if (category === undefined) {
+					category = intl.select(number);
+					categories.set(number, category);
+				}
+				return category;
+			},
+		};
 		pluralRulesCache.set(key, rules);
 	}
 	return rules;

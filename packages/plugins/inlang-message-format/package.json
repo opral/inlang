@@ -43,7 +43,6 @@
 		"vitest": "^3.2.4"
 	},
 	"dependencies": {
-		"flat": "^6.0.1",
 		"@inlang/sdk": "workspace:*",
 		"@sinclair/typebox": "^0.31.17"
 	},
