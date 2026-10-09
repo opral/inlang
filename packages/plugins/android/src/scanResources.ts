@@ -33,6 +33,11 @@ export type ScannedResources = {
   closeTagStart: number;
   /** whether the root is a self-closing `<resources/>` */
   emptyRoot: boolean;
+  /**
+   * The other elements in `<resources>`, e.g. `<string-array name="a">`,
+   * and `<string>`s and `<plurals>` without a name
+   */
+  others: string[];
   /** the indentation of the elements and comments in `<resources>` */
   indent: string | undefined;
 };
@@ -47,6 +52,7 @@ export type ScannedResources = {
  */
 export function scanResources(text: string): ScannedResources {
   const entries: ScannedEntry[] = [];
+  const others: string[] = [];
   const comments: Comment[] = [];
   let indent: string | undefined;
   let closeTagStart: number | undefined;
@@ -211,6 +217,11 @@ export function scanResources(text: string): ScannedResources {
         ...flags,
         valueRange,
       });
+    } else if (depth === 1) {
+      const name = open.attributes.get("name");
+      others.push(
+        name === undefined ? `<${open.name}>` : `<${open.name} name="${name}">`,
+      );
     }
   }
 
@@ -219,6 +230,7 @@ export function scanResources(text: string): ScannedResources {
     comments,
     closeTagStart: closeTagStart!,
     emptyRoot,
+    others,
     indent,
   };
 }

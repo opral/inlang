@@ -352,8 +352,9 @@ describe("export with the existing file", () => {
     for (const invalid of [
       "<resources><string name='a'>A</resources>",
       '<!DOCTYPE resources [<!ENTITY a "A">]><resources></resources>',
-      // AAPT rejects a name defined twice
-      '<resources><string name="a" translatable="false">A</string><string name="a">B</string></resources>',
+      // a name defined twice can't be imported, and the file has only
+      // messages
+      '<resources><!-- c --><string name="a">A</string><string name="a">B</string></resources>',
       "not xml",
     ]) {
       const [file] = plugin.exportFiles!({
@@ -859,6 +860,42 @@ describe("locale qualifiers", () => {
     ]);
   });
 
+  test("the language is lowercase, and legacy language codes are read too", async () => {
+    const files = await plugin.toBeImportedFiles!({
+      settings: { ...settings, locales: ["en", "PT-br", "he", "id-ID", "yi"] },
+    } as any);
+    expect(files.map((file) => [file.locale, file.path])).toEqual([
+      ["en", "./res/values/strings.xml"],
+      ["PT-br", "./res/values-pt-rBR/strings.xml"],
+      ["PT-br", "./res/values-b+pt+BR/strings.xml"],
+      ["he", "./res/values-he/strings.xml"],
+      ["he", "./res/values-iw/strings.xml"],
+      ["id-ID", "./res/values-id-rID/strings.xml"],
+      ["id-ID", "./res/values-b+id+ID/strings.xml"],
+      ["id-ID", "./res/values-in-rID/strings.xml"],
+      ["id-ID", "./res/values-b+in+ID/strings.xml"],
+      ["yi", "./res/values-yi/strings.xml"],
+      ["yi", "./res/values-ji/strings.xml"],
+    ]);
+    // written to the existing file
+    const data = importAndroid(
+      '<resources><string name="a">A</string></resources>',
+    );
+    data.messages[0].locale = "he";
+    const [file] = plugin.exportFiles!({
+      settings: { ...settings, locales: ["en", "he"] },
+      ...data,
+      files: [
+        {
+          path: "./res/values-iw/strings.xml",
+          locale: "he",
+          content: encode("<resources>\n</resources>"),
+        },
+      ],
+    }) as any[];
+    expect(file.name).toBe("./res/values-iw/strings.xml");
+  });
+
   test("every {locale} and {languageTag} of the path pattern is replaced", async () => {
     const files = await plugin.toBeImportedFiles!({
       settings: {
@@ -1005,6 +1042,172 @@ describe("product variants and formatted plurals", () => {
         )
         .replace(">50% of them<", '>"%1$d of them"<'),
     );
+  });
+});
+
+describe("fallbacks and plural formatting", () => {
+  test("the full export is not written over elements it would delete", () => {
+    const data = importAndroid(previous);
+    for (const [content, lost] of [
+      [
+        // can't be imported: a name defined twice
+        '<resources><string name="a">A</string><string name="a">B</string><string-array name="planets"><item>Mercury</item></string-array></resources>',
+        '<string-array name="planets">',
+      ],
+      [
+        '<resources><string name="k" translatable="false">K</string><string name="a">A</string><string name="a">B</string></resources>',
+        '<string name="k">',
+      ],
+    ] as const) {
+      expect(() =>
+        plugin.exportFiles!({
+          settings,
+          ...data,
+          files: [{ path, locale: "en", content: encode(content) }],
+        }),
+      ).toThrow(
+        `Can't write ./res/values/strings.xml without removing elements the Android plugin doesn't import (${lost})`,
+      );
+    }
+  });
+
+  test("a new message of another locale is written if the base locale has only a product variant of the name non-translatable", () => {
+    const en = `<resources>
+    <string name="greeting" product="tablet" translatable="false">Hi tablet</string>
+    <string name="greeting">Hello</string>
+</resources>
+`;
+    const data = identifyRows(
+      plugin.importFiles!({
+        settings,
+        files: [{ locale: "en", content: encode(en) }],
+      }) as Data,
+    );
+    data.messages.push({
+      id: "greeting-de",
+      bundleId: "greeting",
+      locale: "de",
+      selectors: [],
+    });
+    data.variants.push({
+      id: "greeting-de",
+      messageId: "greeting-de",
+      matches: [],
+      pattern: [{ type: "text", value: "Hallo" }],
+    });
+    const files = plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [{ path, locale: "en", content: encode(en) }],
+    }) as any[];
+    expect(
+      decode(files.find((file) => file.locale === "de")!.content),
+    ).toContain('<string name="greeting">"Hallo"</string>');
+  });
+
+  test("an edit changes only the translatable element of a name, not a non-translatable one of the name", () => {
+    const file = `<resources>
+    <string name="x" product="tablet" translatable="false">T</string>
+    <string name="x">X</string>
+    <string name="y" product="tablet" translatable="false"/>
+    <string name="y">Y</string>
+    <plurals name="z" translatable="false">
+        <item quantity="other">%d z</item>
+    </plurals>
+    <string name="z">Z</string>
+</resources>
+`;
+    expect(
+      reexport(file, (data) => {
+        setText(data, "x", "lots of %d");
+        setText(data, "y", "Why");
+        setText(data, "z", "50% of %s");
+      }),
+    ).toBe(
+      file
+        .replace(
+          '<string name="x">X</string>',
+          '<string name="x" formatted="false">"lots of %d"</string>',
+        )
+        .replace(
+          '<string name="y">Y</string>',
+          '<string name="y">"Why"</string>',
+        )
+        .replace(
+          '<string name="z">Z</string>',
+          '<string name="z" formatted="false">"50% of %s"</string>',
+        ),
+    );
+  });
+
+  test("in a plural with placeholders every item is a format string", () => {
+    const file = `<resources>
+    <plurals name="p">
+        <item quantity="one">One at 100%% off</item>
+        <item quantity="other">%d at 100%% off</item>
+    </plurals>
+    <plurals name="raw">
+        <item quantity="one">One 100%%</item>
+        <item quantity="other">Many 100%</item>
+    </plurals>
+</resources>
+`;
+    const data = importAndroid(file);
+    expect(findVariant(data, "p", "one").pattern).toEqual([
+      { type: "text", value: "One at 100% off" },
+    ]);
+    // without placeholders, items are text as before
+    expect(findVariant(data, "raw", "one").pattern).toEqual([
+      { type: "text", value: "One 100%%" },
+    ]);
+    expect(reexport(file)).toBe(file);
+    // a text item with what reads as a placeholder is escaped
+    expect(
+      reexport(file, (data) => setText(data, "p", "lots of %d", "one")),
+    ).toBe(file.replace(">One at 100%% off<", '>"lots of %%d"<'));
+    const full = exportOf(data);
+    expect(full).toContain('<item quantity="one">"One at 100%% off"</item>');
+    expect(full).toContain('<item quantity="one">"One 100%%"</item>');
+  });
+
+  test("a % that isn't a placeholder in a plural with placeholders is read as text and written %%", () => {
+    const file = `<resources>
+    <plurals name="discount">
+        <item quantity="one">50% Rabatt</item>
+        <item quantity="other">%d Artikel</item>
+    </plurals>
+</resources>
+`;
+    const data = importAndroid(file);
+    expect(findVariant(data, "discount", "one").pattern).toEqual([
+      { type: "text", value: "50% Rabatt" },
+    ]);
+    expect(reexport(file)).toBe(file);
+    expect(exportOf(data)).toContain('"50%% Rabatt"');
+  });
+
+  test('a plural that loses formatted="false" gets its items with a % written as format strings', () => {
+    const file = `<resources>
+    <plurals name="discount" formatted="false" tools:ignore="X">
+        <item quantity="one">%d Artikel</item>
+        <item quantity="few">Wenige</item>
+        <item quantity="other">50% Rabatt</item>
+    </plurals>
+</resources>
+`;
+    const output = reexport(file, (data) =>
+      setText(data, "discount", "%1$d Artikel", "one"),
+    );
+    expect(output).toBe(
+      file
+        .replace(' formatted="false"', "")
+        // reads as the new data as a format string: kept
+        .replace(">50% Rabatt<", '>"50%% Rabatt"<'),
+    );
+    // and reads as the new data
+    expect(
+      findVariant(importAndroid(output), "discount", "other").pattern,
+    ).toEqual([{ type: "text", value: "50% Rabatt" }]);
   });
 });
 

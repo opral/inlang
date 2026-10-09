@@ -128,7 +128,12 @@ function withoutExtraTranslations(args: ExportArgs): ExportArgs {
       return new Set<string>();
     }
   };
-  const nonTranslatable = names(base.content, false);
+  // a name of a type that is only non-translatable, not e.g. a product
+  // variant of a translatable string
+  const translatable = names(base.content, true);
+  const nonTranslatable = new Set(
+    [...names(base.content, false)].filter((name) => !translatable.has(name)),
+  );
   if (nonTranslatable.size === 0) return args;
   const existing = new Map<string, Set<string>>();
   const messages = args.messages.filter((message) => {
@@ -212,8 +217,15 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       if (!isTranslatable(plural)) continue;
       assertNoProduct(plural, id);
       assertOneMessage(imported, file.locale, id);
-      // `formatted="false"`: the items are text, as of a `<string>`
+      // `formatted="false"`: the items are text, as of a `<string>`.
+      // Otherwise, if an item has a placeholder, Android formats every item
+      // with the arguments, so `%%` is `%` in every item.
       const unformatted = isFalse(plural["@_formatted"]);
+      const format =
+        !unformatted &&
+        array(plural.item).some((item) =>
+          hasPrintfExpression(unquoteAndroid(textValue(item)), PRINTF),
+        );
       const parsedItems = array(plural.item).map((item) => {
         const quantity = String(
           item && typeof item === "object" ? item["@_quantity"] : undefined,
@@ -224,7 +236,7 @@ function importAndroidFiles(files: ImportArgs["files"]): {
           quantity,
           parsed: unformatted
             ? parseUnformatted(textValue(item))
-            : parseAndroidPattern(textValue(item)),
+            : parseAndroidPattern(textValue(item), format),
         };
       });
       const pluralQuantities = parsedItems.map((item) => item.quantity);
@@ -287,19 +299,50 @@ function keepUnchangedEntries(
   return exported.map((file) => {
     const previous = existingFile(args.files, file.locale);
     if (previous === undefined) return file;
+    let content: Uint8Array | undefined;
     try {
-      const content = keepUnchangedEntriesOfFile({
+      content = keepUnchangedEntriesOfFile({
         previous: previous.content,
         exported: file.content,
         locale: file.locale,
         settings: args.settings,
       });
-      return content === undefined ? file : { ...file, content };
     } catch {
       // e.g. the previous file can't be parsed or imported
-      return file;
+      content = undefined;
     }
+    if (content !== undefined) return { ...file, content };
+    assertNothingLost(previous);
+    return file;
   });
+}
+
+/**
+ * Throws if writing the full export over an existing file would delete
+ * elements of it that the plugin doesn't import (non-translatable
+ * resources, `<string-array>`s, other resource types). Only comments,
+ * formatting and attributes of messages are lost by the full export then.
+ * A file that can't be read at all is replaced.
+ */
+function assertNothingLost(previous: { path: string; content: Uint8Array }) {
+  let others: string[];
+  try {
+    const scanned = scanResources(
+      new TextDecoder("utf-8", { ignoreBOM: true }).decode(previous.content),
+    );
+    others = [
+      ...scanned.entries
+        .filter((entry) => !entry.translatable)
+        .map((entry) => `<${entry.element} name="${entry.key}">`),
+      ...scanned.others,
+    ];
+  } catch {
+    return;
+  }
+  if (others.length > 0)
+    throw new Error(
+      `Can't write ${previous.path} without removing elements the Android plugin doesn't import (${others.slice(0, 3).join(", ")}${others.length > 3 ? ", …" : ""}). Please report this at https://github.com/opral/inlang/issues with the file.`,
+    );
 }
 
 function keepUnchangedEntriesOfFile(args: {
@@ -345,25 +388,47 @@ function keepUnchangedEntriesOfFile(args: {
   const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
     args.previous,
   );
+  const next = entryTexts(exportedText);
   // The start tag of a `<plurals>` that needs `formatted` added or removed
   // is changed first, so that its items are compared as they read then.
-  const text = applyEdits(
-    original,
-    scanResources(original)
-      .entries.filter(
-        (entry) =>
-          entry.element === "plurals" &&
-          entry.translatable &&
-          !readsAsExported(entry),
+  const toggled = scanResources(original).entries.filter(
+    (entry) =>
+      entry.element === "plurals" &&
+      entry.translatable &&
+      !readsAsExported(entry),
+  );
+  const tagEdits = toggled.map((entry) => ({
+    start: entry.start,
+    end: entry.tagEnd,
+    text: withFormatted(
+      original.slice(entry.start, entry.tagEnd),
+      exportedEntries.get(entry.key)!.unformatted,
+    ),
+  }));
+  // Items of a plural that loses `formatted="false"` with a `%` that isn't
+  // a placeholder (e.g. `50% off`) would be wrong as format strings, so
+  // they are written as changed.
+  const itemEdits = toggled.flatMap((entry) =>
+    (entry.children ?? []).flatMap((item) => {
+      if (
+        !entry.unformatted ||
+        !item.valueRange ||
+        !hasStrayPercent(
+          unquoteAndroid(
+            original.slice(item.valueRange.start, item.valueRange.end),
+          ),
+        )
       )
-      .map((entry) => ({
-        start: entry.start,
-        end: entry.tagEnd,
-        text: withFormatted(
-          original.slice(entry.start, entry.tagEnd),
-          exportedEntries.get(entry.key)!.unformatted,
-        ),
-      })),
+        return [];
+      const value =
+        next.get(entry.key)?.children?.get(item.key)?.valueText ?? "";
+      return [
+        {
+          ...item.valueRange,
+          text: item.selfClosing ? `>${value}</item>` : value,
+        },
+      ];
+    }),
   );
   /** The text the plugin writes for what `text` imports to. */
   const canonical = (text: string) => {
@@ -377,10 +442,11 @@ function keepUnchangedEntriesOfFile(args: {
     const file = files.find((candidate) => candidate.locale === args.locale);
     return file === undefined ? "" : decode(file.content);
   };
+  const text = applyEdits(original, [...tagEdits, ...itemEdits]);
+  const previousCanonical = canonical(text);
   const scanned = scanResources(text);
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const indent = scanned.indent ?? "  ";
-  const next = entryTexts(exportedText);
   /** Start tags of `<string>`s with `formatted` added or removed, by name. */
   const startTags = new Map<string, string>();
   /** The element of the file in the merge, see `ScannedEntry`. */
@@ -435,7 +501,7 @@ function keepUnchangedEntriesOfFile(args: {
     text,
     entries,
     comments: scanned.comments,
-    previous: entryTexts(canonical(text)),
+    previous: entryTexts(previousCanonical),
     next: withStartTags(next, scanned.entries, startTags),
     indentUnit: "  ",
     fileIndentUnit: indent === "" ? "  " : indent,
@@ -566,7 +632,9 @@ function withStartTags(
     return { ...text, children };
   };
   const result = new Map(next);
-  for (const entry of entries) {
+  // the translatable element of a name; non-translatable elements of the
+  // name (e.g. product variants) are not in the merge
+  for (const entry of entries.filter((entry) => entry.translatable)) {
     const adapted = adapt(
       entry,
       result.get(entry.key),
@@ -682,6 +750,10 @@ function exportAndroidFiles({
         throw new Error(
           `Android plurals require one selector backed by a cardinal plural declaration (bundle "${bundle.id}")`,
         );
+      // Android formats every item if one has a placeholder: `%` is `%%`
+      const format = messageVariants.some((variant) =>
+        variant.pattern.some((part) => part.type === "expression"),
+      );
       const items = messageVariants.map((variant) => {
         const match = variant.matches[0];
         if (
@@ -698,7 +770,7 @@ function exportAndroidFiles({
           );
         const quantity =
           match.type === "catchall-match" ? "other" : match.value;
-        return `    <item quantity="${quantity}">${serializePattern(variant.pattern, bundle)}</item>`;
+        return `    <item quantity="${quantity}">${serializePattern(variant.pattern, bundle, format)}</item>`;
       });
       const exportedQuantities = items.map(
         (item) => item.match(/quantity="([^"]+)"/)?.[1],
@@ -713,9 +785,7 @@ function exportAndroidFiles({
         );
       // only text, of which some reads as printf, e.g. "%d%"
       const unformatted =
-        messageVariants.every((variant) =>
-          variant.pattern.every((part) => part.type === "text"),
-        ) &&
+        !format &&
         messageVariants.some((variant) => needsUnformatted(variant.pattern));
       lines.push(
         `  <plurals name="${escapeXmlAttribute(bundle.id)}"${unformatted ? ' formatted="false"' : ""}>\n${items.join("\n")}\n  </plurals>`,
@@ -763,12 +833,19 @@ function mergeBundle(
   return { id, declarations };
 }
 
-function parseAndroidPattern(value: string) {
+const PRINTF = /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?[sdf])|([sdf]))/;
+
+/**
+ * The pattern of an Android string. `pluralFormat`: an item of a plural
+ * that has placeholders, which Android formats even if the item has none:
+ * `%%` is `%`, and a `%` that isn't a placeholder is kept as text.
+ */
+function parseAndroidPattern(value: string, pluralFormat = false) {
   const pattern: Pattern = [];
   const variables: string[] = [];
   const source = unquoteAndroid(value);
-  const regex = /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?[sdf])|([sdf]))/;
-  if (!hasPrintfExpression(source, regex)) {
+  const regex = PRINTF;
+  if (!pluralFormat && !hasPrintfExpression(source, regex)) {
     if (/%\d+\$/.test(source))
       throw new Error(`Unsupported Android positional format in "${source}"`);
     return {
@@ -787,6 +864,10 @@ function parseAndroidPattern(value: string) {
     }
     const match = source.slice(cursor).match(regex);
     if (!match) {
+      if (source[cursor] === "%" && pluralFormat) {
+        text += source[cursor++];
+        continue;
+      }
       if (source[cursor] === "%")
         throw new Error(
           `Unsupported Android format specifier near "${source.slice(cursor, cursor + 12)}"`,
@@ -857,11 +938,15 @@ function needsUnformatted(pattern: Pattern) {
   }
 }
 
-function serializePattern(pattern: Pattern, bundle: Bundle) {
+/** `formatted`: whether `%` in text is written `%%` */
+function serializePattern(
+  pattern: Pattern,
+  bundle: Bundle,
+  formatted = pattern.some((part) => part.type === "expression"),
+) {
   const inputs = bundle.declarations.filter(
     (declaration) => declaration.type === "input-variable",
   );
-  const formatted = pattern.some((part) => part.type === "expression");
   const content = pattern
     .map((part) => {
       if (part.type === "text")
@@ -1027,21 +1112,36 @@ function decode(value: Uint8Array) {
  * The resource qualifiers of a locale, the preferred one first: the base
  * locale has none, a language `-de`, a language with a two-letter region
  * `-pt-rBR` (as Android Studio writes it) or `-b+pt+BR`, and everything else
- * BCP 47 `-b+zh+Hans`, `-b+es+419`.
+ * BCP 47 `-b+zh+Hans`, `-b+es+419`. The language is lowercase. The legacy
+ * codes of Hebrew, Indonesian and Yiddish (`iw`, `in`, `ji`) are read too.
  */
 function androidLocaleSuffixes(locale: string, baseLocale: string): string[] {
   if (locale === baseLocale) return [""];
-  const [language, ...parts] = locale.split("-");
-  if (!language) throw new Error(`Invalid locale "${locale}"`);
-  if (parts.length === 0) return [`-${language}`];
-  const bcp47 = `-b+${[language, ...parts].join("+")}`;
-  if (
-    parts.length === 1 &&
-    /^[a-zA-Z]{2,3}$/.test(language) &&
-    /^[a-zA-Z]{2}$/.test(parts[0]!)
-  )
-    return [`-${language}-r${parts[0]!.toUpperCase()}`, bcp47];
-  return [bcp47];
+  const [subtag, ...parts] = locale.split("-");
+  if (!subtag) throw new Error(`Invalid locale "${locale}"`);
+  const language = subtag.toLowerCase();
+  const legacy = ({ he: "iw", id: "in", yi: "ji" } as Record<string, string>)[
+    language
+  ];
+  return [language, ...(legacy ? [legacy] : [])].flatMap((language) => {
+    if (parts.length === 0) return [`-${language}`];
+    // regions uppercase, scripts titlecase
+    const subtags = parts.map((part) =>
+      /^[a-zA-Z]{2}$/.test(part)
+        ? part.toUpperCase()
+        : /^[a-zA-Z]{4}$/.test(part)
+          ? part[0]!.toUpperCase() + part.slice(1).toLowerCase()
+          : part,
+    );
+    const bcp47 = `-b+${[language, ...subtags].join("+")}`;
+    if (
+      parts.length === 1 &&
+      /^[a-z]{2,3}$/.test(language) &&
+      /^[a-zA-Z]{2}$/.test(parts[0]!)
+    )
+      return [`-${language}-r${parts[0]!.toUpperCase()}`, bcp47];
+    return [bcp47];
+  });
 }
 
 function androidPath(pattern: string, suffix: string) {
@@ -1082,6 +1182,19 @@ function assertAndroidResourceName(id: string) {
     throw new Error(
       `Android cannot preserve resource key "${id}"; AAPT names may contain letters, numbers, dot, underscore, and hyphen`,
     );
+}
+
+/** Whether a format string has a `%` that is neither `%%` nor a placeholder. */
+function hasStrayPercent(source: string) {
+  for (let cursor = 0; cursor < source.length; cursor++) {
+    if (source.startsWith("%%", cursor)) {
+      cursor++;
+      continue;
+    }
+    if (source[cursor] === "%" && !PRINTF.test(source.slice(cursor)))
+      return true;
+  }
+  return false;
 }
 
 function hasPrintfExpression(source: string, regex: RegExp) {

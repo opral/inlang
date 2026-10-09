@@ -28,6 +28,12 @@
         <item quantity="one">%d note deleted</item>
         <item quantity="other">%d notes deleted</item>
     </plurals>
+    <plurals name="notes_progress" formatted="false">
+        <item quantity="one">%d note, 50% synced</item>
+        <item quantity="other">%d notes, 50% synced</item>
+    </plurals>
+    <string name="notes_share" product="tablet" translatable="false">Share from your tablet</string>
+    <string name="notes_share">Share</string>
     <plurals name="debug_cache_entries" translatable="false">
         <item quantity="one">%d cache entry</item>
         <item quantity="other">%d cache entries</item>
