@@ -136,13 +136,13 @@ export async function checkProject(
 	return result;
 }
 
-/** Bundles with patterns: one query for a full scan, per bundle for scoped refreshes. */
+/** Bundles with patterns: every bundle for a full scan, per bundle for scoped refreshes. */
 async function nestedBundles(
 	project: CheckProjectArgs["project"],
 	scope: string[] | undefined,
 	ids: string[]
 ): Promise<BundleNested[]> {
-	if (scope === undefined) return selectBundleNested(project.db).execute();
+	if (scope === undefined) return allBundlesNested(project.db);
 	const result: BundleNested[] = [];
 	for (const id of ids) {
 		const bundle = await selectBundleNested(project.db)
@@ -151,6 +151,53 @@ async function nestedBundles(
 		if (bundle) result.push(bundle);
 	}
 	return result;
+}
+
+/**
+ * Every bundle with its messages and variants, from one query per table: a
+ * join of the three tables costs the Lix engine far more memory. Sorted by id
+ * like `selectBundleNested`, so diagnostics keep a stable order.
+ */
+async function allBundlesNested(
+	db: Kysely<InlangDatabaseSchema>
+): Promise<BundleNested[]> {
+	type Variant = BundleNested["messages"][number]["variants"][number];
+	type Message = BundleNested["messages"][number];
+	const byId = (a: { id: string }, b: { id: string }) =>
+		a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+	const variants = new Map<string, Variant[]>();
+	const variantRows = await db
+		.selectFrom("inlang_variant")
+		.select(["id", "message_id", "matches", "pattern"])
+		.execute();
+	for (const variant of variantRows.sort(byId)) {
+		let list = variants.get(variant.message_id);
+		if (!list) variants.set(variant.message_id, (list = []));
+		list.push(variant as Variant);
+	}
+	const messages = new Map<string, Message[]>();
+	const messageRows = await db
+		.selectFrom("inlang_message")
+		.select(["id", "bundle_id", "locale", "selectors"])
+		.execute();
+	for (const message of messageRows.sort(byId)) {
+		let list = messages.get(message.bundle_id);
+		if (!list) messages.set(message.bundle_id, (list = []));
+		list.push({
+			...message,
+			variants: variants.get(message.id) ?? [],
+		} as Message);
+	}
+	const bundleRows = await db
+		.selectFrom("inlang_bundle")
+		.select(["id", "declarations"])
+		.execute();
+	return bundleRows
+		.sort(byId)
+		.map(
+			(bundle) =>
+				({ ...bundle, messages: messages.get(bundle.id) ?? [] }) as BundleNested
+		);
 }
 
 /** Revision metadata includes every dependent row, including added/removed variants. */

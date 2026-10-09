@@ -1,0 +1,5 @@
+---
+"@inlang/sdk": minor
+---
+
+Translation checks are more precise: variables and markup are compared with the reference form that has the same matches (the reference's other forms only when there is none), a form for one exact number may leave out only that number's input variable, and an empty reference expects no variables. A translation that drops a selector the reference chooses by (a select's values, exact numbers, or a plural the locale needs) gets the new `missing-selector` diagnostic; a reference exact number is needed on a translation's plural even without an exact-number selector, and `countPlural=0` covers it. Plural categories only millions select (French, Spanish, Italian, Portuguese, Catalan `many`) are no longer required; `pluralRules().requiredCategories` lists the required ones. `:number` and `:integer` selectors with plural or ordinal selection get plural rules, and locales such as `pt_BR` are read as `pt-BR`. Full scans read patterns with one query per table, lowering peak memory.
