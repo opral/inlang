@@ -100,6 +100,12 @@ const NUMERIC_OPTIONS = [
 /** The plural rules of a `plural` selector in a locale. */
 export type PluralRules = {
 	type: "cardinal" | "ordinal";
+	/**
+	 * ICU `offset` (a literal number): categories are chosen for the number minus
+	 * the offset, so example number `n` of a category stands for `n + offset`.
+	 * 0 without one.
+	 */
+	offset: number;
 	/** The categories of the locale in CLDR order (zero, one, two, few, many, other). */
 	categories: string[];
 	/** Categories that select exactly one number, e.g. German "one" (1) but not Russian "one" (1, 21, 31, …). */
@@ -134,6 +140,7 @@ export function pluralRules(
 		try {
 			const options: Intl.PluralRulesOptions = { type: "cardinal" };
 			let known = true;
+			let offset = 0;
 			for (const option of annotation.options ?? []) {
 				const value =
 					option.value.type === "literal" ? option.value.value : undefined;
@@ -142,6 +149,13 @@ export function pluralRules(
 					(value === "cardinal" || value === "ordinal")
 				)
 					options.type = value;
+				else if (
+					option.name === "offset" &&
+					value?.trim() &&
+					Number.isFinite(Number(value))
+				)
+					// shifts the number, the categories stay the same
+					offset = Number(value);
 				else if (
 					NUMERIC_OPTIONS.includes(option.name) &&
 					value?.trim() &&
@@ -160,6 +174,7 @@ export function pluralRules(
 				}
 				result = {
 					type: options.type ?? "cardinal",
+					offset,
 					categories: [...rules.resolvedOptions().pluralCategories].sort(
 						(a, b) => PLURAL_ORDER.indexOf(a) - PLURAL_ORDER.indexOf(b)
 					),
