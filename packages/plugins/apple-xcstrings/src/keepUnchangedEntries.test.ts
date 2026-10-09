@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   loadProjectInMemory,
   newProject,
@@ -9,6 +9,9 @@ import fs from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { plugin, PLUGIN_KEY } from "./plugin.js";
+
+// loading and saving projects with the SDK is slow on CI
+vi.setConfig({ testTimeout: 30_000 });
 
 const settings = {
   baseLocale: "en",

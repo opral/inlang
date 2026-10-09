@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   loadProjectFromDirectory,
   saveProjectToDirectory,
@@ -8,6 +8,9 @@ import {
   type Variant,
 } from "@inlang/sdk";
 import { plugin, PLUGIN_KEY } from "./plugin.js";
+
+// loading and saving projects with the SDK is slow on CI
+vi.setConfig({ testTimeout: 30_000 });
 
 /**
  * Saving a project must not change the bytes of translation files beyond the

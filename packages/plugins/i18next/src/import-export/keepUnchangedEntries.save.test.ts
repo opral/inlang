@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import nodeFs from "node:fs";
 import nodeOs from "node:os";
 import nodePath from "node:path";
@@ -8,6 +8,9 @@ import {
 	type InlangPlugin,
 } from "@inlang/sdk";
 import { plugin } from "../plugin.js";
+
+// loading and saving projects with the SDK is slow on CI
+vi.setConfig({ testTimeout: 30_000 });
 
 // Saving a project must not change the bytes of translation files beyond the
 // edits. Kept apart from keepUnchangedEntries.test.ts, which imports the

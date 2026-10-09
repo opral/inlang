@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import nodeFs from "node:fs";
 import nodeOs from "node:os";
 import nodePath from "node:path";
@@ -13,6 +13,9 @@ import {
 // import the plugin first, see i18next's namespace-write-back.test.ts
 import { plugin } from "../plugin.js";
 import { PLUGIN_KEY } from "../pluginKey.js";
+
+// loading and saving projects with the SDK is slow on CI
+vi.setConfig({ testTimeout: 30_000 });
 
 /**
  * Saving a project must not change the bytes of translation files beyond the

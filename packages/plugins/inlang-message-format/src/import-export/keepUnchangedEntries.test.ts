@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
 	loadProjectInMemory,
 	newProject,
@@ -11,6 +11,9 @@ import { Volume } from "memfs";
 import { plugin } from "../plugin.js";
 import { PLUGIN_KEY } from "../pluginKey.js";
 import { exportWholeFiles } from "./exportFiles.js";
+
+// loading and saving projects with the SDK is slow on CI
+vi.setConfig({ testTimeout: 30_000 });
 
 /**
  * With the previous files, an export only changes the bytes of the messages
