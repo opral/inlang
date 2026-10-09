@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="de">
+    <!-- Onboarding -->
+    <string name="onboarding_title">Willkommen bei %1$s</string>
+    <string name="onboarding_subtitle">Deine Notizen, überall.</string>
+    <string name="onboarding_continue">Weiter</string>
+
+    <!-- Notes -->
+    <string name="notes_empty" tools:ignore="UnusedResources">Du hast noch keine Notizen.</string>
+    <string name="notes_synced_at" formatted="false">Zuletzt synchronisiert %s um %s</string>
+    <plurals name="notes_count">
+        <item quantity="one">%d Notiz</item>
+        <item quantity="other">%d Notizen</item>
+    </plurals>
+
+    <!-- Settings -->
+    <string name="settings_title">Einstellungen</string>
+    <string-array name="settings_theme_entries">
+        <item>Hell</item>
+        <item>Dunkel</item>
+        <item>Systemstandard</item>
+    </string-array>
+</resources>

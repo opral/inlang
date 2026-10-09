@@ -803,7 +803,13 @@ describe("deleting every message of a file", () => {
 		const plans: Array<{ path: string; locale: string }> =
 			await plugin.toBeImportedFiles({ settings });
 		const sources = readSourceFiles(fixture);
-		for (const plan of plans) {
+		// the first file of a locale, e.g. of the spellings of an Android
+		// qualifier
+		const firstPlans = plans.filter(
+			(plan, index) =>
+				plans.findIndex((other) => other.locale === plan.locale) === index
+		);
+		for (const plan of firstPlans) {
 			const source = sources.find((file) => file.locale === plan.locale);
 			if (source === undefined) continue;
 			const file = path.join(root, plan.path);
@@ -818,7 +824,7 @@ describe("deleting every message of a file", () => {
 		return {
 			root,
 			projectPath: path.join(root, "project.inlang"),
-			plans: plans.filter((plan) =>
+			plans: firstPlans.filter((plan) =>
 				sources.some((file) => file.locale === plan.locale)
 			),
 		};
@@ -853,9 +859,7 @@ describe("deleting every message of a file", () => {
 			.execute();
 	}
 
-	// The android plugin doesn't handle it yet (follow-up of #4464, which
-	// changes how it writes files).
-	test.each(fixtures.filter((fixture) => fixture.dir !== "android"))(
+	test.each(fixtures)(
 		"$dir: the deleted messages of a locale don't come back",
 		async (fixture) => {
 			const { root, projectPath, plans } = await createDirectory(fixture);
@@ -890,4 +894,341 @@ describe("deleting every message of a file", () => {
 			}
 		}
 	);
+});
+
+/**
+ * A `res/values/strings.xml` and `res/values-de/strings.xml` like real
+ * Android apps have them: the `tools` namespace with `tools:locale` and
+ * `tools:ignore`, non-translatable strings and plurals (app name, URLs,
+ * keys), `formatted="false"`, `<string-array>`s and comments.
+ */
+describe("android: a real-world res/values/strings.xml", () => {
+	const fixture = fixtures.find((candidate) => candidate.dir === "android")!;
+	const read = (file: string) =>
+		fs.readFileSync(
+			path.join(fixturesDir, "android-real-world", "source", file),
+			"utf8"
+		);
+	const texts: Texts = {
+		en: read("values/strings.xml"),
+		de: read("values-de/strings.xml"),
+	};
+	const nonTranslatable = [
+		"app_name",
+		"privacy_policy_url",
+		"maps_api_key",
+		"deep_link_scheme",
+		"debug_cache_entries",
+		"settings_version",
+	];
+
+	test("imports the translatable strings and plurals", async () => {
+		const project = await load(fixture, texts);
+		const t = tables(project.version);
+		const messages = await project.db
+			.selectFrom(t.message)
+			.select([t.bundleId, "locale"])
+			.execute();
+		const ids = (locale: string) =>
+			messages
+				.filter((message: any) => message.locale === locale)
+				.map((message: any) => message[t.bundleId])
+				.sort();
+		expect(ids("en")).toEqual([
+			"notes_count",
+			"notes_deleted",
+			"notes_empty",
+			"notes_progress",
+			"notes_search_hint",
+			"notes_share",
+			"notes_storage",
+			"notes_synced_at",
+			"onboarding_continue",
+			"onboarding_subtitle",
+			"onboarding_title",
+			"settings_theme",
+			"settings_title",
+		]);
+		expect(ids("de")).toEqual([
+			"notes_count",
+			"notes_empty",
+			"notes_synced_at",
+			"onboarding_continue",
+			"onboarding_subtitle",
+			"onboarding_title",
+			"settings_title",
+		]);
+		await project.close();
+	});
+
+	test("stays byte-identical when exported with the files", async () => {
+		const project = await load(fixture, texts);
+		expect(await exportWith(project, fixture, texts)).toEqual(texts);
+		await project.close();
+	});
+
+	test("an edited message changes only its content and keeps its attributes", async () => {
+		const project = await load(fixture, texts);
+		const t = tables(project.version);
+		const edit = async (bundleId: string, locale: string, value: string) => {
+			const message = await project.db
+				.selectFrom(t.message)
+				.where(t.bundleId, "=", bundleId)
+				.where("locale", "=", locale)
+				.select("id")
+				.executeTakeFirstOrThrow();
+			await project.db
+				.updateTable(t.variant)
+				.set({ pattern: [{ type: "text", value }] })
+				.where(t.messageId, "=", message.id)
+				.execute();
+		};
+		await edit("notes_empty", "en", "No notes yet");
+		await edit("onboarding_continue", "de", "Los geht's");
+		expect(await exportWith(project, fixture, texts)).toEqual({
+			en: texts.en!.replace(
+				`<string name="notes_empty" tools:ignore="UnusedResources">You don\\'t have any notes yet.</string>`,
+				`<string name="notes_empty" tools:ignore="UnusedResources">"No notes yet"</string>`
+			),
+			de: texts.de!.replace(
+				`<string name="onboarding_continue">Weiter</string>`,
+				`<string name="onboarding_continue">"Los geht\\'s"</string>`
+			),
+		});
+		await project.close();
+	});
+
+	test("a project directory: saving without edits keeps the files, an edit changes only its element, in res/values and res/values-de", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-android-"));
+		try {
+			const projectPath = path.join(root, "project.inlang");
+			fs.mkdirSync(projectPath);
+			fs.writeFileSync(
+				path.join(projectPath, "settings.json"),
+				JSON.stringify({
+					baseLocale: "en",
+					locales: ["en", "de"],
+					modules: [plugins[fixture.key].url],
+					[fixture.key]: fixture.pluginSettings,
+				})
+			);
+			const files = {
+				en: path.join(root, "res/values/strings.xml"),
+				de: path.join(root, "res/values-de/strings.xml"),
+			};
+			for (const [locale, file] of Object.entries(files)) {
+				fs.mkdirSync(path.dirname(file), { recursive: true });
+				fs.writeFileSync(file, texts[locale]!);
+			}
+			const onDisk = () =>
+				Object.fromEntries(
+					Object.entries(files).map(([locale, file]) => [
+						locale,
+						fs.readFileSync(file, "utf8"),
+					])
+				);
+
+			servePlugins("current");
+			const project = await loadFromDirectory("current", {
+				path: projectPath,
+				fs,
+			});
+			expect(await project.errors.get()).toEqual([]);
+			await saveToDirectory("current", { path: projectPath, fs, project });
+			expect(onDisk()).toEqual(texts);
+
+			const t = tables(project.version);
+			const message = await project.db
+				.selectFrom(t.message)
+				.where(t.bundleId, "=", "settings_title")
+				.where("locale", "=", "de")
+				.select("id")
+				.executeTakeFirstOrThrow();
+			await project.db
+				.updateTable(t.variant)
+				.set({ pattern: [{ type: "text", value: "Optionen" }] })
+				.where(t.messageId, "=", message.id)
+				.execute();
+			await saveToDirectory("current", { path: projectPath, fs, project });
+			expect(onDisk()).toEqual({
+				en: texts.en,
+				de: texts.de!.replace(">Einstellungen<", '>"Optionen"<'),
+			});
+			// no files where `{locale}` is the locale instead of the qualifier
+			expect(fs.readdirSync(path.join(root, "res")).sort()).toEqual([
+				"values",
+				"values-de",
+			]);
+			await project.close();
+		} finally {
+			servePlugins("published");
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	test.each(upgrades)(
+		"a full export (no existing files, e.g. SDK $sdk with plugin $plugin) writes no non-translatable resource",
+		async ({ sdk, plugin }) => {
+			const project = await openFixtureProject(fixture, sdk, plugin);
+			await project.importFiles({
+				pluginKey: fixture.key,
+				files: Object.entries(texts).map(([locale, text]) => ({
+					locale,
+					content: encode(text),
+				})),
+			});
+			const files = await exportFixtureFiles(project, fixture);
+			expect(files.map((file) => file.locale).sort()).toEqual(["de", "en"]);
+			for (const file of files) {
+				for (const name of nonTranslatable) {
+					expect(file.content).not.toContain(`name="${name}"`);
+				}
+			}
+			await project.close();
+		}
+	);
+});
+
+describe("android: locale qualifiers in a project directory", () => {
+	const fixture = fixtures.find((candidate) => candidate.dir === "android")!;
+	const en = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title">Title</string>
+    <string name="body">Body</string>
+</resources>
+`;
+	const pt = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title">Título</string>
+</resources>
+`;
+
+	/** Runs `fn` with a project directory of `files` (paths under `res/`). */
+	async function withDirectory(
+		locales: string[],
+		files: Record<string, string>,
+		fn: (args: {
+			project: Project;
+			save: () => Promise<void>;
+			read: () => Record<string, string>;
+		}) => Promise<void>
+	) {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-android-"));
+		try {
+			const projectPath = path.join(root, "project.inlang");
+			fs.mkdirSync(projectPath);
+			fs.writeFileSync(
+				path.join(projectPath, "settings.json"),
+				JSON.stringify({
+					baseLocale: "en",
+					locales,
+					modules: [plugins[fixture.key].url],
+					[fixture.key]: fixture.pluginSettings,
+				})
+			);
+			for (const [file, content] of Object.entries(files)) {
+				fs.mkdirSync(path.dirname(path.join(root, "res", file)), {
+					recursive: true,
+				});
+				fs.writeFileSync(path.join(root, "res", file), content);
+			}
+			servePlugins("current");
+			const project = await loadFromDirectory("current", {
+				path: projectPath,
+				fs,
+			});
+			expect(await project.errors.get()).toEqual([]);
+			await fn({
+				project,
+				save: () =>
+					saveToDirectory("current", { path: projectPath, fs, project }),
+				read: () =>
+					Object.fromEntries(
+						fs
+							.readdirSync(path.join(root, "res"), { recursive: true })
+							.map(String)
+							.filter((file) => file.endsWith(".xml"))
+							.sort()
+							.map((file) => [
+								file,
+								fs.readFileSync(path.join(root, "res", file), "utf8"),
+							])
+					),
+			});
+			await project.close();
+		} finally {
+			servePlugins("published");
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	}
+
+	test.each(["values-pt-rBR", "values-b+pt+BR"])(
+		"pt-BR in %s is imported, kept and written to its file",
+		async (dir) => {
+			const files = {
+				"values/strings.xml": en,
+				[`${dir}/strings.xml`]: pt,
+			};
+			await withDirectory(["en", "pt-BR"], files, async (p) => {
+				const t = tables(p.project.version);
+				const message = await p.project.db
+					.selectFrom(t.message)
+					.where(t.bundleId, "=", "title")
+					.where("locale", "=", "pt-BR")
+					.select("id")
+					.executeTakeFirstOrThrow();
+				await p.save();
+				expect(p.read()).toEqual(files);
+				await p.project.db
+					.updateTable(t.variant)
+					.set({ pattern: [{ type: "text", value: "Titulo" }] })
+					.where(t.messageId, "=", message.id)
+					.execute();
+				await p.save();
+				expect(p.read()).toEqual({
+					...files,
+					[`${dir}/strings.xml`]: pt.replace(">Título<", '>"Titulo"<'),
+				});
+			});
+		}
+	);
+
+	test("new locales are written to the qualifiers as Android Studio writes them", async () => {
+		await withDirectory(
+			["en", "pt-BR", "es-419", "zh-Hans"],
+			{ "values/strings.xml": en },
+			async (p) => {
+				const t = tables(p.project.version);
+				for (const locale of ["pt-BR", "es-419", "zh-Hans"]) {
+					await p.project.db
+						.insertInto(t.message)
+						.values({
+							id: `title_${locale}`,
+							[t.bundleId]: "title",
+							locale,
+							selectors: [],
+						})
+						.execute();
+					await p.project.db
+						.insertInto(t.variant)
+						.values({
+							id: `title_${locale}_variant`,
+							[t.messageId]: `title_${locale}`,
+							matches: [],
+							pattern: [{ type: "text", value: `Title ${locale}` }],
+						})
+						.execute();
+				}
+				await p.save();
+				const written = (locale: string) =>
+					`<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <string name="title">"Title ${locale}"</string>\n</resources>\n`;
+				expect(p.read()).toEqual({
+					"values-b+es+419/strings.xml": written("es-419"),
+					"values-b+zh+Hans/strings.xml": written("zh-Hans"),
+					"values-pt-rBR/strings.xml": written("pt-BR"),
+					"values/strings.xml": en,
+				});
+			}
+		);
+	});
 });
