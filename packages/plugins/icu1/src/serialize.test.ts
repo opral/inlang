@@ -491,23 +491,27 @@ describe("serializeMessage", () => {
 });
 
 /**
- * Exports `source`, and expects the export to display what the source
- * displays for every combination of `values`, and a second export to be
- * byte-identical.
+ * Exports `source`, and expects the export and a second export to display
+ * what the source displays for every combination of `values`, and the second
+ * export to be byte-identical unless `stable` is false.
  */
 function expectSameDisplay(
   source: string,
   values: Record<string, unknown[]>,
+  options: { stable: boolean } = { stable: true },
 ): string {
   const exported = serializeMessage(buildMessage(source));
-  expect(serializeMessage(buildMessage(exported)), exported).toBe(exported);
+  const again = serializeMessage(buildMessage(exported));
+  if (options.stable) expect(again, exported).toBe(exported);
   const sourceFormat = new IntlMessageFormat(source, "en");
-  const exportFormat = new IntlMessageFormat(exported, "en");
-  for (const combination of combinations(values)) {
-    expect(
-      exportFormat.format(combination),
-      `${exported} with ${JSON.stringify(combination)}`,
-    ).toBe(sourceFormat.format(combination));
+  for (const output of [exported, again]) {
+    const outputFormat = new IntlMessageFormat(output, "en");
+    for (const combination of combinations(values)) {
+      expect(
+        outputFormat.format(combination),
+        `${output} with ${JSON.stringify(combination)}`,
+      ).toBe(sourceFormat.format(combination));
+    }
   }
   return exported;
 }
@@ -584,6 +588,46 @@ describe("# next to a select in a plural", () => {
     expectSameDisplay(
       "{n, plural, one {'#''#'} other {x}}{g, select, other {#}}",
       { n: counts, g: ["a"] },
+    );
+  });
+});
+
+describe("literal # next to selects and plurals the variants don't use", () => {
+  it("moves a literal # out of a select despite a plural of another case", () => {
+    expectSameDisplay(
+      "{m, plural, one {{m, plural, offset:1 other {#}} '#'{g, select, b {B} other {O}}} other {{m, plural, offset:1 one {you} other {# others}}}}",
+      { m: counts, g: ["a", "b"] },
+    );
+  });
+
+  it("moves a select out of a plural whose other case doesn't use it", () => {
+    expectSameDisplay(
+      "{n, plural, one {{g, select, a {A} other {B}} '#'} other {C}} {n, plural, one {{g, select, b {X} other {Y}}} other {Z}}",
+      { n: counts, g: ["a", "b", "c"] },
+    );
+    expectSameDisplay(
+      "{n, plural, one {{h, select, a {A} other {B}} '#'} other {C}}{n, plural, =2 {{h, select, b {X} other {Y}}} other {Z}}",
+      { n: counts, h: ["a", "b", "c"] },
+    );
+  });
+});
+
+describe("selectors nested in each other in different cases", () => {
+  it("keeps variants without a match on the outer selector in every case", () => {
+    expectSameDisplay(
+      "{g, select, a {{n, plural, one {{m, plural, one {A} other {B}}} other {C}}} other {{m, plural, one {{n, plural, one {D} other {E}}} other {F}}}}",
+      { g: ["a", "b"], n: counts, m: counts },
+    );
+    // the second export nests the selects differently
+    expectSameDisplay(
+      "{h, select, a {{g, select, a {{m, plural, one {A} other {B}}} other {C}}} other {{m, plural, one {one item} other {{g, select, a {her items} other {their items}}}}}}",
+      { h: ["a", "b"], g: ["a", "b"], m: counts },
+      { stable: false },
+    );
+    expectSameDisplay(
+      "{n, plural, one {{g, select, a {She} other {They}} posted in '#'general} other {# posts}}{m, plural, one {} other { by {g, select, a {her} other {them}}}}",
+      { n: counts, m: counts, g: ["a", "b"] },
+      { stable: false },
     );
   });
 });

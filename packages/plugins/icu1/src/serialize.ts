@@ -162,7 +162,10 @@ function serializeVariants(
         inSelect: false,
       }
     : plural && { ...plural, inSelect: true };
-  const below = pluralContextsOf([selector, ...restSelectors], declarations);
+  const below = pluralContextsOf(
+    usedSelectors(variants, [selector, ...restSelectors]),
+    declarations,
+  );
   // a `#` stays in the plural it is a `#` of
   const keepsPart = (part: Pattern[number]) =>
     writesPound(part, { plural: caseContext, pluralOffsets }) ||
@@ -202,16 +205,22 @@ function serializeVariants(
   }));
 
   const groups = new Map<string, Variant[]>();
+  const unmatched: Variant[] = [];
   for (const variant of strippedVariants) {
     const match = variant.matches.find(
       (entry: Variant["matches"][number]) => entry.key === selector.name,
     );
+    if (!match) {
+      unmatched.push(variant);
+      continue;
+    }
     const key = matchKey(match);
     const current = groups.get(key) ?? [];
     current.push(removeMatchForSelector(variant, selector.name));
     groups.set(key, current);
   }
   if (!isPluralContext) addOtherVariants(groups);
+  addToAllGroups(groups, unmatched, "*");
 
   const pluralCases = isPluralContext
     ? serializePluralCases({
@@ -443,9 +452,14 @@ function moveSelectOut(
   const beforeNames = new Set(before.map((entry) => entry.name));
   const keys = new Set<string>();
   const byBefore = new Map<string, Map<string, Variant[]>>();
+  // variants without a match on the select don't depend on it
+  const unmatched: Variant[] = [];
   for (const variant of variants) {
     const match = variant.matches.find((entry) => entry.key === selector.name);
-    if (!match) return undefined;
+    if (!match) {
+      unmatched.push(variant);
+      continue;
+    }
     const key = matchKey(match);
     if (key !== "*") keys.add(key);
     const combination = JSON.stringify(
@@ -482,6 +496,24 @@ function moveSelectOut(
       }
     }
     if (others) result.push(...others);
+  }
+  for (const variant of unmatched) {
+    for (const key of keys) {
+      result.push({
+        ...variant,
+        matches: [
+          ...variant.matches,
+          { type: "literal-match", key: selector.name, value: key },
+        ],
+      });
+    }
+    result.push({
+      ...variant,
+      matches: [
+        ...variant.matches,
+        { type: "catchall-match", key: selector.name },
+      ],
+    });
   }
   return result;
 }
@@ -655,6 +687,22 @@ function sameVariants(left: Variant[], right: Variant[]): boolean {
         ),
     )
   );
+}
+
+/**
+ * Adds the variants without a match on the selector, which don't depend on
+ * it, to every case. A selector that is nested in another one in some
+ * branches and encloses it in others can come first for variants without a
+ * match on it.
+ */
+function addToAllGroups(
+  groups: Map<string, Variant[]>,
+  unmatched: Variant[],
+  otherKey: string,
+) {
+  if (unmatched.length === 0) return;
+  for (const group of groups.values()) group.push(...unmatched);
+  if (!groups.has(otherKey)) groups.set(otherKey, [...unmatched]);
 }
 
 /**
@@ -881,7 +929,10 @@ function serializePluralSelectorPair(
     offset: pair.config.offset ?? 0,
     inSelect: false,
   };
-  const below = [caseContext, ...pluralContextsOf(selectors, declarations)];
+  const below = [
+    caseContext,
+    ...pluralContextsOf(usedSelectors(variants, selectors), declarations),
+  ];
   // a `#` stays in the plural it is a `#` of
   const keepsPart = (part: Pattern[number]) =>
     writesPound(part, { plural: caseContext, pluralOffsets }) ||
@@ -917,6 +968,7 @@ function serializePluralSelectorPair(
   }));
 
   const groups = new Map<string, Variant[]>();
+  const unmatched: Variant[] = [];
   for (const variant of strippedVariants) {
     const exactMatch = variant.matches.find(
       (entry: Variant["matches"][number]) =>
@@ -926,6 +978,10 @@ function serializePluralSelectorPair(
       (entry: Variant["matches"][number]) =>
         entry.key === pair.pluralSelector.name,
     );
+    if (!exactMatch && !pluralMatch) {
+      unmatched.push(variant);
+      continue;
+    }
     const key = pluralPairCaseKey(exactMatch, pluralMatch);
     const current = groups.get(key) ?? [];
     current.push(
@@ -936,6 +992,7 @@ function serializePluralSelectorPair(
     );
     groups.set(key, current);
   }
+  addToAllGroups(groups, unmatched, "other");
 
   const pluralCases = serializePluralCases({
     groups: new Map(
@@ -1269,6 +1326,18 @@ function keepsPound(
   return (
     !writesPound(part, { plural: options.outside, pluralOffsets }) &&
     options.below.some((plural) => writesPound(part, { plural, pluralOffsets }))
+  );
+}
+
+/** The selectors that some variant matches on. */
+function usedSelectors(
+  variants: Variant[],
+  selectors: VariableReference[],
+): VariableReference[] {
+  return selectors.filter((selector) =>
+    variants.some((variant) =>
+      variant.matches.some((match) => match.key === selector.name),
+    ),
   );
 }
 
