@@ -82,6 +82,10 @@ const theme = {
  * - `variables`: typing `{` suggests these; Enter or Tab inserts the token.
  * - Deleting one tag of a markup pair removes its partner and keeps the words.
  *
+ * Undo is owned by the host: the editor keeps no history (⌘Z does nothing), so
+ * it never conflicts with an app-level undo. To undo, restore the previous
+ * pattern, call `forgetEdits()` and pass the variant again.
+ *
  * @fires change - `ChangeEventDetail` with the updated variant on every edit.
  * @fires pattern-editor-focus
  * @fires pattern-editor-blur

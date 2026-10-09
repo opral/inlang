@@ -950,7 +950,7 @@ importers:
   packages/ui-components/editor-component:
     dependencies:
       '@inlang/sdk':
-        specifier: workspace:*
+        specifier: workspace:^
         version: link:../../sdk
       '@lexical/plain-text':
         specifier: ^0.16.1

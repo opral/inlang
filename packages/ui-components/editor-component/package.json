@@ -55,7 +55,7 @@
 		"vitest": "2.1.8"
 	},
 	"peerDependencies": {
-		"@inlang/sdk": "workspace:*"
+		"@inlang/sdk": "workspace:^"
 	},
 	"dependencies": {
 		"@lexical/plain-text": "^0.16.1",

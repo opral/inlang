@@ -51,6 +51,10 @@ Components inherit the font of the page and use a neutral zinc palette. Override
 | `--inlang-token-font-size` / `--inlang-token-radius` | `0.86em` / `4px` | `{variable}` tokens and unknown-markup markers (editor and view) |
 | `--inlang-control-height` | `32px` | min. height of the tabs in `<inlang-message-forms>` |
 | `--inlang-forms-row-min-height` / `--inlang-forms-row-padding` | `36px` / `8px 10px` | form rows of `<inlang-message-forms>` |
+| `--inlang-forms-label-width` / `--inlang-forms-column-min-width` | `96px` / `120px` | label column and min. width of the other columns of the `<inlang-message-forms>` grid |
+| `--inlang-link-color` | `#1d4ed8` | underline of links in `<inlang-pattern-editor>` |
+| `--inlang-toolbar-background` / `--inlang-toolbar-color` | `#18181b` / `#fff` | selection toolbar of `<inlang-pattern-editor>` |
+| `--inlang-search-highlight` | `#fde68a` | text ranges a host registers as the `inlang-search` [CSS custom highlight](https://developer.mozilla.org/en-US/docs/Web/API/CSS_Custom_Highlight_API) in `<inlang-pattern-view>` (the text is in its open shadow root) |
 | `--inlang-popover-font-size` / `--inlang-popover-radius` / `--inlang-popover-shadow` | `13px` / `8px` (toolbar), `10px` (suggestions) / soft shadow | selection toolbar and `{` suggestions of `<inlang-pattern-editor>` |
 
 The pattern editor has its own border and hover/focus properties, see below. Together they are enough to match a host design system (Parrot maps them onto Figma's `--figma-color-*` tokens: 11px type, 1px borders, 5px radius).
@@ -81,9 +85,23 @@ Lexical-based editor for a variant's pattern (light DOM). Expressions and markup
 | `declarations` | `Declaration[]` (optional) | token tooltips |
 | `placeholder` | `string` | default `"Enter pattern ..."` |
 | `aria-label` | `string` | accessible name of the text box |
+| `markupOptions` | `Array<{ part: MarkupStart; label: string }>` | markup a selection can be wrapped in, usually the reference's (`{ part: <link href=…>, label: "Link like “docs”" }`). Selecting text shows a toolbar with these labels; ⌘K / ⌘B / ⌘I wrap the selection in the link / bold / italic option, and inside such markup the toolbar and the same shortcut remove it again |
+| `variables` | `Array<{ name: string; hint?: string }>` | suggested after typing `{`, in this order (e.g. the reference's variables missing in the translation first); ↑/↓ choose, Enter or Tab insert, Escape types a plain `{` |
 
-Methods: `insertExpression(name: string)` inserts `{name}` at the caret (or at the end) and focuses the editor; `focus()`.
+Methods:
+
+- `insertExpression(name: string)` inserts `{name}` at the caret (or at the end) and focuses the editor.
+- `wrapSelection(start: MarkupStart, placeholder?: string): boolean` wraps the selection in `start` and its closing tag; without a selection it inserts the markup around `placeholder` and selects that. Returns false when nothing was wrapped.
+- `unwrapMarkup(name: string): boolean` removes the markup `name` around the caret and keeps its words (unlinks a link). Returns false when there is none.
+- `insertMarkup(part: MarkupStandalone)` inserts a standalone tag (a line break, an icon) at the caret or at the end.
+- `forgetEdits()` makes the next `variant` replace the content even if it equals text typed earlier, e.g. after the host undid an edit (see Undo).
+- `focus()` focuses the editable area, also right after the editor was created or got a new `variant`.
+
 Events: `change` (`ChangeEventDetail` with the updated variant), `pattern-editor-focus`, `pattern-editor-blur`.
+
+Saving asynchronously is fine: the editor remembers what it emitted and ignores those patterns when the host passes them back while the user keeps typing (compared structurally, so a store may reorder keys). A pattern it did not emit replaces the content, and a `variant` with another `id` always does. Deleting one tag of a markup pair removes its partner and keeps the words; markup that has no partner to begin with (a lone `markup-start` is valid MessageFormat 2) is kept.
+
+**Undo is owned by the host.** The editor has no undo history of its own (⌘Z does nothing in it), so it never fights an app-level undo such as Figma's or a store's. To undo, the host restores the previous pattern, calls `forgetEdits()` and passes the variant again.
 Styling: all styles are scoped to the element. Custom properties: `--inlang-pattern-padding` (`14px 12px`), `--inlang-pattern-min-height` (`44px`), `--inlang-pattern-background` (`#fff`), `--inlang-pattern-hover-background`, `--inlang-pattern-font-size` (`14px`), `--inlang-pattern-line-height`, `--inlang-pattern-color`, `--inlang-pattern-focus-ring` (a box shadow; `none` removes it), `--inlang-pattern-border-width` (`0`), `--inlang-pattern-border-color` (`transparent`), `--inlang-pattern-hover-border-color` and `--inlang-pattern-focus-border-color` (both default to the border color), `--inlang-pattern-border-radius` (`0`). The border is part of the editable area: its padding and min-height include it, and the placeholder lines up with the text.
 
 ```html
@@ -98,6 +116,8 @@ Styling: all styles are scoped to the element. Custom properties: `--inlang-patt
 ### `<inlang-message-forms>`
 
 Compact overview of a message's variants for picking one. One selector: a list (match, plural example numbers, pattern). Two selectors: a grid (rows: first selector incl. "any other" for `*`, columns: second selector with plural examples). Three or more: segmented tabs for each leading selector plus a grid for the last two. Forms the locale needs without a variant (`missingVariants` of `@inlang/sdk`, the same rule as the `missing-variant` check) are "+ Add form" buttons; other empty combinations are a quiet "+ Add". Scrolls horizontally with a sticky first column.
+
+A plural's explicit `other` key (the shape Paraglide imports) is its catch-all: it is shown once as "other". Example numbers are shifted by an ICU `offset`.
 
 An exact number next to a plural category of the same input — what `@inlang/plugin-icu1` imports for `{count, plural, =0 {…} one {…} other {…}}`: an un-annotated selector (`countPluralExact`) plus a `:plural` selector (`countPlural`), both reading `count` — is shown as **one** choice (`0 exactly`, `one`, `other`) and a form never needs a number *and* a category (see `selectorGroups` of `@inlang/sdk`). The data is not changed.
 
@@ -155,9 +175,12 @@ Events: `values-change` (`{ values }`), `variant-match` (`{ variantId }`, also f
 pluralExamples("ru");
 // { one: "1, 21, 31…", few: "2–4, 22…", many: "0, 5–20…", other: "1.5" }
 pluralExamples("en", "ordinal"); // { one: "1, 21, 31…", two: "2, 22, 32…", … }
+pluralExamples("en", "cardinal", { exclude: [0] }); // { one: "1", other: "2, 3, 4…" }: 0 has its own form
+pluralExamples("en", "cardinal", { offset: 1 }); // ICU offset: { one: "2", other: "1, 3, 4…" }
 
 // The variant MessageFormat 2 would pick (exact numeric keys beat categories,
-// literal keys beat catch-all, first selector most significant).
+// literal keys beat catch-all, first selector most significant; an ICU offset
+// shifts the number for the category, not for exact numbers).
 selectVariant({ message, variants, declarations, values: { count: 3 }, locale: "ru" });
 
 // Make a message plural / ordinal / a select in every language (pure, returns a new bundle).
@@ -166,14 +189,17 @@ const plural = addSelector(bundle, { variable: "count", kind: "plural" });
 // declares `.local $countPlural = {$count :plural}`, adds the selector to every message and a catch-all
 // match to every existing variant (the text stays as the "other" form); the SDK's missingVariants /
 // <inlang-message-forms> then offer "+ Add form" for the categories of each language.
-addSelector(bundle, { variable: "gender", kind: "select", values: ["female", "male"], locale: "en" }); // + empty forms in "en"
-selectableVariables(bundle); // ["count", "gender"]: declared variables that are no selector yet
-removeSelector(plural, "countPlural"); // keeps the catch-all ("other") form per language (`{ keep: "one" }` to keep another), drops the rest and the local variable
+addSelector(bundle, { variable: "gender", kind: "select", values: ["female", "male"], locale: "en" }); // + empty forms in "en", before the catch-all
+selectableVariables(bundle); // ["count", "gender"]: declared variables whose input is no selector yet ("count" is gone once `countPlural` is)
+// addSelector throws for an input that already is a plural: add exact numbers with addExactNumber instead
+removeSelector(plural, "countPlural"); // keeps the catch-all ("other") form per language (`{ keep: "one" }` to keep another), drops the rest and the local variable;
+// a plural's exact-number selector (`countPluralExact`, ICU `=0`) is removed with it (`{ keep: "0" }` keeps that form)
 
 // Exact numbers (ICU `=0`) of a plural. The first one declares `.local $countPluralExact = {$count}`
 // (what @inlang/plugin-icu1 imports and exports) and puts it before `countPlural` in every message; the
 // message of `locale` (the reference) gets an empty "0" form per row. Other languages get no form: the SDK
 // requires it there ("+ Add form", `missing-variant`), so an untranslated =0 is absent from exports.
+// An exact-number selector that any language already has (icu1 declares it only where `=0` is used) is reused.
 const zero = addExactNumber(plural, { selector: "count", value: 0, locale: "en" }); // or selector: "countPlural"
 removeExactNumber(zero, { selector: "count", value: 0 }); // from every language; the last one removes the selector
 

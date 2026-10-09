@@ -45,7 +45,7 @@ async function mount(declarations: Declaration[], variants: VariantRow[]) {
 	element.declarations = declarations;
 	document.body.append(element);
 	await element.updateComplete;
-	const rows = [...element.shadowRoot!.querySelectorAll<HTMLButtonElement>(".form")];
+	const rows = Array.from(element.shadowRoot!.querySelectorAll<HTMLButtonElement>(".form"));
 	return rows.map((row) => row.getAttribute("aria-label")!);
 }
 
@@ -68,7 +68,7 @@ it("shifts example numbers by an ICU offset and leaves out its exact numbers", a
 	];
 	document.body.append(element);
 	await element.updateComplete;
-	const hints = [...element.shadowRoot!.querySelectorAll(".label")].map((label) => label.textContent!.replace(/\s+/g, " ").trim());
+	const hints = Array.from(element.shadowRoot!.querySelectorAll(".label")).map((label) => label.textContent!.replace(/\s+/g, " ").trim());
 	// count 2 is "one" (2 - 1 = 1); 0 and 1 have their own forms
 	expect(hints).toEqual(["0exactly", "1exactly", "one2", "other3, 4, 5…"]);
 });
