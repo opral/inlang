@@ -7,12 +7,15 @@ import type {
 	Pattern,
 } from "@inlang/sdk";
 import {
+	$addUpdateTag,
 	$createLineBreakNode,
 	$createParagraphNode,
 	$createRangeSelection,
 	$createTextNode,
 	$getRoot,
+	$getEditor,
 	$getSelection,
+	$hasUpdateTag,
 	$isElementNode,
 	$isLineBreakNode,
 	$isRangeSelection,
@@ -20,6 +23,7 @@ import {
 	$setSelection,
 	TextNode,
 	type EditorConfig,
+	type EditorState,
 	type LexicalEditor,
 	type LexicalNode,
 	type NodeKey,
@@ -168,6 +172,7 @@ export function $isPatternTokenNode(
 
 /** Replaces the editor content with a pattern. Must run inside `editor.update`. */
 export function $setPattern(pattern: Pattern | undefined) {
+	$addUpdateTag(SET_PATTERN_UPDATE);
 	const root = $getRoot();
 	root.clear();
 	const paragraph = $createParagraphNode();
@@ -265,34 +270,101 @@ export function $syncMarkupFormats() {
 	}
 }
 
-const VARIABLE_PATTERN = /\{\s*([A-Za-z_$][\w$.:-]*)\s*\}/;
+const VARIABLE_PATTERN = /\{\s*([A-Za-z_$][\w$.:-]*)\s*\}/g;
+
+/** Update tag of `$setPattern`: the braces of stored text are text (ICU `'{'literal'}'`), not variables. */
+const SET_PATTERN_UPDATE = "inlang-pattern-set";
+
+/** Per pending editor state: text pieces a conversion left over, whose braces were not typed. */
+const settledPieces = new WeakMap<EditorState, Set<NodeKey>>();
+
+/**
+ * The part of `after` that is new compared with `before` (the text without the
+ * common prefix and suffix): what the user typed or pasted.
+ */
+function insertedRange(before: string, after: string): [number, number] {
+	let from = 0;
+	const max = Math.min(before.length, after.length);
+	while (from < max && before[from] === after[from]) from++;
+	let suffix = 0;
+	while (
+		suffix < max - from &&
+		before[before.length - 1 - suffix] === after[after.length - 1 - suffix]
+	)
+		suffix++;
+	return [from, after.length - suffix];
+}
 
 /**
  * Node transform: typed or pasted `{name}` text becomes an expression token,
  * keeping the old string-based editing behaviour working.
+ *
+ * Only braces the user just typed or pasted are converted. Braces that are
+ * text of the stored pattern (an escaped ICU `'{'literal'}'`) stay text, also
+ * when the user edits next to them.
  */
 export function $transformVariableText(node: TextNode) {
 	if (!node.isSimpleText()) return;
+	if ($hasUpdateTag(SET_PATTERN_UPDATE)) return;
+	const editor = $getEditor();
+	const pending = editor._pendingEditorState;
+	const key = node.getKey();
+	if (pending && settledPieces.get(pending)?.delete(key)) return;
 	const text = node.getTextContent();
-	const match = VARIABLE_PATTERN.exec(text);
-	if (!match) return;
-	const start = match.index;
-	const end = start + match[0].length;
-	const pieces = node.splitText(start, end);
-	const piece = start === 0 ? pieces[0] : pieces[1];
-	if (!piece) return;
-	const token = $createPatternTokenNode({
-		type: "expression",
-		arg: { type: "variable-reference", name: match[1]! },
+	const previous = editor.getEditorState()._nodeMap.get(key);
+	const [from, to] = insertedRange(
+		$isTextNode(previous) ? previous.__text : "",
+		text
+	);
+	const matches = [...text.matchAll(VARIABLE_PATTERN)].filter((match) => {
+		const start = match.index!;
+		const end = start + match[0].length;
+		// a deletion (from === to) that joined "{na" and "me}" counts as typed as well
+		return start < to && end > from && (from !== to || start < from);
 	});
-	token.setFormat(piece.getFormat());
+	if (matches.length === 0) return;
 	const selection = $getSelection();
-	const hadCaret =
+	const caret =
 		$isRangeSelection(selection) &&
 		selection.isCollapsed() &&
-		selection.anchor.key === piece.getKey();
-	piece.replace(token);
-	if (hadCaret) token.selectNext(0, 0);
+		selection.anchor.key === key
+			? selection.anchor.offset
+			: undefined;
+	const offsets = matches.flatMap((match) => [
+		match.index!,
+		match.index! + match[0].length,
+	]);
+	const pieces = node.splitText(...offsets);
+	// splitText drops empty pieces: pieces[0] is text before the first match unless it starts at 0
+	let start = 0;
+	let caretTarget: (() => void) | undefined;
+	const settled = new Set<NodeKey>();
+	let index = 0;
+	for (const piece of pieces) {
+		const length = piece.getTextContentSize();
+		const match = matches[index];
+		const isMatch = match !== undefined && match.index === start;
+		if (isMatch) {
+			index++;
+			const token = $createPatternTokenNode({
+				type: "expression",
+				arg: { type: "variable-reference", name: match[1]! },
+			});
+			token.setFormat(piece.getFormat());
+			piece.replace(token);
+			if (caret !== undefined && caret > start && caret <= start + length)
+				caretTarget = () => token.selectNext(0, 0);
+		} else {
+			settled.add(piece.getKey());
+			if (caret !== undefined && caret >= start && caret <= start + length) {
+				const offset = caret - start;
+				caretTarget ??= () => piece.select(offset, offset);
+			}
+		}
+		start += length;
+	}
+	if (pending) settledPieces.set(pending, settled);
+	caretTarget?.();
 }
 
 /** Moves a caret that landed inside a token to the token's nearest edge. */

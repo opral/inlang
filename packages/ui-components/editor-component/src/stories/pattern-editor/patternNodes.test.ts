@@ -3,11 +3,13 @@ import type { Pattern } from "@inlang/sdk";
 import {
 	$createRangeSelection,
 	$getRoot,
+	$getSelection,
 	$isElementNode,
 	$setSelection,
 	TextNode,
 	createEditor,
 	type LexicalEditor,
+	type RangeSelection,
 } from "lexical";
 import {
 	$caretQuery,
@@ -99,6 +101,72 @@ it("turns typed {name} text into an expression token", () => {
 		{ type: "expression", arg: { type: "variable-reference", name: "count" } },
 		{ type: "text", value: " items" },
 	]);
+});
+
+/** Puts a collapsed caret into the text node at `index` of the first paragraph. */
+const caretAt = (index: number, offset: number) => {
+	const node = children()[index] as TextNode;
+	const selection = $createRangeSelection();
+	selection.anchor.set(node.getKey(), offset, "text");
+	selection.focus.set(node.getKey(), offset, "text");
+	$setSelection(selection);
+	return selection;
+};
+
+it("keeps braces of stored text as text (escaped ICU '{'literal'}')", () => {
+	const editor = setup();
+	const stored: Pattern = [
+		{ type: "text", value: "It's {literal} " },
+		{ type: "expression", arg: { type: "variable-reference", name: "n" } },
+		{ type: "text", value: " {tags}" },
+	];
+	update(editor, () => $setPattern(stored));
+	expect(read(editor, $readPattern)).toEqual(stored);
+});
+
+it("keeps stored braces as text when the user types into the same text", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([{ type: "text", value: "It's {literal} here" }]));
+	update(editor, () => caretAt(0, 4).insertText("!"));
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "It's! {literal} here" },
+	]);
+	// deleting next to the braces does not turn them into a variable either
+	update(editor, () => {
+		const selection = caretAt(0, 5);
+		selection.anchor.offset = 4;
+		selection.removeText();
+	});
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "It's {literal} here" },
+	]);
+});
+
+it("turns only the typed {name} into a token next to stored braces", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([{ type: "text", value: "{literal} for " }]));
+	// typed key by key
+	for (const key of ["{", "w", "h", "o", "}"])
+		update(editor, () => {
+			$getRoot().selectEnd();
+			($getSelection() as RangeSelection).insertText(key);
+		});
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "{literal} for " },
+		{ type: "expression", arg: { type: "variable-reference", name: "who" } },
+	]);
+	// pasted at once, with two variables, between stored text
+	update(editor, () => $setPattern([{ type: "text", value: "{a} | {b}" }]));
+	update(editor, () => caretAt(0, 4).insertText("{x} and {y} "));
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "text", value: "{a} " },
+		{ type: "expression", arg: { type: "variable-reference", name: "x" } },
+		{ type: "text", value: " and " },
+		{ type: "expression", arg: { type: "variable-reference", name: "y" } },
+		{ type: "text", value: " | {b}" },
+	]);
+	// the caret stays behind the pasted text
+	read(editor, () => expect($getCaretOffset()).toBe("{a} {x} and {y} ".length));
 });
 
 it("removes a token as a whole", () => {
