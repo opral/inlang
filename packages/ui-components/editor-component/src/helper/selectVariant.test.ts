@@ -136,3 +136,43 @@ it("selects the exact number of an imported ICU =0 before the plural category", 
 	expect(pickIcu(1)).toBe(variants[1]);
 	expect(pickIcu(5)).toBe(variants[2]);
 });
+
+it("chooses the plural category for the number minus an ICU offset; exact numbers compare the number itself", () => {
+	// {count, plural, offset:1 =0 {…} =1 {…} one {you and one other} other {…}}
+	const declarations = [
+		{ type: "input-variable", name: "count" },
+		{
+			type: "local-variable",
+			name: "countPlural",
+			value: {
+				type: "expression",
+				arg: { type: "variable-reference", name: "count" },
+				annotation: {
+					type: "function-reference",
+					name: "plural",
+					options: [{ name: "offset", value: { type: "literal", value: "1" } }],
+				},
+			},
+		},
+	] as const;
+	const variants = [
+		variant({ countPlural: "0" }, [text("nobody")]),
+		variant({ countPlural: "1" }, [text("you")]),
+		variant({ countPlural: "one" }, [text("you and one other")]),
+		variant({ countPlural: "*" }, [text("you and # others")]),
+	];
+	const pickOffset = (count: number) =>
+		(
+			selectVariant({
+				message: message("en", ["countPlural"]),
+				variants,
+				declarations: declarations as never,
+				values: { count },
+				locale: "en",
+			})?.pattern[0] as { value: string }
+		).value;
+	expect(pickOffset(0)).toBe("nobody");
+	expect(pickOffset(1)).toBe("you");
+	expect(pickOffset(2)).toBe("you and one other");
+	expect(pickOffset(3)).toBe("you and # others");
+});

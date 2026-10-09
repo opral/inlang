@@ -23,7 +23,8 @@ export type SelectVariantArgs<
  *
  * Each selector is resolved to an ordered list of preferred keys:
  * - plural selectors: exact numeric literal keys equal to the value (e.g.
- *   "1" or "0") first, then the `Intl.PluralRules` category.
+ *   "1" or "0") first, then the `Intl.PluralRules` category (of the value
+ *   minus an ICU `offset`, if the plural has one).
  * - everything else: `String(value)`.
  *
  * A variant applies when every match is a preferred key or a catch-all
@@ -91,10 +92,11 @@ function keyRanker(
 			return (key) => (key === String(value) ? 0 : -1);
 		let category: string | undefined;
 		try {
-			category = (
-				pluralRules(name, declarations, locale)?.rules ??
-				new Intl.PluralRules(locale)
-			).select(number);
+			const rules = pluralRules(name, declarations, locale);
+			// ICU `offset`: the category is chosen for the number minus the offset
+			category = (rules?.rules ?? new Intl.PluralRules(locale)).select(
+				number - (rules?.offset ?? 0)
+			);
 		} catch {
 			category = undefined;
 		}

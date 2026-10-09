@@ -2,8 +2,10 @@ import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import {
 	isEmptyPattern,
 	isNumericKey,
+	isPluralSelector,
 	matchValue,
 	missingVariants,
+	pluralRules,
 	selectorGroups,
 } from "@inlang/sdk/browser";
 import { LitElement, css, html, nothing, type TemplateResult } from "lit";
@@ -319,23 +321,45 @@ export default class InlangMessageForms extends LitElement {
 				names: group.names,
 				label: group.input,
 				plural: group.plural,
-				keys: group.keys,
+				// an explicit "other" of a plural is its catch-all (as `variantCovers` of the SDK has it): one key
+				keys: group.isPlural
+					? group.keys.filter((key) => key !== "other")
+					: group.keys,
 				values: group.values,
-				keyOf: group.keyOf,
-				// numbers with their own form (ICU `=0`) are not examples of a category
+				keyOf: (variant) => {
+					const key = group.keyOf(variant);
+					return group.isPlural && key === "other" ? "*" : key;
+				},
+				// numbers with their own form (ICU `=0`) are not examples of a category;
+				// with an ICU `offset` the categories are those of the number minus the offset
 				examples: group.plural
 					? pluralExamples(this._locale, group.plural.type, {
 							exclude: group.keys.filter(isNumericKey),
+							offset: pluralRules(group.selector, this.declarations, this._locale)
+								?.offset,
 						})
 					: {},
 			})
 		);
 	}
 
+	/** The variant of a combination; the catch-all of a plural is also found as an explicit "other". */
 	private _find(combination: Record<string, string>): VariantRow | undefined {
 		const names = Object.keys(combination);
-		return this._variants.find((variant) =>
+		const exact = this._variants.find((variant) =>
 			names.every((name) => matchValue(variant, name) === combination[name])
+		);
+		if (exact) return exact;
+		return this._variants.find((variant) =>
+			names.every((name) => {
+				const value = matchValue(variant, name);
+				return (
+					value === combination[name] ||
+					(combination[name] === "*" &&
+						value === "other" &&
+						isPluralSelector(name, this.declarations))
+				);
+			})
 		);
 	}
 

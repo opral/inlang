@@ -19,6 +19,10 @@ const BUDGET = 3;
  * `=0` next to the plural: English "other" then shows "2, 3, 4…", not
  * "0, 2, 3…". A category whose every number is excluded has no example.
  *
+ * `offset` is an ICU `offset`: the category is chosen for the number minus
+ * the offset, so the examples are shifted by it (with `offset: 1`, English
+ * "one" is 2). `exclude` lists the numbers themselves, as `=0` / `=1` do.
+ *
  * Returns an empty object for unsupported or invalid locales rather than
  * guessing another language's rules.
  *
@@ -27,18 +31,22 @@ const BUDGET = 3;
  * // { one: "1, 21, 31…", few: "2–4, 22…", many: "0, 5–20…", other: "1.5" }
  * pluralExamples("en", "cardinal", { exclude: [0] })
  * // { one: "1", other: "2, 3, 4…" }
+ * pluralExamples("en", "cardinal", { offset: 1, exclude: [0, 1] })
+ * // { one: "2", other: "3, 4, 5…" }
  */
 export function pluralExamples(
 	locale: string,
 	type: "cardinal" | "ordinal" = "cardinal",
-	options: { exclude?: Iterable<number | string> } = {}
+	options: { exclude?: Iterable<number | string>; offset?: number } = {}
 ): Record<string, string> {
+	const offset = Number.isFinite(options.offset) ? options.offset! : 0;
 	const exclude = new Set(
 		[...(options.exclude ?? [])].map(Number).filter(Number.isFinite)
 	);
-	const key = `${locale}\u0000${type}\u0000${[...exclude].sort((a, b) => a - b).join()}`;
+	const key = `${locale}\u0000${type}\u0000${offset}\u0000${[...exclude].sort((a, b) => a - b).join()}`;
 	const cached = cache.get(key);
-	if (cached) return cached;
+	// a copy, so a caller that changes the result does not change the cache
+	if (cached) return { ...cached };
 	let rules: Intl.PluralRules;
 	try {
 		if (!Intl.PluralRules.supportedLocalesOf(locale).length) return {};
@@ -51,30 +59,30 @@ export function pluralExamples(
 		...Array.from({ length: MAX_INTEGER + 1 }, (_, index) => index),
 		...LARGE_INTEGERS,
 	]) {
-		if (exclude.has(number)) continue;
+		if (exclude.has(number + offset)) continue;
 		const category = rules.select(number);
 		const list = integers.get(category) ?? [];
-		list.push(number);
+		list.push(number + offset);
 		integers.set(category, list);
 	}
 	const result: Record<string, string> = {};
 	for (const category of rules.resolvedOptions().pluralCategories) {
 		const numbers = integers.get(category);
 		if (numbers?.length) {
-			result[category] = describe(numbers);
+			result[category] = describe(numbers, offset);
 			continue;
 		}
 		const decimal = DECIMALS.find(
-			(value) => !exclude.has(value) && rules.select(value) === category
+			(value) => !exclude.has(value + offset) && rules.select(value) === category
 		);
-		if (decimal !== undefined) result[category] = String(decimal);
+		if (decimal !== undefined) result[category] = String(decimal + offset);
 	}
 	if (cache.size >= 128) cache.delete(cache.keys().next().value!);
 	cache.set(key, result);
-	return result;
+	return { ...result };
 }
 
-function describe(numbers: number[]): string {
+function describe(numbers: number[], offset: number): string {
 	// group consecutive integers into runs
 	const runs: Array<[number, number]> = [];
 	for (const number of numbers) {
@@ -92,7 +100,7 @@ function describe(numbers: number[]): string {
 			break;
 		}
 		// a run that reaches the sampling limit is open-ended: list its first numbers
-		const openEnded = end === MAX_INTEGER && start < end;
+		const openEnded = end === MAX_INTEGER + offset && start < end;
 		if (start === end) {
 			parts.push(String(start));
 			budget -= 1;

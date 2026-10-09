@@ -28,8 +28,8 @@ it("finds categories only reached by large numbers", () => {
 });
 
 it("caches per locale and type and returns {} for unsupported locales", () => {
-	expect(pluralExamples("ru")).toBe(pluralExamples("ru"));
-	expect(pluralExamples("ru", "ordinal")).not.toBe(pluralExamples("ru"));
+	expect(pluralExamples("ru")).toEqual(pluralExamples("ru"));
+	expect(pluralExamples("ru", "ordinal")).not.toEqual(pluralExamples("ru"));
 	expect(pluralExamples("zz")).toEqual({});
 	expect(pluralExamples("bad_locale")).toEqual({});
 });
@@ -49,4 +49,16 @@ it("leaves out numbers that have their own form", () => {
 	expect(pluralExamples("en", "cardinal", { exclude: [0] })).not.toBe(
 		pluralExamples("en")
 	);
+});
+
+it("returns a copy: changing the result does not change the next call", () => {
+	const first = pluralExamples("en");
+	first.one = "changed";
+	delete (first as Record<string, string>).other;
+	expect(pluralExamples("en")).toEqual({ one: "1", other: "0, 2, 3…" });
+});
+
+it("shifts examples by an ICU offset; excluded numbers are the numbers themselves", () => {
+	expect(pluralExamples("en", "cardinal", { offset: 1 })).toEqual({ one: "2", other: "1, 3, 4…" });
+	expect(pluralExamples("en", "cardinal", { offset: 1, exclude: [0, 1] })).toEqual({ one: "2", other: "3, 4, 5…" });
 });
