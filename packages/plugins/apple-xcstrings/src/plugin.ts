@@ -48,7 +48,19 @@ type Catalog = {
       localizations?: Record<string, Localization>;
     }
   >;
-  version: "1.0";
+  version: string;
+};
+
+/** How `exportCatalog` writes what the previous catalog doesn't decide. */
+type CatalogOptions = {
+  /**
+   * Strings whose previous catalog has a localization of the source
+   * language. It is written even if its value is the key, see
+   * `isKeyAsSourceValue`.
+   */
+  sourceLocalizations?: ReadonlySet<string>;
+  /** The `version` of the catalog, `"1.0"` by default. */
+  version?: string;
 };
 
 const pluralCategories = new Set([
@@ -104,18 +116,12 @@ function importCatalogs(
   for (const [id, entry] of Object.entries(catalog.strings)) {
     if (!entry || typeof entry !== "object")
       throw new Error(`Invalid catalog entry "${id}"`);
-    if (!entry.localizations || Object.keys(entry.localizations).length === 0)
-      throw new Error(
-        `Apple .xcstrings source-only entry "${id}" has no localization value to import`,
-      );
-    for (const [locale, localization] of Object.entries(
-      entry.localizations ?? {},
-    )) {
-      if (!settings.locales.includes(locale))
-        throw new Error(
-          `Apple .xcstrings locale "${locale}" in "${id}" is not declared in project settings`,
-        );
-      const imported = importLocalization(id, localization);
+    const localizations = entry.localizations ?? {};
+    assertObject(localizations, `localizations of "${id}"`);
+    const add = (
+      locale: string,
+      imported: ReturnType<typeof importLocalization>,
+    ) => {
       const existing = bundles.get(id) ?? { id, declarations: [] };
       bundles.set(id, mergeDeclarations(existing, imported.declarations));
       messages.push({ bundleId: id, locale, selectors: imported.selectors });
@@ -125,12 +131,132 @@ function importCatalogs(
           messageLocale: locale,
           ...variant,
         });
+    };
+    for (const [locale, localization] of Object.entries(localizations)) {
+      if (!settings.locales.includes(locale))
+        throw new Error(
+          `Apple .xcstrings locale "${locale}" in "${id}" is not declared in project settings`,
+        );
+      add(
+        locale,
+        importLocalization(id, localization, () =>
+          directPluralFormatOf(id, localizations),
+        ),
+      );
     }
+    // Strings without a localization of the source language, e.g. strings
+    // extracted from code that nobody translated yet (`"key" : { }`), strings
+    // with `shouldTranslate: false`, stale or manual strings: Xcode uses the
+    // key as their source language value. It is imported as such, so that
+    // editors show it and translators can translate it. The export doesn't
+    // write it back, see `isKeyAsSourceValue`.
+    if (!own(localizations, catalog.sourceLanguage))
+      add(catalog.sourceLanguage, importKeyAsSourceValue(id));
   }
   return { bundles: [...bundles.values()], messages, variants };
 }
 
-function importLocalization(id: string, localization: Localization) {
+/**
+ * The plural argument of a direct plural of the first localization of a
+ * string whose key or variants have a numeric argument, e.g. `%lld` of
+ * `"%lld items"` in `en` for `de` variants that a translator wrote as text
+ * ("Ein Artikel", "Viele Artikel"). Otherwise `%lld` as the first argument.
+ * Before, such a translation failed the next import of the catalog.
+ */
+function directPluralFormatOf(
+  id: string,
+  localizations: Record<string, Localization>,
+): { position: number; specifier: string } {
+  for (const localization of Object.values(localizations)) {
+    const units = localization?.variations?.plural;
+    if (!units || typeof units !== "object") continue;
+    try {
+      const format = inferDirectPluralFormat(
+        id,
+        parseFormat(id).pattern,
+        Object.values(units).map((unit) => ({
+          parsed: parseFormat(unit.stringUnit.value),
+        })),
+      );
+      if (format) return format;
+    } catch {
+      // the import of that localization reports it
+    }
+  }
+  return { position: 1, specifier: "lld" };
+}
+
+/**
+ * The message of the source language for a string without a localization of
+ * the source language: its key, which Xcode uses as the value. A key that is
+ * not a format string the plugin can read (e.g. `"%1$@ and %@"`) is text.
+ */
+function importKeyAsSourceValue(id: string) {
+  const parsed = parseFormat(id);
+  return {
+    declarations: inputDeclarations(parsed.variables),
+    selectors: [],
+    variants: [{ matches: [], pattern: parsed.pattern }],
+  };
+}
+
+/**
+ * A key or value as a pattern. A format string that the plugin can't read
+ * (e.g. positional and implicit arguments mixed, `%1$@ %@`) is text, which
+ * the export writes as it is, so that it reads the same again. Before, it
+ * failed the import of the whole catalog.
+ */
+function parseFormat(value: string, implicitStart = 1) {
+  try {
+    return parsePattern(value, implicitStart);
+  } catch {
+    return {
+      pattern: [{ type: "text", value }] as Pattern,
+      variables: [] as string[],
+      nextImplicit: implicitStart,
+    };
+  }
+}
+
+/**
+ * Whether `localization` of the source language is what Xcode uses for a
+ * string without one: its key. The export doesn't write such a localization,
+ * so that a string without a localization of the source language, which the
+ * import gives the key as value, is written as it was, and a translation of
+ * it only adds the translated locale. A localization of the source language
+ * that the previous catalog has is written, also if its value is the key
+ * (e.g. Xcode's `"Pos %1$@ %2$lld"` for the key `"Pos %@ %lld"`).
+ */
+function isKeyAsSourceValue(
+  id: string,
+  locale: string,
+  localization: Localization,
+  settings: ExportArgs["settings"],
+) {
+  if (locale !== settings.baseLocale) return false;
+  if (Object.keys(localization).join() !== "stringUnit") return false;
+  const parsed = parseFormat(id);
+  let keyValue: string;
+  try {
+    keyValue = serializePattern(parsed.pattern, {
+      id,
+      declarations: inputDeclarations(parsed.variables),
+    });
+  } catch {
+    return false;
+  }
+  return localization.stringUnit?.value === keyValue;
+}
+
+function importLocalization(
+  id: string,
+  localization: Localization,
+  /** the argument of a direct plural whose key and variants have none */
+  directPluralFormat: () => { position: number; specifier: string } = () => ({
+    position: 1,
+    specifier: "lld",
+  }),
+) {
   assertObject(localization, `localization for "${id}"`);
   const hasPlain = localization.stringUnit !== undefined;
   const substitutions = localization.substitutions ?? {};
@@ -150,7 +276,7 @@ function importLocalization(id: string, localization: Localization) {
     assertVariationUnits(units, id, "device", deviceCategories);
     const parsed = Object.entries(units).map(([key, unit]) => ({
       key,
-      parsed: parsePattern(unit.stringUnit.value),
+      parsed: parseFormat(unit.stringUnit.value),
     }));
     return {
       declarations: [
@@ -170,12 +296,14 @@ function importLocalization(id: string, localization: Localization) {
   if (hasDirectPlural) {
     const units = localization.variations!.plural!;
     assertVariationUnits(units, id, "plural", pluralCategories);
-    const sourcePattern = parsePattern(id);
+    const sourcePattern = parseFormat(id);
     const parsed = Object.entries(units).map(([key, unit]) => ({
       key,
-      parsed: parsePattern(unit.stringUnit.value),
+      parsed: parseFormat(unit.stringUnit.value),
     }));
-    const format = inferDirectPluralFormat(id, sourcePattern.pattern, parsed);
+    const format =
+      inferDirectPluralFormat(id, sourcePattern.pattern, parsed) ??
+      directPluralFormat();
     const inputName = `arg${format.position}`;
     const selector = "countPlural";
     return {
@@ -235,16 +363,54 @@ function importLocalization(id: string, localization: Localization) {
       throw new Error(
         `Apple .xcstrings substitution template in "${id}" cannot mix implicit printf arguments with positional argNum`,
       );
-    const parsedPrefix = parsePattern(prefix!);
-    const parsedSuffix = parsePattern(
-      suffix!,
-      Math.max(argNum + 1, parsedPrefix.nextImplicit),
-    );
+    // A variant that isn't a format string the plugin can read is text
+    // together with the text around `%#@name@`, which the export writes as
+    // it is in the variant. Escaping it next to the variables of the
+    // template would change what it displays.
+    // A `%` that the plugin reads as text (e.g. `%-5lld`, `50% off`) would be
+    // escaped next to variables too.
+    const tryParse = (value: string, implicitStart?: number) => {
+      try {
+        const parsed = parsePattern(value, implicitStart);
+        // without variables, `parsePattern` keeps the text as it is
+        return parsed.pattern.every((part) => part.type === "text") &&
+          hasLonePercent(value)
+          ? undefined
+          : parsed;
+      } catch {
+        return undefined;
+      }
+    };
+    const parsedPrefix = tryParse(prefix!);
+    const parsedSuffix =
+      parsedPrefix &&
+      tryParse(suffix!, Math.max(argNum + 1, parsedPrefix.nextImplicit));
     const parsed = Object.entries(substitution.variations.plural).map(
-      ([key, unit]) => ({
-        key,
-        parsed: parsePattern(unit.stringUnit.value, argNum),
-      }),
+      ([key, unit]) => {
+        const variant = parsedSuffix && tryParse(unit.stringUnit.value, argNum);
+        return {
+          key,
+          variables: variant
+            ? [
+                ...parsedPrefix!.variables,
+                ...variant.variables,
+                ...parsedSuffix.variables,
+              ]
+            : [],
+          pattern: variant
+            ? [
+                ...parsedPrefix!.pattern,
+                ...variant.pattern,
+                ...parsedSuffix.pattern,
+              ]
+            : ([
+                {
+                  type: "text",
+                  value: prefix + unit.stringUnit.value + suffix,
+                },
+              ] as Pattern),
+        };
+      },
     );
     return {
       declarations: [
@@ -255,26 +421,18 @@ function importLocalization(id: string, localization: Localization) {
           applePluralStyle: "substitution",
         }),
         ...inputDeclarations(
-          [
-            ...parsedPrefix.variables,
-            ...parsed.flatMap(({ parsed }) => parsed.variables),
-            ...parsedSuffix.variables,
-          ],
+          parsed.flatMap(({ variables }) => variables),
           [inputName, name],
         ),
       ],
       selectors: [{ type: "variable-reference" as const, name }],
-      variants: parsed.map(({ key, parsed }) => ({
+      variants: parsed.map(({ key, pattern }) => ({
         matches: [match(name, key)],
-        pattern: [
-          ...parsedPrefix.pattern,
-          ...parsed.pattern,
-          ...parsedSuffix.pattern,
-        ],
+        pattern,
       })),
     };
   }
-  const parsed = parsePattern(
+  const parsed = parseFormat(
     requiredStringUnit(localization.stringUnit, id).value,
   );
   return {
@@ -295,7 +453,8 @@ async function exportKeepingEntries(args: ExportArgs) {
   const previous = args.files?.find(
     (file) => file.locale === args.settings.baseLocale,
   );
-  const previousStrings = previous && stringsOf(previous.content);
+  const previousCatalog = previous && catalogOf(previous.content);
+  const previousStrings = previousCatalog?.strings;
   let previousRows: ReturnType<typeof rowsOf> | undefined;
   try {
     previousRows =
@@ -310,9 +469,23 @@ async function exportKeepingEntries(args: ExportArgs) {
     previousStrings === undefined ||
     previousRows === undefined
   )
-    return exportCatalog(args);
+    return exportCatalog(args, { version: previousCatalog?.version });
+  const options: CatalogOptions = {
+    sourceLocalizations: new Set(
+      Object.entries(previousStrings).flatMap(([id, entry]) => {
+        const localizations = (entry as Catalog["strings"][string])
+          ?.localizations;
+        return localizations &&
+          typeof localizations === "object" &&
+          own(localizations, args.settings.baseLocale) !== undefined
+          ? [id]
+          : [];
+      }),
+    ),
+    version: previousCatalog!.version,
+  };
   const exportFiles = (exportArgs: Omit<ExportArgs, "files">) =>
-    withUnimportedKeys(exportCatalog(exportArgs), previousStrings);
+    withUnimportedKeys(exportCatalog(exportArgs, options), previousStrings);
   // New strings and locales are inserted where Xcode puts them.
   const exported = inXcodeOrder(exportFiles(args));
   const keep = (content: Uint8Array) =>
@@ -327,7 +500,8 @@ async function exportKeepingEntries(args: ExportArgs) {
     });
   const result = await keep(previous.content);
   // the helper marks the files that keep the text of the previous file
-  if (result[0]?.verbatim === true) return result;
+  if (result[0]?.verbatim === true)
+    return withXcodeEmptyObjects(result, previous.content);
   // The kept text doesn't import to the new data, e.g. because the plugin
   // moves the text around `%#@name@` of a substitution into its variants.
   // Writes the localizations that changed as a whole instead of their changed
@@ -341,7 +515,8 @@ async function exportKeepingEntries(args: ExportArgs) {
     });
     if (content !== undefined) {
       const rewritten = await keep(content);
-      if (rewritten[0]?.verbatim === true) return rewritten;
+      if (rewritten[0]?.verbatim === true)
+        return withXcodeEmptyObjects(rewritten, previous.content);
     }
   } catch {
     // the full export below
@@ -506,16 +681,73 @@ function rowsOf(imported: ReturnType<typeof importCatalogs>) {
  */
 const importedStringKeys = new Set(["extractionState", "localizations"]);
 
-/** The `strings` of a catalog, or `undefined` if it is not a catalog. */
-function stringsOf(content: Uint8Array): Record<string, unknown> | undefined {
+/**
+ * The `strings` and `version` of a catalog, or `undefined` if it is not a
+ * catalog.
+ */
+function catalogOf(
+  content: Uint8Array,
+): { strings: Record<string, unknown>; version: string } | undefined {
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(content));
-    assertObject(parsed, "Apple .xcstrings catalog");
-    assertObject(parsed.strings, "Apple .xcstrings strings");
-    return parsed.strings;
+    const parsed = parseCatalog(content);
+    return { strings: parsed.strings, version: parsed.version };
   } catch {
     return undefined;
   }
+}
+
+/**
+ * Writes the empty objects of the kept catalog like Xcode, `{`, a blank line
+ * and `}`, if the previous catalog is written like Xcode (`"sourceLanguage" : `
+ * and no `{}`),
+ * e.g. a string whose only translation was removed.
+ */
+function withXcodeEmptyObjects(
+  files: Awaited<ReturnType<typeof keepUnchangedJsonEntries>>,
+  previous: Uint8Array,
+) {
+  const decoder = new TextDecoder("utf-8", { ignoreBOM: true });
+  const previousText = decoder.decode(previous);
+  if (
+    !previousText.includes('"sourceLanguage" : ') ||
+    xcodeEmptyObjects(previousText) !== previousText
+  )
+    return files;
+  return files.map((file) => {
+    const text = decoder.decode(file.content);
+    const result = xcodeEmptyObjects(text);
+    return result === text
+      ? file
+      : { ...file, content: new TextEncoder().encode(result) };
+  });
+}
+
+/** `text` (JSON) with every `{}` outside of strings written like Xcode. */
+function xcodeEmptyObjects(text: string): string {
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  let result = "";
+  let inString = false;
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]!;
+    if (inString) {
+      if (char === "\\") {
+        result += char + (text[index + 1] ?? "");
+        index++;
+        continue;
+      }
+      if (char === '"') inString = false;
+    } else if (char === '"') {
+      inString = true;
+    } else if (char === "{" && text[index + 1] === "}") {
+      const lineStart = text.lastIndexOf("\n", index) + 1;
+      const indent = /^[ \t]*/.exec(text.slice(lineStart))![0];
+      result += `{${newline}${newline}${indent}}`;
+      index++;
+      continue;
+    }
+    result += char;
+  }
+  return result;
 }
 
 /**
@@ -571,12 +803,10 @@ function withUnimportedKeys(
   });
 }
 
-function exportCatalog({
-  bundles,
-  messages,
-  variants,
-  settings,
-}: Omit<ExportArgs, "files">) {
+function exportCatalog(
+  { bundles, messages, variants, settings }: Omit<ExportArgs, "files">,
+  options: CatalogOptions = {},
+) {
   assertUniqueIds(bundles, "bundle");
   assertUniqueIds(messages, "message");
   const messageIds = new Set(messages.map((message) => message.id));
@@ -598,20 +828,27 @@ function exportCatalog({
     );
     if (bundleMessages.length === 0) continue;
     const localizations: Record<string, Localization> = {};
+    const locales = new Set<string>();
     for (const message of bundleMessages) {
-      if (localizations[message.locale])
+      if (locales.has(message.locale))
         throw new Error(
           `Duplicate Apple .xcstrings locale "${message.locale}" in "${bundle.id}"`,
         );
-      localizations[message.locale] = exportLocalization(
-        bundle,
-        message,
-        variants,
-      );
+      locales.add(message.locale);
+      const localization = exportLocalization(bundle, message, variants);
+      if (
+        !options.sourceLocalizations?.has(bundle.id) &&
+        isKeyAsSourceValue(bundle.id, message.locale, localization, settings)
+      )
+        continue;
+      localizations[message.locale] = localization;
     }
     stringEntries.push([
       bundle.id,
-      { extractionState: "manual", localizations },
+      Object.keys(localizations).length > 0
+        ? { extractionState: "manual", localizations }
+        : // the key is the value of the source language, see `importCatalogs`
+          { extractionState: "manual" },
     ]);
   }
   const catalog: Catalog = {
@@ -619,7 +856,7 @@ function exportCatalog({
     strings: Object.fromEntries(
       stringEntries.sort(([a], [b]) => a.localeCompare(b)),
     ),
-    version: "1.0",
+    version: options.version ?? "1.0",
   };
   return [
     {
@@ -753,7 +990,7 @@ function inferDirectPluralFormat(
   id: string,
   sourcePattern: Pattern,
   variants: Array<{ parsed: { pattern: Pattern } }>,
-) {
+): { position: number; specifier: string } | undefined {
   const sourceExpressions = sourcePattern.filter(
     (part) => part.type === "expression",
   );
@@ -764,10 +1001,6 @@ function inferDirectPluralFormat(
   const candidates = sourceNumeric.length
     ? sourceExpressions
     : variantExpressions;
-  if (!candidates.length)
-    throw new Error(
-      `Direct Apple plural "${id}" must contain a numeric printf argument in its key or variants`,
-    );
   const formats = candidates.map((expression) => {
     if (expression.arg.type !== "variable-reference")
       throw new Error(`Invalid direct Apple plural argument in "${id}"`);
@@ -777,11 +1010,12 @@ function inferDirectPluralFormat(
     );
   });
   const numericFormats = formats.filter((format) =>
-    /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(format.specifier),
+    isNumericSpecifier(format.specifier),
   );
-  const first = numericFormats[0]!;
+  const first = numericFormats[0];
+  // e.g. variants translated as text, see `importCatalogs`
+  if (first === undefined) return undefined;
   if (
-    !first ||
     numericFormats.some(
       (format) =>
         format.position !== first.position ||
@@ -803,8 +1037,16 @@ function numericExpressionFormats(
       expression.annotation,
       argumentPosition(expression.arg.name),
     );
-    return /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(format.specifier);
+    return isNumericSpecifier(format.specifier);
   });
+}
+
+/** `%lld`, `%.2f`, …, but not `%@` or Xcode's `%arg` (any type). */
+function isNumericSpecifier(specifier: string) {
+  return (
+    specifier !== "arg" &&
+    /(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaA]$/.test(specifier)
+  );
 }
 
 function parseCatalog(content: Uint8Array): Catalog {
@@ -817,10 +1059,14 @@ function parseCatalog(content: Uint8Array): Catalog {
     );
   }
   assertObject(parsed, "Apple .xcstrings catalog");
-  if (parsed.version !== "1.0" || typeof parsed.sourceLanguage !== "string")
+  // Xcode 15 writes 1.0, Xcode 26 1.1 (e.g. for `isCommentAutoGenerated`)
+  // and 1.2 (`xcstringstool extract`). The plugin reads what all 1.x write.
+  if (typeof parsed.version !== "string" || !/^1\.\d+$/.test(parsed.version))
     throw new Error(
-      "Apple .xcstrings requires version 1.0 and a sourceLanguage",
+      `Apple .xcstrings version ${JSON.stringify(parsed.version)} is not supported, the plugin reads version 1.x`,
     );
+  if (typeof parsed.sourceLanguage !== "string")
+    throw new Error("Apple .xcstrings requires a sourceLanguage");
   assertObject(parsed.strings, "Apple .xcstrings strings");
   return parsed as Catalog;
 }
@@ -829,7 +1075,12 @@ function parsePattern(value: string, implicitStart = 1) {
   const pattern: Pattern = [];
   const variables: string[] = [];
   const regex =
-    /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])|((?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]))/;
+    // `%arg` (`%1$arg`) is the placeholder that Xcode 26 extracts for an
+    // interpolation whose type it doesn't know, read before `%a`. Implicit
+    // specifiers take width and precision like positional ones (`%.2f`,
+    // `%5d`), but no flags: `50% off`, `50%-off`, `10%-ige`, `100%'s` are
+    // text.
+    /^%(?:(\d+)\$(arg|[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])|(arg|\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]))/;
   if (!hasPrintfExpression(value, regex))
     return {
       pattern: [{ type: "text", value }] as Pattern,
@@ -1101,7 +1352,7 @@ function assertVariationUnits(
 }
 function assertPrintfSpecifier(value: string, id: string) {
   if (
-    !/^[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@]$/.test(
+    !/^(?:arg|[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])$/.test(
       value,
     )
   )
@@ -1125,9 +1376,18 @@ function hasPrintfExpression(source: string, regex: RegExp) {
   return false;
 }
 
+/** Whether `source` has a `%` that is not part of `%%`. */
+function hasLonePercent(source: string) {
+  for (let cursor = 0; cursor < source.length; cursor++) {
+    if (source.startsWith("%%", cursor)) cursor++;
+    else if (source[cursor] === "%") return true;
+  }
+  return false;
+}
+
 function hasImplicitPrintfExpression(source: string) {
   const implicit =
-    /^%(?!\d+\$)(?:[-+# 0,(]*\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])/;
+    /^%(?!\d+\$)(?:arg|\d*(?:\.\d+)?(?:hh|h|ll|l|q|z|t|j)?[diuoxXfFeEgGaAcCsSp@])/;
   for (let cursor = 0; cursor < source.length; cursor++) {
     if (source.startsWith("%%", cursor)) {
       cursor++;

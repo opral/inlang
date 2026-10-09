@@ -571,6 +571,542 @@ describe("export with the existing catalog", () => {
   });
 });
 
+/**
+ * A catalog that Xcode wrote (checked with `xcstringstool sync`, which writes
+ * it byte for byte): strings extracted from code that nobody translated yet
+ * (`{ }` with a blank line, as Xcode writes empty objects), only a `comment`,
+ * `shouldTranslate: false`, a manual string with only a `comment`, a stale
+ * translated string, strings translated to `de` only (the source language
+ * value is the key), a plural and a manual string with an `en` value.
+ */
+const xcodeCatalog = fs.readFileSync(
+  new URL("./fixtures/Localizable.xcstrings", import.meta.url),
+  "utf-8",
+);
+
+describe("a catalog as Xcode writes it, with strings without localizations", () => {
+  test("is imported, the key as the source language value of strings without one", async () => {
+    const data = await importCatalog(xcodeCatalog);
+    const messages = data.messages.map(
+      (message) => `${message.bundleId}/${message.locale}`,
+    );
+    expect(messages.sort()).toEqual(
+      [
+        "/en",
+        "%lld items/de",
+        "%lld items/en",
+        "Cancel/de",
+        "Cancel/en",
+        "Copyright © 2026 Example Inc./en",
+        "Hello, %@!/de",
+        "Hello, %@!/en",
+        "Legacy title/de",
+        "Legacy title/en",
+        "Not yet translated/en",
+        "Tap to continue/en",
+        "onboarding.title/en",
+        "settings.title/de",
+        "settings.title/en",
+      ].sort(),
+    );
+    expect(findVariant(data, "Not yet translated", "en").pattern).toEqual([
+      { type: "text", value: "Not yet translated" },
+    ]);
+    expect(findVariant(data, "settings.title", "en").pattern).toEqual([
+      { type: "text", value: "Settings" },
+    ]);
+  });
+
+  test("is written byte for byte", async () => {
+    expect(await reexport(xcodeCatalog)).toBe(xcodeCatalog);
+  });
+
+  test("editing a translation only changes its string unit", async () => {
+    const output = await reexport(xcodeCatalog, (data) => {
+      setText(data, "Hello, %@!", "de", "Hi, %1$@!");
+    });
+    expect(output).toBe(
+      xcodeCatalog.replace(
+        '"state" : "needs_review",\n            "value" : "Hallo, %@!"',
+        '"state" : "translated",\n            "value" : "Hi, %1$@!"',
+      ),
+    );
+  });
+
+  test("translating strings without localizations adds only the translations", async () => {
+    const output = await reexport(xcodeCatalog, (data) => {
+      addMessage(data, "Not yet translated", "de", "Noch nicht übersetzt");
+      addMessage(data, "Tap to continue", "de", "Tippen zum Fortfahren");
+      addMessage(data, "onboarding.title", "de", "Willkommen");
+      addMessage(data, "Copyright © 2026 Example Inc.", "de", "Copyright");
+    });
+    const localizations = (value: string) =>
+      [
+        '      "localizations" : {',
+        '        "de" : {',
+        '          "stringUnit" : {',
+        '            "state" : "translated",',
+        `            "value" : "${value}"`,
+        "          }",
+        "        }",
+        "      }",
+      ].join("\n");
+    expect(output).toBe(
+      xcodeCatalog
+        .replace(
+          '    "Not yet translated" : {\n\n    }',
+          `    "Not yet translated" : {\n${localizations("Noch nicht übersetzt")}\n    }`,
+        )
+        .replace(
+          '"comment" : "Shown below the start button"',
+          `"comment" : "Shown below the start button",\n${localizations("Tippen zum Fortfahren")}`,
+        )
+        .replace(
+          '"extractionState" : "manual"\n    }',
+          `"extractionState" : "manual",\n${localizations("Willkommen")}\n    }`,
+        )
+        .replace(
+          '    "Copyright © 2026 Example Inc." : {\n',
+          `    "Copyright © 2026 Example Inc." : {\n${localizations("Copyright")},\n`,
+        ),
+    );
+    compileWithXcode(output);
+  });
+
+  test("editing the source language value of a string without localizations writes it", async () => {
+    const output = await reexport(xcodeCatalog, (data) => {
+      setText(data, "Not yet translated", "en", "Not translated yet");
+    });
+    expect(output).toBe(
+      xcodeCatalog.replace(
+        '    "Not yet translated" : {\n\n    }',
+        [
+          '    "Not yet translated" : {',
+          '      "localizations" : {',
+          '        "en" : {',
+          '          "stringUnit" : {',
+          '            "state" : "translated",',
+          '            "value" : "Not translated yet"',
+          "          }",
+          "        }",
+          "      }",
+          "    }",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  test("a localization of the source language whose value is the key is kept, also if a value becomes the key", async () => {
+    const cancel = [
+      '        "de" : {',
+      '          "stringUnit" : {',
+      '            "state" : "translated",',
+      '            "value" : "Abbrechen"',
+      "          }",
+      "        }",
+    ].join("\n");
+    const english = [
+      "        },",
+      '        "en" : {',
+      '          "stringUnit" : {',
+      '            "state" : "new",',
+      '            "value" : "Cancel"',
+      "          }",
+      "        }",
+    ].join("\n");
+    const previous = xcodeCatalog.replace(
+      cancel,
+      cancel.replace(/\n {8}\}$/, `\n${english}`),
+    );
+    expect(previous).not.toBe(xcodeCatalog);
+    expect(await reexport(previous)).toBe(previous);
+    expect(
+      await reexport(previous, (data) => {
+        setText(data, "Cancel", "de", "Abbruch");
+      }),
+    ).toBe(previous.replace('"Abbrechen"', '"Abbruch"'));
+    // also if its value becomes the key: Xcode keeps a localization of the
+    // source language too
+    expect(
+      await reexport(
+        previous.replace('"value" : "Cancel"', '"value" : "Stop"'),
+        (data) => {
+          setText(data, "Cancel", "en", "Cancel");
+        },
+      ),
+    ).toBe(
+      previous.replace(
+        '"state" : "new",\n            "value" : "Cancel"',
+        '"state" : "translated",\n            "value" : "Cancel"',
+      ),
+    );
+  });
+
+  test("a string without localizations is removed like other strings", async () => {
+    const output = await reexport(xcodeCatalog, (data) => {
+      removeBundle(data, "Not yet translated");
+    });
+    expect(output).toBe(
+      xcodeCatalog.replace('    "Not yet translated" : {\n\n    },\n', ""),
+    );
+  });
+
+  test("the full export keeps strings without localizations and doesn't add the key as their value", async () => {
+    // e.g. on hosts that don't pass the existing files
+    const data = await importCatalog(xcodeCatalog);
+    const [file] = await plugin.exportFiles!({ settings, ...data });
+    const catalog = JSON.parse(decode(file!.content));
+    expect(Object.keys(catalog.strings).sort()).toEqual(
+      Object.keys(JSON.parse(xcodeCatalog).strings).sort(),
+    );
+    for (const id of [
+      "",
+      "Copyright © 2026 Example Inc.",
+      "Not yet translated",
+      "Tap to continue",
+      "onboarding.title",
+    ])
+      expect(catalog.strings[id], id).toEqual({ extractionState: "manual" });
+    for (const id of ["Cancel", "Hello, %@!", "Legacy title"])
+      expect(Object.keys(catalog.strings[id].localizations), id).toEqual([
+        "de",
+      ]);
+    expect(await importCatalog(decode(file!.content))).toEqual(data);
+    compileWithXcode(decode(file!.content));
+  });
+
+  test("a translation of a string without localizations is added when another localization is rewritten as a whole", async () => {
+    // editing a substitution with text around `%#@items@` rewrites its
+    // localization in a second pass, which must keep the translation
+    const previous = xcode.replace(
+      '    "learn_more" : {',
+      '    "untranslated" : {\n\n    },\n    "learn_more" : {',
+    );
+    const output = await reexport(previous, (data) => {
+      setText(data, "cart", "en", "You have %1$lld items!", "other");
+      addMessage(data, "untranslated", "de", "Unübersetzt");
+    });
+    expect(output).toContain(
+      [
+        '    "untranslated" : {',
+        '      "localizations" : {',
+        '        "de" : {',
+        '          "stringUnit" : {',
+        '            "state" : "translated",',
+        '            "value" : "Unübersetzt"',
+        "          }",
+        "        }",
+        "      }",
+        "    },",
+      ].join("\n"),
+    );
+    expect(output).toContain('"You have %1$lld items!"');
+    // the rest keeps Xcode's formatting
+    expect(output).toContain('"apple" : {');
+    expect(output).not.toContain('"apple": {');
+  });
+
+  test("saveProjectToDirectory writes the catalog as it is", async () => {
+    const directory = fs.mkdtempSync(join(tmpdir(), "inlang-xcstrings-keep-"));
+    const file = join(directory, "Localizations", "Localizable.xcstrings");
+    fs.mkdirSync(join(directory, "Localizations"));
+    fs.writeFileSync(file, xcodeCatalog);
+    const project = await loadProjectInMemory({
+      blob: await newProject({ settings }),
+      providePlugins: [plugin as any],
+    });
+    try {
+      await project.importFiles({
+        pluginKey: plugin.key,
+        files: [{ locale: "en", content: encode(xcodeCatalog) }],
+      });
+      await saveProjectToDirectory({
+        fs: fs.promises,
+        project,
+        path: join(directory, "project.inlang"),
+      });
+      expect(fs.readFileSync(file, "utf-8")).toBe(xcodeCatalog);
+    } finally {
+      await project.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+});
+
+const fixture = (name: string) =>
+  fs.readFileSync(new URL(`./fixtures/${name}`, import.meta.url), "utf-8");
+
+describe("catalogs of Xcode 26 and format strings in keys", () => {
+  /**
+   * `xcstringstool sync` writes version 1.1 as soon as a string has
+   * `isCommentAutoGenerated`, `xcstringstool extract` writes 1.2 (both
+   * written by Xcode 26.6, see `fixtures/`).
+   */
+  const version11 = fixture("Localizable-1.1.xcstrings");
+  const version12 = fixture("Localizable-1.2.xcstrings");
+
+  test("a catalog of version 1.1 is written byte for byte, an edit only changes its string unit", async () => {
+    expect(version11).toContain('"version" : "1.1"');
+    expect(version11).toContain('"isCommentAutoGenerated" : true');
+    expect(await reexport(version11)).toBe(version11);
+    expect(
+      await reexport(version11, (data) => {
+        setText(data, "settings.title", "de", "Optionen");
+      }),
+    ).toBe(version11.replace('"Einstellungen"', '"Optionen"'));
+  });
+
+  test("a catalog of version 1.2 is written byte for byte, a translation only adds it", async () => {
+    expect(version12).toContain('"version" : "1.2"');
+    expect(await reexport(version12)).toBe(version12);
+    expect(
+      await reexport(version12, (data) => {
+        addMessage(data, "Welcome", "de", "Willkommen");
+      }),
+    ).toBe(
+      version12.replace(
+        '    "Welcome" : {\n\n    }',
+        [
+          '    "Welcome" : {',
+          '      "localizations" : {',
+          '        "de" : {',
+          '          "stringUnit" : {',
+          '            "state" : "translated",',
+          '            "value" : "Willkommen"',
+          "          }",
+          "        }",
+          "      }",
+          "    }",
+        ].join("\n"),
+      ),
+    );
+  });
+
+  test("other major versions are rejected", async () => {
+    await expect(
+      importCatalog(version12.replace('"1.2"', '"2.0"')),
+    ).rejects.toThrow('version "2.0" is not supported');
+  });
+
+  test("a localization of the source language that is the key's value is kept when the first translation is added or the only one removed", async () => {
+    // Xcode writes the `en` value of strings with several arguments
+    const pos = [
+      '        "en" : {',
+      '          "stringUnit" : {',
+      '            "state" : "new",',
+      '            "value" : "Pos %1$arg %2$arg"',
+      "          }",
+      "        }",
+    ].join("\n");
+    expect(version12).toContain(pos);
+    const added = await reexport(version12, (data) => {
+      addMessage(data, "Pos %arg %arg", "de", "Position");
+    });
+    expect(added).toBe(
+      version12.replace(
+        pos,
+        [
+          '        "de" : {',
+          '          "stringUnit" : {',
+          '            "state" : "translated",',
+          '            "value" : "Position"',
+          "          }",
+          "        },",
+          pos,
+        ].join("\n"),
+      ),
+    );
+    // and removing the translation again gives the catalog Xcode wrote
+    expect(
+      await reexport(added, (data) => {
+        removeMessage(data, "Pos %arg %arg", "de");
+      }),
+    ).toBe(version12);
+  });
+
+  test("a string whose only translation is removed is written like Xcode writes empty strings", async () => {
+    const output = await reexport(xcodeCatalog, (data) => {
+      removeMessage(data, "Cancel", "de");
+    });
+    const cancel = xcodeCatalog.slice(
+      xcodeCatalog.indexOf('    "Cancel" : {'),
+      xcodeCatalog.indexOf('    "Copyright'),
+    );
+    expect(output).toBe(
+      xcodeCatalog.replace(cancel, '    "Cancel" : {\n\n    },\n'),
+    );
+  });
+
+  test("a key with an implicit argument with precision reads as a format string, and a translation of it reads the same again", async () => {
+    // what SwiftUI extracts for `Text("\(name) costs \(price, specifier: "%.2f")")`
+    const previous = xcodeCatalog.replace(
+      '    "%lld items" : {',
+      '    "%@ costs %.2f" : {\n\n    },\n    "%lld items" : {',
+    );
+    const data = await importCatalog(previous);
+    expect(
+      findVariant(data, "%@ costs %.2f", "en").pattern.map(
+        (part: any) => part.type,
+      ),
+    ).toEqual(["expression", "text", "expression"]);
+    // a translator who copies the format string as text
+    addMessage(data, "%@ costs %.2f", "de", "%@ kostet %.2f");
+    const [file] = await plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [{ path, locale: "en", content: encode(previous) }],
+    });
+    const output = decode(file!.content);
+    expect(output).toContain('"value" : "%@ kostet %.2f"');
+    // reads again, with the same text
+    expect(await reexport(output)).toBe(output);
+  });
+
+  test("Xcode's %arg placeholder is one argument, a translation of it compiles", async () => {
+    const output = await reexport(version12, (data) => {
+      addMessage(data, "Hello, %arg!", "de", "");
+      setText(data, "Hello, %arg!", "de", "Hallo, %1$arg!");
+    });
+    expect(output).toBe(
+      version12.replace(
+        '    "Hello, %arg!" : {\n\n    }',
+        [
+          '    "Hello, %arg!" : {',
+          '      "localizations" : {',
+          '        "de" : {',
+          '          "stringUnit" : {',
+          '            "state" : "translated",',
+          '            "value" : "Hallo, %1$arg!"',
+          "          }",
+          "        }",
+          "      }",
+          "    }",
+        ].join("\n"),
+      ),
+    );
+    compileWithXcode(output);
+  });
+
+  test("the version of a catalog the plugin can't import is kept by the full export", async () => {
+    // e.g. a locale that is not in the settings
+    const data = await importCatalog(version12);
+    const previous = version12.replace(
+      '"en" : {\n          "stringUnit" : {\n            "state" : "new"',
+      '"fr" : {\n          "stringUnit" : {\n            "state" : "new"',
+    );
+    expect(previous).not.toBe(version12);
+    await expect(importCatalog(previous)).rejects.toThrow("not declared");
+    const [file] = await plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [{ path, locale: "en", content: encode(previous) }],
+    });
+    expect(JSON.parse(decode(file!.content)).version).toBe("1.2");
+  });
+
+  test("empty objects are only written like Xcode in catalogs that Xcode wrote", async () => {
+    // a value with `" : ` in a catalog that isn't written like Xcode
+    const previous =
+      '{"sourceLanguage":"en","strings":{"a":{"localizations":{"de":{"stringUnit":{"state":"translated","value":"x\\" : y"}}}},' +
+      '"b":{"localizations":{"de":{"stringUnit":{"state":"translated","value":"B"}}}}},"version":"1.0"}';
+    const output = await reexport(previous, (data) => {
+      removeMessage(data, "b", "de");
+    });
+    expect(output).toBe(
+      previous.replace(
+        '"b":{"localizations":{"de":{"stringUnit":{"state":"translated","value":"B"}}}}',
+        '"b":{}',
+      ),
+    );
+  });
+
+  test("a substitution variant that isn't a readable format string keeps what it displays when its localization is rewritten", async () => {
+    const substitution = (other: string) =>
+      [
+        "{",
+        '  "sourceLanguage" : "en",',
+        '  "strings" : {',
+        '    "cart" : {',
+        '      "localizations" : {',
+        '        "de" : {',
+        '          "stringUnit" : {',
+        '            "state" : "translated",',
+        '            "value" : "%1$@ hat %#@items@"',
+        "          },",
+        '          "substitutions" : {',
+        '            "items" : {',
+        '              "argNum" : 2,',
+        '              "formatSpecifier" : "lld",',
+        '              "variations" : {',
+        '                "plural" : {',
+        '                  "one" : {',
+        '                    "stringUnit" : {',
+        '                      "state" : "translated",',
+        '                      "value" : "%lld Artikel"',
+        "                    }",
+        "                  },",
+        '                  "other" : {',
+        '                    "stringUnit" : {',
+        '                      "state" : "translated",',
+        `                      "value" : "${other}"`,
+        "                    }",
+        "                  }",
+        "                }",
+        "              }",
+        "            }",
+        "          }",
+        "        }",
+        "      }",
+        "    }",
+        "  },",
+        '  "version" : "1.0"',
+        "}",
+      ].join("\n");
+    for (const other of [
+      // implicit and positional arguments mixed
+      "%lld Artikel und %2$lld",
+      // a `%` that the plugin reads as text: Xcode pads the number, or reads
+      // `% o` as a number
+      "%-5lld Artikel",
+      "50% off",
+    ]) {
+      const previous = substitution(other);
+      expect(await reexport(previous)).toBe(previous);
+      const output = await reexport(previous, (data) => {
+        setText(data, "cart", "de", "%1$@ hat %2$lld Stück", "one");
+      });
+      const catalog = JSON.parse(output);
+      const de = catalog.strings.cart.localizations.de;
+      // the text around `%#@items@` is moved into the variants, the
+      // unreadable variant as it is: it displays the same
+      expect(de.stringUnit.value).toBe("%#@items@");
+      expect(
+        de.substitutions.items.variations.plural.other.stringUnit.value,
+      ).toBe(`%1$@ hat ${other}`);
+      expect(
+        de.substitutions.items.variations.plural.one.stringUnit.value,
+      ).toBe("%1$@ hat %2$lld Stück");
+    }
+  });
+
+  test("a key the plugin can't read as a format string is text, and a translation of it reads the same again", async () => {
+    // positional and implicit arguments mixed
+    const previous = xcodeCatalog.replace(
+      '    "%lld items" : {',
+      '    "%@ and %1$@" : {\n\n    },\n    "%lld items" : {',
+    );
+    const output = await reexport(previous, (data) => {
+      addMessage(data, "%@ and %1$@", "de", "%@ und %1$@");
+    });
+    expect(output).toContain('"value" : "%@ und %1$@"');
+    expect(await reexport(output)).toBe(output);
+    const data = await importCatalog(output);
+    expect(findVariant(data, "%@ and %1$@", "de").pattern).toEqual([
+      { type: "text", value: "%@ und %1$@" },
+    ]);
+  });
+});
+
 type Data = {
   bundles: any[];
   messages: any[];
@@ -667,6 +1203,37 @@ function setText(
         },
       };
     });
+}
+
+/** Adds a message with one variant of text to an existing bundle. */
+function addMessage(
+  data: Data,
+  bundleId: string,
+  locale: string,
+  text: string,
+) {
+  data.messages.push({
+    id: `${bundleId}-${locale}`,
+    bundleId,
+    locale,
+    selectors: [],
+  });
+  data.variants.push({
+    id: `${bundleId}-${locale}-[]`,
+    messageId: `${bundleId}-${locale}`,
+    matches: [],
+    pattern: [{ type: "text", value: text }],
+  });
+}
+
+function removeMessage(data: Data, bundleId: string, locale: string) {
+  const message = data.messages.find(
+    (message) => message.bundleId === bundleId && message.locale === locale,
+  );
+  data.messages = data.messages.filter((other) => other !== message);
+  data.variants = data.variants.filter(
+    (variant) => variant.messageId !== message.id,
+  );
 }
 
 function removeBundle(data: Data, bundleId: string) {
