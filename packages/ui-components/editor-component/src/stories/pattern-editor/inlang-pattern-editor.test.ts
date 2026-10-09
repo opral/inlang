@@ -5,6 +5,7 @@ import { $getRoot, $getSelection, $isRangeSelection, type ElementNode } from "le
 import type { ChangeEventDetail } from "../../helper/event.js";
 import type InlangPatternEditor from "./inlang-pattern-editor.js";
 import "./inlang-pattern-editor.js";
+import { $readPattern } from "./patternNodes.js";
 
 async function mount(variant: VariantRow) {
 	const element = document.createElement("inlang-pattern-editor");
@@ -104,6 +105,15 @@ it("keeps typing when an older save comes back with reordered keys", async () =>
 	type(element, "!");
 	await setVariant(element, { id: "v", message_id: "m", matches: [], pattern: sortKeys(firstSave) });
 	expect(element.editor.getEditorState().read(() => $getRoot().getTextContent())).toBe("Hi {name}!!");
+});
+
+it("shows stored braces as text and keeps them text when the user types (ICU '{'literal'}')", async () => {
+	const pattern: Pattern = [{ type: "text", value: "It's {literal}" }];
+	const { element, changes } = await mount({ id: "v", message_id: "m", matches: [], pattern });
+	expect(element.editor.getEditorState().read($readPattern)).toEqual(pattern);
+	expect(changes).toEqual([]);
+	type(element, "!");
+	expect(lastPattern(changes)).toEqual([{ type: "text", value: "It's {literal}!" }]);
 });
 
 it("keeps a lone markup-start (valid MF2) when the user types", async () => {
