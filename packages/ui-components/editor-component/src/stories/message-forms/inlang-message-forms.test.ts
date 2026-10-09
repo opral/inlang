@@ -96,3 +96,78 @@ it("offers a category only millions select (French many) quietly instead of as a
 		"form|other: # éléments",
 	]);
 });
+
+it("offers the ordinal forms of a plural with a variable type (i18next `type=$pluralType`) that `missing-variant` reports", async () => {
+	const declarations: Declaration[] = [
+		{ type: "input-variable", name: "pluralType" },
+		{ type: "input-variable", name: "count" },
+		{
+			type: "local-variable",
+			name: "countPlural",
+			value: {
+				type: "expression",
+				arg: { type: "variable-reference", name: "count" },
+				annotation: {
+					type: "function-reference",
+					name: "plural",
+					options: [
+						{
+							name: "type",
+							value: { type: "variable-reference", name: "pluralType" },
+						},
+					],
+				},
+			},
+		},
+	];
+	const form = (
+		id: string,
+		pluralType: string,
+		category: string,
+		text: string
+	): VariantRow => ({
+		id,
+		message_id: "m",
+		matches: [
+			pluralType === "*"
+				? { type: "catchall-match", key: "pluralType" }
+				: { type: "literal-match", key: "pluralType", value: pluralType },
+			category === "*"
+				? { type: "catchall-match", key: "countPlural" }
+				: { type: "literal-match", key: "countPlural", value: category },
+		],
+		pattern: [{ type: "text", value: text }],
+	});
+	const { labels, added, buttons } = await mountForms({
+		message: {
+			...message,
+			selectors: [
+				{ type: "variable-reference", name: "pluralType" },
+				{ type: "variable-reference", name: "countPlural" },
+			],
+		},
+		declarations,
+		variants: [
+			form("o1", "ordinal", "one", "#st"),
+			form("o", "ordinal", "other", "#th"),
+			form("c1", "*", "one", "# item"),
+			form("c", "*", "other", "# items"),
+		],
+	});
+	const missing = labels.filter((label) => label.startsWith("form missing"));
+	expect(missing).toEqual([
+		"form missing|Add form ordinal · two",
+		"form missing|Add form ordinal · few",
+	]);
+	buttons
+		.find(
+			(button) => button.getAttribute("aria-label") === "Add form ordinal · two"
+		)!
+		.click();
+	expect(added).toEqual([
+		[
+			{ type: "literal-match", key: "pluralType", value: "ordinal" },
+			{ type: "literal-match", key: "countPlural", value: "two" },
+		],
+	]);
+});

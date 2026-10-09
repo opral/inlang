@@ -9,6 +9,7 @@ import {
 	missingVariants,
 	pluralRules,
 	requiredVariants,
+	selectorGroups,
 	variantCovers,
 } from "./selectors.js";
 
@@ -533,6 +534,11 @@ test("every fixture reference checked against itself is clean", () => {
 		expect(
 			checkTranslation({ reference, target: reference, declarations: plural })
 		).toEqual([]);
+	// i18next keys with cardinal and ordinal forms: `type=$pluralType`
+	for (const reference of [mixedEnglish(), mixedGerman()])
+		expect(
+			checkTranslation({ reference, target: reference, declarations: mixed })
+		).toEqual([]);
 });
 
 /** The i18next plugin's import of `_zero`, `_one`, `_other`: `_zero` is two forms. */
@@ -804,10 +810,15 @@ const mixed: Declaration[] = [
 	},
 ];
 
-test("a plural with a variable type: i18next's `_zero` next to ordinal forms", () => {
-	const shape = (locale: string, forms: Record<string, Pattern>) =>
-		message(locale, ["pluralType", "count", "countPlural"], forms);
-	const reference = shape("en", {
+/**
+ * What `@inlang/plugin-i18next` imports for keys with `_zero`, cardinal and `_ordinal_` forms:
+ * `pluralType` chooses the type, cardinal forms are its catch-all, `_zero` is the exact
+ * `pluralType=cardinal,count=0` and the category `zero`.
+ */
+const mixedShape = (locale: string, forms: Record<string, Pattern>) =>
+	message(locale, ["pluralType", "count", "countPlural"], forms);
+const mixedEnglish = () =>
+	mixedShape("en", {
 		"pluralType=cardinal,count=0,countPlural=*": [t("None")],
 		"pluralType=ordinal,count=*,countPlural=one": [v("count"), t("st")],
 		"pluralType=ordinal,count=*,countPlural=two": [v("count"), t("nd")],
@@ -817,17 +828,26 @@ test("a plural with a variable type: i18next's `_zero` next to ordinal forms", (
 		"pluralType=*,count=*,countPlural=one": [v("count"), t(" item")],
 		"pluralType=*,count=*,countPlural=other": [v("count"), t(" items")],
 	});
-	const german = shape("de", {
+const mixedGerman = () =>
+	mixedShape("de", {
 		"pluralType=cardinal,count=0,countPlural=*": [t("Keine")],
 		"pluralType=ordinal,count=*,countPlural=other": [v("count"), t(".")],
 		"pluralType=*,count=*,countPlural=zero": [t("Keine")],
 		"pluralType=*,count=*,countPlural=one": [v("count"), t(" Artikel")],
 		"pluralType=*,count=*,countPlural=other": [v("count"), t(" Artikel")],
 	});
+const formKeys = (forms: Match[][]) =>
+	forms.map((matches) =>
+		matches
+			.map((m) => `${m.key}=${m.type === "literal-match" ? m.value : "*"}`)
+			.join(",")
+	);
+
+test("a plural with a variable type: i18next's `_zero` next to ordinal forms", () => {
+	const reference = mixedEnglish();
+	const german = mixedGerman();
 	const issues = (target: typeof reference) =>
-		checkTranslation({ reference, target, declarations: mixed }).filter(
-			(issue) => issue.type !== "missing-variant"
-		);
+		checkTranslation({ reference, target, declarations: mixed });
 	expect(issues(german)).toEqual([]);
 	expect(issues(reference)).toEqual([]);
 	// the variant's type decides: English ordinal `few` (3rd) is reachable, cardinal `few` isn't
@@ -924,4 +944,314 @@ test("checkBundle reports nothing for i18next's `_zero` in German and French, `{
 			"variantId" in diagnostic ? diagnostic.variantId : undefined,
 		])
 	).toEqual([["lv", "missing-variable", "lv:count=*,countPlural=zero"]]);
+});
+
+test("required variants of a plural with a variable type are per type, not a product", () => {
+	const reference = mixedEnglish();
+	const options = { referenceVariants: reference.variants };
+	// the catch-all type is cardinal; `pluralType=cardinal` only adds its exact numbers, the
+	// cardinal categories fall through to the catch-all; ordinal needs its own categories
+	expect(formKeys(requiredVariants(reference, mixed, options))).toEqual([
+		"pluralType=cardinal,count=0,countPlural=*",
+		"pluralType=ordinal,count=*,countPlural=one",
+		"pluralType=ordinal,count=*,countPlural=two",
+		"pluralType=ordinal,count=*,countPlural=few",
+		"pluralType=ordinal,count=*,countPlural=*",
+		"pluralType=*,count=*,countPlural=one",
+		"pluralType=*,count=*,countPlural=*",
+	]);
+	expect(missingVariants(reference, mixed, options)).toEqual([]);
+	const german = mixedGerman();
+	expect(formKeys(requiredVariants(german, mixed, options))).toEqual([
+		"pluralType=cardinal,count=0,countPlural=*",
+		"pluralType=ordinal,count=*,countPlural=*",
+		"pluralType=*,count=*,countPlural=one",
+		"pluralType=*,count=*,countPlural=*",
+	]);
+	expect(missingVariants(german, mixed, options)).toEqual([]);
+	// Latvian selects `zero` in cardinals: needed in the catch-all type
+	const latvian = mixedShape("lv", {
+		"pluralType=cardinal,count=0,countPlural=*": [t("Nav")],
+		"pluralType=ordinal,count=*,countPlural=other": [v("count"), t(".")],
+		"pluralType=*,count=*,countPlural=one": [v("count"), t(" prece")],
+		"pluralType=*,count=*,countPlural=other": [v("count"), t(" preces")],
+	});
+	expect(formKeys(missingVariants(latvian, mixed, options))).toEqual([
+		"pluralType=*,count=*,countPlural=zero",
+	]);
+	// a translation without the ordinal forms, or the exact 0, is missing them
+	const cardinalOnly = mixedShape("de", {
+		"pluralType=*,count=*,countPlural=one": [v("count"), t(" Artikel")],
+		"pluralType=*,count=*,countPlural=other": [v("count"), t(" Artikel")],
+	});
+	expect(formKeys(missingVariants(cardinalOnly, mixed, options))).toEqual([
+		"pluralType=cardinal,count=0,countPlural=*",
+		"pluralType=ordinal,count=*,countPlural=*",
+	]);
+	// English ordinals need one, two, few and other
+	const fewMissing = mixedShape("en", {
+		"pluralType=ordinal,count=*,countPlural=one": [v("count"), t("st")],
+		"pluralType=ordinal,count=*,countPlural=other": [v("count"), t("th")],
+		"pluralType=*,count=*,countPlural=one": [v("count"), t(" item")],
+		"pluralType=*,count=*,countPlural=other": [v("count"), t(" items")],
+	});
+	expect(formKeys(missingVariants(fewMissing, mixed))).toEqual([
+		"pluralType=ordinal,count=*,countPlural=two",
+		"pluralType=ordinal,count=*,countPlural=few",
+	]);
+	expect(
+		types(checkTranslation({ reference, target: german, declarations: mixed }))
+	).toEqual([]);
+});
+
+test("a variable plural type next to another selector: i18next context", () => {
+	const declarations: Declaration[] = [
+		{ type: "input-variable", name: "context" },
+		...mixed,
+	];
+	const reference = message("en", ["context", "pluralType", "countPlural"], {
+		"context=male,pluralType=ordinal,countPlural=one": [v("count"), t("st")],
+		"context=male,pluralType=ordinal,countPlural=two": [v("count"), t("nd")],
+		"context=male,pluralType=ordinal,countPlural=few": [v("count"), t("rd")],
+		"context=male,pluralType=ordinal,countPlural=other": [v("count"), t("th")],
+		"context=*,pluralType=ordinal,countPlural=one": [v("count"), t("st")],
+		"context=*,pluralType=ordinal,countPlural=two": [v("count"), t("nd")],
+		"context=*,pluralType=ordinal,countPlural=few": [v("count"), t("rd")],
+		"context=*,pluralType=ordinal,countPlural=other": [v("count"), t("th")],
+		"context=male,pluralType=*,countPlural=one": [v("count"), t(" friend")],
+		"context=male,pluralType=*,countPlural=other": [v("count"), t(" friends")],
+		"context=*,pluralType=*,countPlural=one": [v("count"), t(" friend")],
+		"context=*,pluralType=*,countPlural=other": [v("count"), t(" friends")],
+	});
+	expect(
+		missingVariants(reference, declarations, {
+			referenceVariants: reference.variants,
+		})
+	).toEqual([]);
+	expect(
+		checkTranslation({ reference, target: reference, declarations })
+	).toEqual([]);
+	const german = message("de", ["context", "pluralType", "countPlural"], {
+		"context=male,pluralType=ordinal,countPlural=other": [v("count"), t(".")],
+		"context=*,pluralType=ordinal,countPlural=other": [v("count"), t(".")],
+		"context=male,pluralType=*,countPlural=one": [v("count"), t(" Freund")],
+		"context=male,pluralType=*,countPlural=other": [v("count"), t(" Freunde")],
+		"context=*,pluralType=*,countPlural=one": [v("count"), t(" Freund")],
+		"context=*,pluralType=*,countPlural=other": [v("count"), t(" Freunde")],
+	});
+	expect(checkTranslation({ reference, target: german, declarations })).toEqual(
+		[]
+	);
+});
+
+test("exact numbers and plural types are needed only in the select branches that use them", () => {
+	// i18next `c_male_one`, `c_male_other`, `c_zero`, `c_one`, `c_other`: context × exact 0 is
+	// not a product, `context=male` at 0 shows the male other form
+	const declarations: Declaration[] = [
+		{ type: "input-variable", name: "context" },
+		...plural,
+	];
+	const zero = (locale: string, forms: Record<string, Pattern>) =>
+		message(locale, ["context", "count", "countPlural"], forms);
+	const reference = zero("en", {
+		"context=male,count=*,countPlural=one": [v("count"), t(" friend")],
+		"context=male,count=*,countPlural=other": [v("count"), t(" friends")],
+		"context=*,count=0,countPlural=*": [t("no friends")],
+		"context=*,count=*,countPlural=zero": [t("no friends")],
+		"context=*,count=*,countPlural=one": [v("count"), t(" friend")],
+		"context=*,count=*,countPlural=other": [v("count"), t(" friends")],
+	});
+	const options = { referenceVariants: reference.variants };
+	expect(formKeys(requiredVariants(reference, declarations, options))).toEqual([
+		"context=male,count=*,countPlural=one",
+		"context=male,count=*,countPlural=*",
+		"context=*,count=0,countPlural=*",
+		"context=*,count=*,countPlural=one",
+		"context=*,count=*,countPlural=*",
+	]);
+	expect(
+		checkTranslation({ reference, target: reference, declarations })
+	).toEqual([]);
+	// the plural's categories are still needed in every branch: Russian male needs few and many
+	const russian = zero("ru", {
+		"context=male,count=*,countPlural=one": [v("count"), t(" друг")],
+		"context=male,count=*,countPlural=other": [v("count"), t(" друзей")],
+		"context=*,count=0,countPlural=*": [t("нет друзей")],
+		"context=*,count=*,countPlural=one": [v("count"), t(" друг")],
+		"context=*,count=*,countPlural=few": [v("count"), t(" друга")],
+		"context=*,count=*,countPlural=many": [v("count"), t(" друзей")],
+		"context=*,count=*,countPlural=other": [v("count"), t(" друга")],
+	});
+	expect(formKeys(missingVariants(russian, declarations, options))).toEqual([
+		"context=male,count=*,countPlural=few",
+		"context=male,count=*,countPlural=many",
+	]);
+	// a branch that uses the exact number needs it in the translation: female 0
+	const female = zero("en", {
+		"context=female,count=0,countPlural=*": [t("she has no friends")],
+		"context=female,count=*,countPlural=one": [v("count"), t(" friend")],
+		"context=female,count=*,countPlural=other": [v("count"), t(" friends")],
+		"context=*,count=*,countPlural=one": [v("count"), t(" friend")],
+		"context=*,count=*,countPlural=other": [v("count"), t(" friends")],
+	});
+	expect(
+		formKeys(
+			missingVariants(
+				zero("de", {
+					"context=female,count=*,countPlural=one": [v("count")],
+					"context=female,count=*,countPlural=other": [v("count")],
+					"context=*,count=*,countPlural=one": [v("count")],
+					"context=*,count=*,countPlural=other": [v("count")],
+				}),
+				declarations,
+				{ referenceVariants: female.variants }
+			)
+		)
+	).toEqual(["context=female,count=0,countPlural=*"]);
+	expect(
+		checkTranslation({ reference: female, target: female, declarations })
+	).toEqual([]);
+
+	// i18next `d_male_one`, `d_male_other`, `d_one`, `d_other`, `d_ordinal_*`: ordinal forms only
+	// without context
+	const typed: Declaration[] = [
+		{ type: "input-variable", name: "context" },
+		...mixed,
+	];
+	const ordinal = (locale: string, forms: Record<string, Pattern>) =>
+		message(locale, ["context", "pluralType", "countPlural"], forms);
+	const english = ordinal("en", {
+		"context=male,pluralType=*,countPlural=one": [v("count"), t(" friend")],
+		"context=male,pluralType=*,countPlural=other": [v("count"), t(" friends")],
+		"context=*,pluralType=ordinal,countPlural=one": [v("count"), t("st")],
+		"context=*,pluralType=ordinal,countPlural=two": [v("count"), t("nd")],
+		"context=*,pluralType=ordinal,countPlural=few": [v("count"), t("rd")],
+		"context=*,pluralType=ordinal,countPlural=other": [v("count"), t("th")],
+		"context=*,pluralType=*,countPlural=one": [v("count"), t(" friend")],
+		"context=*,pluralType=*,countPlural=other": [v("count"), t(" friends")],
+	});
+	const german = ordinal("de", {
+		"context=male,pluralType=*,countPlural=one": [v("count"), t(" Freund")],
+		"context=male,pluralType=*,countPlural=other": [v("count"), t(" Freunde")],
+		"context=*,pluralType=ordinal,countPlural=other": [v("count"), t(".")],
+		"context=*,pluralType=*,countPlural=one": [v("count"), t(" Freund")],
+		"context=*,pluralType=*,countPlural=other": [v("count"), t(" Freunde")],
+	});
+	for (const target of [english, german])
+		expect(
+			checkTranslation({ reference: english, target, declarations: typed })
+		).toEqual([]);
+	// without the ordinal forms of the catch-all context, they are missing
+	expect(
+		formKeys(
+			missingVariants(
+				ordinal("de", {
+					"context=male,pluralType=*,countPlural=one": [v("count")],
+					"context=male,pluralType=*,countPlural=other": [v("count")],
+					"context=*,pluralType=*,countPlural=one": [v("count")],
+					"context=*,pluralType=*,countPlural=other": [v("count")],
+				}),
+				typed,
+				{ referenceVariants: english.variants }
+			)
+		)
+	).toEqual(["context=*,pluralType=ordinal,countPlural=*"]);
+});
+
+test("a branch the reference doesn't have falls back to its catch-all: the reference's exact numbers are needed there", () => {
+	const declarations: Declaration[] = [
+		{ type: "input-variable", name: "gender" },
+		...plural,
+	];
+	// ICU `=0 {…} one {…} other {…}` without gender; Russian splits by gender (past tense)
+	const reference = message("en", ["countPluralExact", "countPlural"], {
+		"countPluralExact=0,countPlural=*": [t("Nobody came")],
+		"countPluralExact=*,countPlural=one": [v("count"), t(" came")],
+		"countPluralExact=*,countPlural=*": [v("count"), t(" came")],
+	});
+	const options = { referenceVariants: reference.variants };
+	const russian = (forms: Record<string, Pattern>) =>
+		message("ru", ["gender", "countPluralExact", "countPlural"], forms);
+	const categories = (gender: string) =>
+		Object.fromEntries(
+			["one", "few", "many", "*"].map((category) => [
+				`gender=${gender},countPluralExact=*,countPlural=${category}`,
+				[v("count")],
+			])
+		);
+	// `=0` forgotten for female
+	expect(
+		formKeys(
+			missingVariants(
+				russian({
+					"gender=male,countPluralExact=0,countPlural=*": [t("никто")],
+					...categories("male"),
+					...categories("female"),
+					"gender=*,countPluralExact=0,countPlural=*": [t("никто")],
+					...categories("*"),
+				}),
+				declarations,
+				options
+			)
+		)
+	).toEqual(["gender=female,countPluralExact=0,countPlural=*"]);
+	// `=0` only in the catch-all gender
+	expect(
+		formKeys(
+			missingVariants(
+				russian({
+					...categories("male"),
+					...categories("female"),
+					"gender=*,countPluralExact=0,countPlural=*": [t("никто")],
+					...categories("*"),
+				}),
+				declarations,
+				options
+			)
+		)
+	).toEqual([
+		"gender=male,countPluralExact=0,countPlural=*",
+		"gender=female,countPluralExact=0,countPlural=*",
+	]);
+	// a translation without the gender split needs only the reference's forms
+	expect(
+		formKeys(
+			missingVariants(
+				message("de", ["countPluralExact", "countPlural"], {
+					"countPluralExact=0,countPlural=*": [t("Niemand")],
+					"countPluralExact=*,countPlural=one": [v("count")],
+					"countPluralExact=*,countPlural=*": [v("count")],
+				}),
+				declarations,
+				options
+			)
+		)
+	).toEqual([]);
+});
+
+test("selectorGroups of a plural with a variable type: the keys and required keys of every type", () => {
+	const reference = mixedEnglish();
+	const [type, count] = selectorGroups(reference, mixed, {
+		referenceVariants: reference.variants,
+	});
+	expect(type!.selector).toBe("pluralType");
+	expect(type!.keys).toEqual(["cardinal", "ordinal", "*"]);
+	expect(count!.typeSelector).toBe("pluralType");
+	// cardinal one and the ordinal categories, the exact 0, the explicit other and zero
+	expect(count!.keys).toEqual(["0", "one", "two", "few", "other", "zero", "*"]);
+	expect(count!.requiredKeys).toEqual(["0", "one", "two", "few", "*"]);
+	expect(count!.requiredKeysFor!("*")).toEqual(["one", "*"]);
+	expect(count!.requiredKeysFor!("cardinal")).toEqual(["0"]);
+	expect(count!.requiredKeysFor!("ordinal")).toEqual([
+		"one",
+		"two",
+		"few",
+		"*",
+	]);
+	// German has no ordinal categories but other
+	const [, german] = selectorGroups(mixedGerman(), mixed, {
+		referenceVariants: reference.variants,
+	});
+	expect(german!.requiredKeysFor!("ordinal")).toEqual(["*"]);
+	expect(german!.requiredKeys).toEqual(["0", "one", "*"]);
 });
