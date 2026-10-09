@@ -1,7 +1,9 @@
 import type { InlangPlugin } from "@inlang/sdk";
 import type { PluginSettings } from "../settings.js";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
 import { getMessagePath } from "./messageId.js";
+import { importFiles } from "./importFiles.js";
 
 type Pattern = Array<
 	| { type: "text"; value: string }
@@ -20,9 +22,27 @@ type Bundle = { id: string };
 type Message = { id: string; bundleId: string; locale: string };
 type Variant = { messageId: string; pattern: Pattern };
 
-export const exportFiles: NonNullable<
+type ExportFiles = NonNullable<
 	InlangPlugin<{ [PLUGIN_KEY]: PluginSettings }>["exportFiles"]
-> = async ({
+>;
+
+/**
+ * Writes the files and keeps the text of the entries of the previous files
+ * (`files`) that didn't change.
+ */
+export const exportFiles: ExportFiles = async (args) =>
+	keepUnchangedJsonEntries({
+		exported: await exportWholeFiles(args),
+		files: args.files,
+		settings: args.settings,
+		importFiles,
+		exportFiles: exportWholeFiles,
+	});
+
+/**
+ * Writes whole files, without the previous files.
+ */
+const exportWholeFiles: ExportFiles = async ({
 	bundles,
 	messages,
 	variants,
@@ -46,17 +66,23 @@ export const exportFiles: NonNullable<
 			? Object.keys(pluginSettings.pathPattern)
 			: [];
 
+	const bundlesById = new Map(
+		(bundles as Bundle[]).map((bundle) => [bundle.id, bundle])
+	);
+	const variantsByMessageId = new Map<string, Variant[]>();
+	for (const variant of variants as Variant[]) {
+		const variantsOfMessage = variantsByMessageId.get(variant.messageId) ?? [];
+		variantsOfMessage.push(variant);
+		variantsByMessageId.set(variant.messageId, variantsOfMessage);
+	}
+
 	for (const message of messages as Message[]) {
-		const bundle = bundles.find(
-			(bundle: Bundle) => bundle.id === message.bundleId
-		);
+		const bundle = bundlesById.get(message.bundleId);
 		if (bundle === undefined) {
 			continue;
 		}
 
-		const variantsOfMessage = (variants as Variant[]).filter(
-			(variant: Variant) => variant.messageId === message.id
-		);
+		const variantsOfMessage = variantsByMessageId.get(message.id) ?? [];
 
 		for (const variant of variantsOfMessage) {
 			const value = serializePattern(variant.pattern, pluginSettings);
