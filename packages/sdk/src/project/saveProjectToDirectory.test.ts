@@ -4,6 +4,7 @@ import { Volume } from "memfs";
 import { loadProjectInMemory } from "./loadProjectInMemory.js";
 import { newProject } from "./newProject.js";
 import type { InlangPlugin } from "../plugin/schema.js";
+import type { ExportFile } from "./api.js";
 import type { Bundle, NewMessage, Variant } from "../database/schema.js";
 import { loadProjectFromDirectory } from "./loadProjectFromDirectory.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
@@ -725,6 +726,335 @@ test("it should preserve the formatting of existing json resource files", async 
 
 	const fileAfterSave = await volume.promises.readFile("/foo/en.json", "utf-8");
 	expect(fileAfterSave).toBe(mockJson);
+});
+
+test("passes the existing files of toBeImportedFiles to exportFiles", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => []
+	);
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		toBeImportedFiles: async ({ settings }) =>
+			settings.locales.flatMap((locale) => [
+				{
+					path: `./${locale}/common.json`,
+					locale,
+					metadata: { namespace: "common" },
+				},
+				{
+					path: `./${locale}/app.json`,
+					locale,
+					metadata: { namespace: "app" },
+				},
+			]),
+		exportFiles,
+	};
+	const volume = Volume.fromJSON({
+		"/foo/en/common.json": '{ "hello": "Hello" }',
+		"/foo/de/app.json": '{ "title": "Meine App" }',
+	});
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: { baseLocale: "en", locales: ["en", "de"], modules: [] },
+		}),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		fs: volume.promises as any,
+		project,
+		path: "/foo/project.inlang",
+	});
+
+	expect(exportFiles).toHaveBeenCalledTimes(1);
+	const files = exportFiles.mock.calls[0]![0].files!;
+	// files that don't exist are left out
+	expect(
+		files.map((file) => ({
+			...file,
+			content: new TextDecoder().decode(file.content),
+		}))
+	).toEqual([
+		{
+			path: "./en/common.json",
+			locale: "en",
+			content: '{ "hello": "Hello" }',
+			metadata: { namespace: "common" },
+		},
+		{
+			path: "./de/app.json",
+			locale: "de",
+			content: '{ "title": "Meine App" }',
+			metadata: { namespace: "app" },
+		},
+	]);
+});
+
+test("passes no files to exportFiles if the plugin has no toBeImportedFiles", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => []
+	);
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [{ key: "mock", exportFiles }],
+	});
+
+	await saveProjectToDirectory({
+		fs: Volume.fromJSON({}).promises as any,
+		project,
+		path: "/foo/project.inlang",
+	});
+
+	expect(exportFiles.mock.calls[0]![0].files).toBeUndefined();
+});
+
+/**
+ * Saves a project with one mock plugin that exports `files` and returns
+ * what is on disk afterwards.
+ */
+async function saveWithExport(args: {
+	existing: Record<string, string | Buffer>;
+	exported: ExportFile[];
+	settings?: Record<string, unknown>;
+}) {
+	const volume = Volume.fromJSON(args.existing);
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: {
+				baseLocale: "en",
+				locales: ["en"],
+				modules: [],
+				...args.settings,
+			},
+		}),
+		providePlugins: [{ key: "mock", exportFiles: async () => args.exported }],
+	});
+	const writeFile = vi.spyOn(volume.promises, "writeFile");
+	await saveProjectToDirectory({
+		path: "/foo/project.inlang",
+		fs: volume.promises as any,
+		project,
+	});
+	return { volume, writeFile };
+}
+
+const bytes = (text: string) => new TextEncoder().encode(text);
+
+test("writes verbatim json byte for byte", async () => {
+	// e.g. a plugin that kept unchanged entries of the existing file as they were
+	const existing = '{\n  "a": ["x",  "y"],\n  "b": "\\u00e9"\n}\n';
+	const exported = '{\n  "a": ["x",  "y"],\n\t"b": "changed"\n}\n';
+	const { volume } = await saveWithExport({
+		existing: { "/foo/en.json": existing },
+		exported: [
+			{
+				name: "en.json",
+				locale: "en",
+				content: bytes(exported),
+				verbatim: true,
+			},
+		],
+	});
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe(
+		exported
+	);
+});
+
+test("writes verbatim json with a byte order mark and CRLF byte for byte", async () => {
+	const exported = '\uFEFF{\r\n\t"a": "x"\r\n}\r\n';
+	const { volume } = await saveWithExport({
+		existing: { "/foo/en.json": '\uFEFF{\r\n\t"a": "y"\r\n}\r\n' },
+		exported: [
+			{
+				name: "en.json",
+				locale: "en",
+				content: bytes(exported),
+				verbatim: true,
+			},
+		],
+	});
+	expect(
+		Buffer.from(await volume.promises.readFile("/foo/en.json")).equals(
+			Buffer.from(bytes(exported))
+		)
+	).toBe(true);
+});
+
+test("indents json that is not verbatim like the existing file, also if the indentation matches", async () => {
+	// regression: the output of plugins that don't keep entries is
+	// re-stringified as before
+	const { volume } = await saveWithExport({
+		existing: { "/foo/en.json": '{\n\t"a": "x"\n}\n' },
+		exported: [
+			{
+				name: "en.json",
+				locale: "en",
+				content: bytes('{\n\t"a": ["y",  "z"]\n}'),
+			},
+		],
+	});
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe(
+		'{\n\t"a": [\n\t\t"y",\n\t\t"z"\n\t]\n}\n'
+	);
+});
+
+test("keeps the byte order mark of an existing json file when indenting", async () => {
+	const { volume } = await saveWithExport({
+		existing: { "/foo/en.json": '\uFEFF{\n  "a": "x"\n}\n' },
+		exported: [
+			{
+				name: "en.json",
+				locale: "en",
+				content: bytes(JSON.stringify({ a: "y" }, undefined, "\t")),
+			},
+		],
+	});
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe(
+		'\uFEFF{\n  "a": "y"\n}\n'
+	);
+});
+
+test("doesn't write a file whose content didn't change", async () => {
+	const existing = '{\n\t"a": "x"\n}';
+	const { writeFile } = await saveWithExport({
+		existing: { "/foo/en.json": existing, "/foo/en.txt": "same" },
+		exported: [
+			{
+				name: "en.json",
+				locale: "en",
+				content: bytes(existing),
+				verbatim: true,
+			},
+		],
+	});
+	expect(writeFile.mock.calls.map((call) => call[0])).not.toContain(
+		"/foo/en.json"
+	);
+});
+
+test("passes no files if an existing file can't be read", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => []
+	);
+	const volume = Volume.fromJSON({ "/foo/de.json": "{}" });
+	// a directory where the file is expected
+	volume.mkdirSync("/foo/en.json", { recursive: true });
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: { baseLocale: "en", locales: ["en", "de"], modules: [] },
+		}),
+		providePlugins: [
+			{
+				key: "mock",
+				toBeImportedFiles: async ({ settings }) =>
+					settings.locales.map((locale) => ({
+						path: `./${locale}.json`,
+						locale,
+					})),
+				exportFiles,
+			},
+		],
+	});
+	await saveProjectToDirectory({
+		fs: volume.promises as any,
+		project,
+		path: "/foo/project.inlang",
+	});
+	expect(exportFiles.mock.calls[0]![0].files).toBeUndefined();
+});
+
+test("passes no files if toBeImportedFiles throws, and still exports", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => [{ name: "en.json", locale: "en", content: bytes("{}") }]
+	);
+	const volume = Volume.fromJSON({});
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [
+			{
+				key: "mock",
+				toBeImportedFiles: async () => {
+					throw new Error("broken settings");
+				},
+				exportFiles,
+			},
+		],
+	});
+	await saveProjectToDirectory({
+		fs: volume.promises as any,
+		project,
+		path: "/foo/project.inlang",
+	});
+	expect(exportFiles.mock.calls[0]![0].files).toBeUndefined();
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe("{}");
+});
+
+test("passes every existing file of a pathPattern array, resolved relative to the project", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => []
+	);
+	const volume = Volume.fromJSON({
+		"/repo/a/en.json": '{"a":1}',
+		"/repo/b/en.json": '{"b":1}',
+	});
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [
+			{
+				key: "mock",
+				toBeImportedFiles: async () => [
+					{ path: "../a/en.json", locale: "en" },
+					{ path: "../b/en.json", locale: "en" },
+				],
+				exportFiles,
+			},
+		],
+	});
+	await saveProjectToDirectory({
+		fs: volume.promises as any,
+		project,
+		path: "/repo/sub/project.inlang",
+	});
+	expect(
+		exportFiles.mock.calls[0]![0].files!.map((file) => [
+			file.path,
+			new TextDecoder().decode(file.content),
+		])
+	).toEqual([
+		["../a/en.json", '{"a":1}'],
+		["../b/en.json", '{"b":1}'],
+	]);
+});
+
+test("indents exported json like the existing file if the indentation differs", async () => {
+	const existing = '{\n  "a": "x"\n}\n';
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		exportFiles: async () => [
+			{
+				name: "en.json",
+				locale: "en",
+				content: new TextEncoder().encode(
+					JSON.stringify({ a: "y", b: ["z"] }, undefined, "\t")
+				),
+			},
+		],
+	};
+	const volume = Volume.fromJSON({ "/foo/en.json": existing });
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		path: "/foo/project.inlang",
+		fs: volume.promises as any,
+		project,
+	});
+
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe(
+		JSON.stringify({ a: "y", b: ["z"] }, undefined, 2) + "\n"
+	);
 });
 
 test("adds a gitignore file if it doesn't exist", async () => {

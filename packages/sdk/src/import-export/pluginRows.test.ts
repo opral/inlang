@@ -83,3 +83,32 @@ test("plugins exchange camelCase rows while the database uses canonical columns"
 	});
 	await project.close();
 });
+
+test("project.exportFiles passes the existing files to the plugin", async () => {
+	let received: unknown;
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		exportFiles: async ({ files }) => {
+			received = files;
+			return [];
+		},
+	};
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [mockPlugin],
+	});
+	const files = [
+		{
+			path: "./messages/en.json",
+			locale: "en",
+			content: new TextEncoder().encode("{}"),
+		},
+	];
+
+	await project.exportFiles({ pluginKey: "mock" });
+	expect(received).toBeUndefined();
+
+	await project.exportFiles({ pluginKey: "mock", files });
+	expect(received).toEqual(files);
+	await project.close();
+});

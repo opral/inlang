@@ -6,6 +6,7 @@ import {
 import type { ProjectSettings } from "../json-schema/settings.js";
 import type { InlangDatabaseSchema } from "../database/schema.js";
 import type { InlangPlugin } from "../plugin/schema.js";
+import type { ExistingFile } from "../project/api.js";
 import { selectPluginRows } from "./pluginRows.js";
 
 export async function exportFiles(opts: {
@@ -13,6 +14,7 @@ export async function exportFiles(opts: {
 	readonly settings: ProjectSettings;
 	readonly plugins: readonly InlangPlugin[];
 	readonly db: Kysely<InlangDatabaseSchema>;
+	readonly files?: readonly ExistingFile[];
 }) {
 	const plugin = opts.plugins.find((p) => p.key === opts.pluginKey);
 	if (!plugin) throw new PluginMissingError({ plugin: opts.pluginKey });
@@ -30,6 +32,7 @@ export async function exportFiles(opts: {
 		bundles,
 		messages,
 		variants,
+		files: opts.files ? [...opts.files] : undefined,
 	});
 	return files;
 }

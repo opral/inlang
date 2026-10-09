@@ -238,7 +238,10 @@ await project.importFiles({
 
 // Export files
 const files = await project.exportFiles({
-  pluginKey: "plugin.inlang.messageFormat"
+  pluginKey: "plugin.inlang.messageFormat",
+  // Optional: the files as they are now. Plugins that support it keep the
+  // text of unchanged messages, so only edited messages change in git.
+  files: [{ path: "./en.json", locale: "en", content: file }],
 });
 
 await fs.writeFile("./en.json", files[0].content);
