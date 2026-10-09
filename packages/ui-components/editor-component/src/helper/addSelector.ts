@@ -17,9 +17,9 @@ import type { Match } from "./declarations.js";
 
 /**
  * The structure the selector helpers need from a bundle: `bundle.declarations`
- * and, per locale, a message with its selectors and variants. Both `BundleNested`
- * of the SDK (`messageId` on variants) and its database rows (`message_id`) fit;
- * everything else on the objects is kept as it is.
+ * and, per locale, a message with its selectors and variants, such as the
+ * SDK's `BundleNested` (database rows, `message_id` on variants). Only these
+ * fields are read; everything else on the objects is kept as it is.
  */
 export type SelectorBundle = {
 	declarations: Declaration[];

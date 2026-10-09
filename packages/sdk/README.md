@@ -15,6 +15,7 @@
 - [Plugins](#plugins)
 - [Project checks and fixes](docs/checks.md)
 - [API reference](#api-reference)
+- [Migrating to 4.0](#migrating-to-40)
 - [Listing on inlang.com](#listing-on-inlangcom)
 
 ## Introduction
@@ -282,6 +283,52 @@ await saveProjectToDirectory({
 });
 ```
 
+
+## Migrating to 4.0
+
+SDK 4.0 queries `project.db` with the table and column names Lix stores. Nothing is renamed between your query and Lix anymore. Plugins are not affected: `importFiles()` and `exportFiles()` still use `Bundle`, `Message` and `Variant` with camelCase `bundleId` and `messageId`.
+
+### Tables and columns
+
+| 3.x                     | 4.0                            |
+| ----------------------- | ------------------------------ |
+| `selectFrom("bundle")`  | `selectFrom("inlang_bundle")`  |
+| `selectFrom("message")` | `selectFrom("inlang_message")` |
+| `selectFrom("variant")` | `selectFrom("inlang_variant")` |
+| `bundleId`              | `bundle_id`                    |
+| `messageId`             | `message_id`                   |
+| `"bundle.id"`           | `"inlang_bundle.id"`           |
+| `"message.bundleId"`    | `"inlang_message.bundle_id"`   |
+| `"variant.messageId"`   | `"inlang_variant.message_id"`  |
+
+```diff
+- await project.db.selectFrom("message").where("bundleId", "=", id).selectAll().execute();
++ await project.db.selectFrom("inlang_message").where("bundle_id", "=", id).selectAll().execute();
+```
+
+### Nested bundles
+
+`selectBundleNested()` returns messages with `bundle_id` and variants with `message_id`, and filters by `"inlang_bundle.id"`:
+
+```diff
+  const bundle = await selectBundleNested(project.db)
+-   .where("bundle.id", "=", "greeting")
++   .where("inlang_bundle.id", "=", "greeting")
+    .executeTakeFirst();
+- bundle.messages[0].bundleId;
++ bundle.messages[0].bundle_id;
+```
+
+`insertBundleNested()`, `upsertBundleNested()` and `updateBundleNested()` take the same snake_case names, and `createMessage()` and `createVariant()` return them. Their arguments stay `createMessage({ bundleId, … })` and `createVariant({ messageId, … })`. A message's `bundle_id` is readable from its parent too (`bundle.id`), which works with every SDK version.
+
+### Row types and plugin types
+
+- `BundleRow`, `MessageRow` and `VariantRow` (plus `NewBundleRow`, `BundleRowUpdate`, …) type the database rows. `BundleNested` and `MessageNested` are built from them.
+- `Bundle`, `Message` and `Variant` are the camelCase shapes that plugins exchange with the SDK. Don't use them for database rows.
+
+### `lixcol_*` columns
+
+`selectAll()` returns the columns Lix adds to every row, such as `lixcol_file_id` and `lixcol_change_id`. Select the columns you need, or leave the `lixcol_*` columns out before you write a row back with `insertInto()` or `updateTable()`. `updateBundleNested()` only writes the inlang columns and ignores them.
 
 ## Listing on inlang.com
 
