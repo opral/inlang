@@ -765,8 +765,11 @@ test("emits a README.md file for coding agents", async () => {
 		"/foo/bar.inlang/README.md",
 		"utf-8"
 	);
-	expect(readme).toContain("## What is this folder?");
+	expect(readme).toContain("# inlang project");
+	expect(readme).toContain("npx @inlang/cli check");
 	expect(readme).toContain("@inlang/sdk");
+	// The README is written into every project; keep it free of churn.
+	expect(readme).not.toMatch(/\d+\.\d+\.\d+|\b20\d\d\b/);
 });
 
 test("emits a .meta.json file with the sdk version", async () => {
@@ -909,7 +912,8 @@ test("recreates missing README.md and .gitignore when meta has a higher sdk vers
 		typeof metaRaw === "string" ? metaRaw : metaRaw.toString()
 	);
 
-	expect(readme).toContain("## What is this folder?");
+	expect(readme).toContain("# inlang project");
+	expect(readme).toContain("npx @inlang/cli check");
 	expect(gitignore).toContain("*");
 	expect(gitignore).toContain("!settings.json");
 	expect(meta.highestSdkVersion).toBe("99.0.0");
