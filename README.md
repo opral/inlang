@@ -64,10 +64,10 @@ In this setup, Git tracks the translation files and project settings. A configur
 Change source text → update translations → run CI → review the pull request → ship
 ```
 
-For example, CI can check that the project loads:
+For example, CI can check the translations:
 
 ```bash
-npx @inlang/cli validate --project ./project.inlang
+npx @inlang/cli check --project ./project.inlang
 ```
 
 An optional automation can create draft translations with a configured provider:
@@ -76,7 +76,7 @@ An optional automation can create draft translations with a configured provider:
 npx @inlang/cli machine translate --project ./project.inlang
 ```
 
-The resulting translation files can be committed and reviewed in a pull request. `validate` checks project setup; it does not check translation completeness or placeholder quality. Generated translations need review before shipping. See the [CLI documentation](https://inlang.com/m/2qj2w8pu/app-inlang-cli) for provider setup.
+The resulting translation files can be committed and reviewed in a pull request. `check` reports project errors, missing translations, missing or unknown variables and, for Paraglide projects, unused messages; it does not judge translation quality. Generated translations need review before shipping. See the [CLI documentation](https://inlang.com/m/2qj2w8pu/app-inlang-cli) for provider setup.
 
 ## Get started
 

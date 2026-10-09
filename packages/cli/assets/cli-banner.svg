@@ -40,16 +40,16 @@
     <!-- Command 2 -->
     <text x="24" y="205">
       <tspan fill="#6bdf6b">$</tspan>
-      <tspan fill="#e0e0e0"> npx @inlang/cli validate</tspan>
+      <tspan fill="#e0e0e0"> npx @inlang/cli check</tspan>
     </text>
 
     <!-- Info message -->
-    <text x="24" y="235" fill="#58a6ff">ℹ Validating the inlang project...</text>
+    <text x="24" y="235" fill="#8b949e">Checked project.inlang · 48 messages · locales en, de, fr</text>
 
     <!-- Success message 2 -->
     <text x="24" y="265">
       <tspan fill="#6bdf6b">✔</tspan>
-      <tspan fill="#6bdf6b"> The project is valid!</tspan>
+      <tspan fill="#6bdf6b"> No findings.</tspan>
     </text>
 
   </g>

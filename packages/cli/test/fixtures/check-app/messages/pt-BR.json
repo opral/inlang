@@ -1,0 +1,23 @@
+{
+  "$schema": "https://inlang.com/schema/inlang-message-format",
+  "some_key": "Alguma chave",
+  "greeting": "Olá",
+  "email_label": "E-mail",
+  "password_label": "Senha",
+  "legacy_banner": "Este banner foi removido",
+  "cart_items": [
+    {
+      "declarations": [
+        "input count",
+        "local countPlural = count: plural"
+      ],
+      "selectors": [
+        "countPlural"
+      ],
+      "match": {
+        "countPlural=one": "{count} item",
+        "countPlural=other": "Muitos itens"
+      }
+    }
+  ]
+}

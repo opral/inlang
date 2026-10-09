@@ -49,6 +49,8 @@
     "esbuild-wasm": "^0.19.2"
   },
   "devDependencies": {
+    "@inlang/plugin-m-function-matcher": "workspace:*",
+    "@inlang/plugin-message-format": "workspace:*",
     "@sentry/node": "^7.64.0",
     "@sinclair/typebox": "^0.31.17",
     "@types/cli-progress": "^3.11.5",

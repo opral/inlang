@@ -88,7 +88,7 @@ export async function translateCommandAction(args: { project: InlangProject }) {
 
     if (bundles.length === 0) {
       log.warn(
-        "No message bundles found to translate. Check your project setup with `inlang validate`",
+        "No message bundles found to translate. Check your project setup with `inlang check`",
       );
       return;
     }

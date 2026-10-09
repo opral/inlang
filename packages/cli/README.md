@@ -1,6 +1,6 @@
 ---
 title: inlang CLI - Localization Automation for CI/CD
-description: Automate translation workflows with machine translation, validation, and CI/CD integration. Supports JSON, i18next, next-intl, and more.
+description: Automate translation workflows with machine translation, translation checks, and CI/CD integration. Supports JSON, i18next, next-intl, and more.
 og:image: https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/cli/assets/cli-banner.svg
 ---
 
@@ -12,12 +12,12 @@ Automate localization tasks in your CI/CD pipeline.
 npx @inlang/cli [command]
 ```
 
-![inlang CLI terminal showing machine translate and validate commands](https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/cli/assets/cli-banner.svg)
+![inlang CLI terminal showing machine translate and check commands](https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/cli/assets/cli-banner.svg)
 
 ## Features
 
 - **Machine Translation** — Translate missing messages automatically via a free, third-party translation service by default, or with your own Google Cloud Translation or DeepL API key
-- **Validation** — Verify your project config is correct before committing
+- **Checks** — Find missing translations, missing variables and unused messages before they ship
 - **CI/CD Ready** — Run non-interactively with `--force` for pipelines
 - **Plugin System** — Supports JSON, i18next, next-intl, ICU message format, and more
 
@@ -94,10 +94,10 @@ export INLANG_DEEPL_API_KEY="your-deepl-api-key"
 
 This creates `messages/de.json` and `messages/fr.json` with translations.
 
-**4. Validate your setup**
+**4. Check your translations**
 
 ```bash
-npx @inlang/cli validate --project ./project.inlang
+npx @inlang/cli check --project ./project.inlang
 ```
 
 # Installation
@@ -133,7 +133,7 @@ If one of the commands can't be found, you probably use an outdated CLI version.
 | Name            | Command                                       | Description                                                                                                                                                         |
 | --------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **CLI Version** | `npx @inlang/cli@latest [command]`            | Get the latest version of the inlang CLI.                                                                                                                           |
-| **Validate**    | `npx @inlang/cli validate [options]`          | Validate if the project is working correctly.                                                                                                                       |
+| **Check**       | `npx @inlang/cli check [options]`             | Check translations for missing, empty or inconsistent messages, and source code for unused messages. Exits with 1 on findings, for CI.                              |
 | **Machine**     | `npx @inlang/cli machine translate [options]` | Automate translation processes. Options include `-f, --force`, `--project <path>`, `--locale <source>` and `--targetLocales <targets...>`                           |
 | **Plugin**      | `npx @inlang/cli plugin [command]`            | Interact with Inlang plugins, including initialization and building. `build [options]` build an inlang module. Options include `--type`, `--entry`, and `--outdir`. |
 
@@ -151,19 +151,20 @@ We recommend using the CLI with `npx` to avoid installing the CLI globally. Not 
 If one of the commands can't be found, you probably use an outdated CLI version. You can always get the **latest version** by running `npx @inlang/cli@latest [command]`.
 
 ```sh
+Usage: inlang [options] [command]
+
 CLI for inlang.
 
 Options:
-  -V, --version         Output the version number
-  -h, --help            Display help for command
+  -V, --version      output the version number
+  -h, --help         display help for command
 
 Commands:
-  project [command]  Commands for managing your inlang project
-  lint [options]     Commands for linting translations.
+  check [options]    Check translations for missing, empty or inconsistent
+                     messages, and source code for unused messages.
   machine [command]  Commands for automating translations.
-  open [command]     Commands for open parts of the inlang ecosystem.
-  module [command]   Commands for build inlang modules.
-  help [command]     Display help for command
+  plugin [command]   Commands for inlang plugins.
+  help [command]     display help for command
 ```
 
 The following commands are available with the inlang CLI:
@@ -197,21 +198,70 @@ The translate command has the following options:
 
 The translations are performed with the configured provider (`INLANG_MACHINE_TRANSLATE_PROVIDER`). The community-operated translation service at translate.demosjarco.dev (not affiliated with inlang) is used by default; set `INLANG_GOOGLE_TRANSLATE_API_KEY` or `INLANG_DEEPL_API_KEY` to use your own provider, and optionally `DEMOSJARCO_TRANSLATE_MODEL` to pin a model for the community-operated service (and `DEMOSJARCO_TRANSLATE_ZDR=true` to request Zero Data Retention from it). If that service is unavailable, throttled, or returns an unparseable response, the command fails with a non-zero exit code instead of reporting success. The translated messages are added to the respective language resources. Finally, the updated resources are written back to the file system.
 
-## `validate`
+## `check`
 
-Validates a project.
+Checks the project's translations and, for Paraglide projects, finds messages the source code no longer uses.
 
 ```sh
-npx @inlang/cli validate --project ./path/to/{project-name}.inlang
+npx @inlang/cli check --project ./project.inlang
 ```
+
+```
+Checked project.inlang · 7 messages · locales en-US, pt-BR · 2 source files in .
+
+missing-translation (1)
+  welcome_back  pt-BR  no translation
+
+missing-variable (2)
+  cart_items  pt-BR  missing {count} (countPlural=other)
+  greeting    pt-BR  missing {name}
+
+unused-message incomplete: unused messages can't be determined because:
+  src/Field.tsx:14:8  m[`${fieldName}_label`]  Dynamic message access cannot be resolved.
+  Unused messages are only reported when every usage can be resolved, e.g. m.some_key().
+
+3 findings
+  missing-translation  1
+  missing-variable     2
+```
+
+All checks run by default. Pass one or more check flags to run only those:
+
+| Flag                     | Reports                                                               |
+| ------------------------ | --------------------------------------------------------------------- |
+| `--missing-translations` | messages without a translation for a locale                           |
+| `--empty-translations`   | translations whose every form is empty                                |
+| `--empty-variants`       | empty forms in an otherwise non-empty translation                     |
+| `--missing-variables`    | variables of the base locale a translation lacks                      |
+| `--unknown-variables`    | variables the base locale doesn't use, e.g. typos                     |
+| `--missing-markup`       | markup of the base locale a translation lacks                         |
+| `--missing-variants`     | plural or select forms a locale needs but lacks                       |
+| `--missing-selectors`    | translations that can't choose by an input the base locale chooses by |
+| `--unused-messages`      | messages the source code doesn't use (needs a usage-analysis plugin)  |
+
+The project's settings and plugin errors are always reported.
 
 **Options**
 
-The validate command has the following options:
+- `--project <path>`: Path to the inlang project.
+- `--locales <locales...>`: Only report findings for these locales, comma or space separated, e.g. `--locales de,fr`. Findings that don't belong to a locale, such as unused messages, are always reported.
+- `--source <paths...>`: Files or directories to search for message usages. Defaults to the project's parent directory, without git-ignored files, `node_modules`, `dist`, `build`, dot directories, build tool configs (`*.config.*`) and Paraglide's compiled output.
+- `--format <text|json>`: `json` prints the full report, including every finding, check status and the location of each usage that couldn't be analyzed, for CI and editors.
+- `--no-fail`: Exit with 0 even if there are findings.
 
-- `--project <path>`: Specifies the path to the project root. The default project root is the current working directory.
+**Exit codes**
 
-This will launch an interactive prompt that will guide you through the process of migrating the inlang configuration file.
+`check` exits with `1` when it reports findings or project errors, and with `0` otherwise. A check that couldn't run or couldn't complete, such as unused messages with dynamic keys, is reported but doesn't fail the command.
+
+**Unused messages**
+
+Unused messages need the source code and a plugin that analyzes message usages: [`@inlang/plugin-m-function-matcher`](https://inlang.com/m/632iow21/plugin-inlang-mFunctionMatcher) 2.3.0 or later for Paraglide's `m.message_key()`. With an older version, `check` asks you to update the module URL in `settings.json`.
+
+A message is only reported as unused when every usage in the analyzed source could be resolved. Dynamic keys such as ``m[`${fieldName}_label`]()``, `m[key]()` or `keyof typeof m` make the analysis incomplete; `check` then lists where they are instead of reporting unused messages. "Unused" means not used in the analyzed source: messages used by other repositories or code outside `--source` can still be reported.
+
+**Deprecated commands**
+
+`inlang validate` and `inlang lint` still work but are hidden from `--help`. `validate` only reports the project's settings and plugin errors; `lint` runs `check` and accepts `--languageTags` and `--no-fail`. Use `inlang check` instead.
 
 ## `plugin`
 

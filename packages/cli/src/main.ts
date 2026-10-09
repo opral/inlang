@@ -8,6 +8,7 @@ import { validate } from "./commands/validate/index.js";
 import { capture } from "./telemetry/capture.js";
 import { lastUsedProject } from "./utilities/getInlangProject.js";
 import { lint } from "./commands/lint/index.js";
+import { check } from "./commands/check/index.js";
 
 // --------------- INIT ---------------
 
@@ -26,16 +27,18 @@ export const cli = new Command()
   .version(version)
   .description("CLI for inlang.")
   // Commands
-  .addCommand(validate)
+  .addCommand(check)
   .addCommand(machine)
   .addCommand(plugin)
-  .addCommand(lint)
+  // Deprecated, hidden from --help: use `check`.
+  .addCommand(validate, { hidden: true })
+  .addCommand(lint, { hidden: true })
   // Hooks
   .hook("postAction", async (command) => {
     // name enables better grouping in the telemetry dashboard
     const name = command.args.filter(
       // shouldn't start with a flag and the previous arg shouldn't be a flag
-      (arg, i) => !arg.startsWith("-") && !command.args[i - 1]?.startsWith("-")
+      (arg, i) => !arg.startsWith("-") && !command.args[i - 1]?.startsWith("-"),
     );
 
     await capture({
