@@ -93,8 +93,10 @@ export type CheckDiagnostic = DiagnosticBase &
 				messageId: string;
 				/** The input the reference chooses by ("gender", "count"). */
 				name: string;
-				/** The reference's selector on it ("gender", "countPlural"). */
+				/** The reference's selector on it ("gender", "countPlural", "countPluralExact"). */
 				selector: string;
+				/** Its select values or exact numbers (ICU `=0`) the translation can't express; empty for a plural. */
+				values: string[];
 		  }
 		| {
 				checkId: "missing-variant";
