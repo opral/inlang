@@ -15,6 +15,11 @@ type NestedWriteMode = "insert" | "upsert";
  * sorts after the ones created before keeps the order in which they were
  * created, e.g. the variants a person adds in an editor. Random (v4) ids put
  * them in a random order, and runtimes select the first matching variant.
+ *
+ * uuid v7 is ordered per generator (this process' `uuid`, or the database's
+ * `uuidv7()`); between the two, ids of the same millisecond can sort either
+ * way. Ids created in separate steps (e.g. a select, then an upsert) are
+ * milliseconds apart.
  */
 export function compileBundleNestedBatch(
 	db: Kysely<InlangDatabaseSchema>,
