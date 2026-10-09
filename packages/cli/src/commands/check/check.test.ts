@@ -342,7 +342,7 @@ describe("deprecated commands", { timeout: 60_000 }, () => {
     expect(code).toBe(0);
   });
 
-  test("lint warns and runs check with --languageTags and --no-fail", async () => {
+  test("lint only points to check and runs nothing", async () => {
     const { code, stderr, stdout } = await run(app(), [
       "lint",
       ...project,
@@ -350,10 +350,8 @@ describe("deprecated commands", { timeout: 60_000 }, () => {
       "pt-BR",
       "--no-fail",
     ]);
-    expect(stderr).toContain(
-      "inlang lint is deprecated. Use inlang check --project ./project.inlang --locales pt-BR --no-fail instead.",
-    );
-    expect(stdout).toContain("welcome_back  pt-BR  no translation");
+    expect(stderr).toContain("inlang lint is deprecated and does nothing. Use inlang check");
+    expect(stdout).not.toContain("welcome_back");
     expect(code).toBe(0);
   });
 });
