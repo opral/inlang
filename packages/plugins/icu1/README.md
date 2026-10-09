@@ -12,7 +12,7 @@ It targets ICU MessageFormat v1 (a.k.a. ICU MessageFormat) and maps it onto inla
 
 - Parses ICU1 messages using `@messageformat/parser`.
 - Supports `select`, `plural`, and `selectordinal`, including exact matches (`=n`) and `offset`.
-- Supports `#` (octothorpe) inside plural/selectordinal cases.
+- Supports `#` (octothorpe) inside plural/selectordinal cases. `#` imports as `{$count :icu:pound}`, with an `offset` option when the plural has one (`{$count :icu:pound offset=1}`), because `#` displays `count - offset`.
 - Supports formatter functions (e.g. `number`, `date`, `time`, `spellout`, `ordinal`, `duration`) with style parameters.
 - Exports ICU1 strings back from inlang data.
 

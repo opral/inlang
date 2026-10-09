@@ -11,6 +11,15 @@ import type {
 
 const POUND_FUNCTION = "icu:pound";
 
+/**
+ * The plural or selectordinal that encloses a pattern, which `#` refers to.
+ * A select passes the enclosing plural through to its cases.
+ */
+type PluralContext = {
+  arg: string;
+  offset: number;
+};
+
 export function serializeMessage(args: {
   bundle: Bundle;
   message: Message;
@@ -19,14 +28,14 @@ export function serializeMessage(args: {
   const { bundle, message, variants } = args;
   if (message.selectors.length === 0) {
     if (variants.length === 0) return "";
-    return serializePattern(variants[0]!.pattern, { inPlural: false });
+    return serializePattern(variants[0]!.pattern, { plural: undefined });
   }
 
   return serializeVariants(
     variants,
     message.selectors,
     bundle.declarations,
-    false,
+    undefined,
   );
 }
 
@@ -34,11 +43,11 @@ function serializeVariants(
   variants: Variant[],
   selectors: VariableReference[],
   declarations: Declaration[],
-  inPlural: boolean,
+  plural: PluralContext | undefined,
 ): string {
   if (variants.length === 0) return "";
   if (selectors.length === 0) {
-    return serializePattern(variants[0]!.pattern, { inPlural });
+    return serializePattern(variants[0]!.pattern, { plural });
   }
 
   const nextSelectorIndex = selectors.findIndex((candidate) =>
@@ -47,7 +56,7 @@ function serializeVariants(
     ),
   );
   if (nextSelectorIndex === -1) {
-    return serializePattern(variants[0]!.pattern, { inPlural });
+    return serializePattern(variants[0]!.pattern, { plural });
   }
 
   const selector = selectors[nextSelectorIndex]!;
@@ -60,7 +69,7 @@ function serializeVariants(
       variants,
       selectors.slice(nextSelectorIndex + 2),
       declarations,
-      inPlural,
+      plural,
       pluralSelectorPair,
     );
   }
@@ -110,7 +119,9 @@ function serializeVariants(
       groupVariants,
       restSelectors,
       declarations,
-      isPluralContext,
+      isPluralContext
+        ? { arg: selectorConfig.arg, offset: selectorConfig.offset ?? 0 }
+        : plural,
     );
     return `${caseKey} {${tokens}}`;
   });
@@ -123,9 +134,9 @@ function serializeVariants(
   const select = `{${header} ${cases.join(" ")}}`;
 
   return [
-    serializePattern(prefix, { inPlural }),
+    serializePattern(prefix, { plural }),
     select,
-    serializePattern(suffix, { inPlural }),
+    serializePattern(suffix, { plural }),
   ].join("");
 }
 
@@ -286,7 +297,7 @@ function serializePluralSelectorPair(
   variants: Variant[],
   selectors: VariableReference[],
   declarations: Declaration[],
-  inPlural: boolean,
+  plural: PluralContext | undefined,
   pair: {
     exactSelector: VariableReference;
     pluralSelector: VariableReference;
@@ -343,7 +354,10 @@ function serializePluralSelectorPair(
   const cases = Array.from(groups.entries())
     .sort(([left], [right]) => pluralCasePriority(left) - pluralCasePriority(right))
     .map(([key, groupVariants]) => {
-      const tokens = serializeVariants(groupVariants, selectors, declarations, true);
+      const tokens = serializeVariants(groupVariants, selectors, declarations, {
+        arg: pair.config.arg,
+        offset: pair.config.offset ?? 0,
+      });
       return `${key} {${tokens}}`;
     });
 
@@ -355,9 +369,9 @@ function serializePluralSelectorPair(
   const select = `{${header} ${cases.join(" ")}}`;
 
   return [
-    serializePattern(prefix, { inPlural }),
+    serializePattern(prefix, { plural }),
     select,
-    serializePattern(suffix, { inPlural }),
+    serializePattern(suffix, { plural }),
   ].join("");
 }
 
@@ -393,7 +407,7 @@ function optionValue(
 
 function serializePattern(
   pattern: Pattern,
-  options: { inPlural: boolean },
+  options: { plural: PluralContext | undefined },
 ): string {
   return pattern
     .map((part: Pattern[number]) => {
@@ -415,16 +429,13 @@ function serializePattern(
 
 function serializeExpression(
   expression: Expression,
-  options: { inPlural: boolean },
+  options: { plural: PluralContext | undefined },
 ): string {
   if (
     expression.annotation?.type === "function-reference" &&
     expression.annotation.name === POUND_FUNCTION
   ) {
-    // `#` only means the number inside a plural; outside one (the plural was removed) it would be literal text
-    if (!options.inPlural && expression.arg.type === "variable-reference")
-      return `{${expression.arg.name}, number}`;
-    return "#";
+    return serializePound(expression.arg, expression.annotation, options);
   }
 
   const arg =
@@ -443,10 +454,39 @@ function serializeExpression(
   return `{${arg}, ${expression.annotation.name}}`;
 }
 
-function escapeText(value: string, options: { inPlural: boolean }): string {
+/**
+ * `#` displays `arg - offset` of the plural it sits in. Write `#` when it
+ * sits in that plural. Elsewhere, for example after an editor removed or
+ * changed the plural around it, write what it displays: `{count, number}`,
+ * or a one-case plural that applies the offset.
+ */
+function serializePound(
+  arg: Expression["arg"],
+  annotation: FunctionReference,
+  options: { plural: PluralContext | undefined },
+): string {
+  if (arg.type !== "variable-reference") return "#";
+  const offsetOption = optionValue(annotation, "offset");
+  const offset = offsetOption === undefined ? undefined : Number(offsetOption);
+  if (
+    options.plural &&
+    options.plural.arg === arg.name &&
+    // imports before the offset was kept on `#` have no offset option
+    (offset === undefined || offset === options.plural.offset)
+  ) {
+    return "#";
+  }
+  if (!offset) return `{${arg.name}, number}`;
+  return `{${arg.name}, plural, offset:${offset} other {#}}`;
+}
+
+function escapeText(
+  value: string,
+  options: { plural: PluralContext | undefined },
+): string {
   let escaped = value.replace(/'/g, "''");
   escaped = escaped.replace(/\{/g, "'{'").replace(/\}/g, "'}'");
-  if (options.inPlural) {
+  if (options.plural) {
     escaped = escaped.replace(/#/g, "'#'");
   }
   return escaped;
