@@ -2,14 +2,14 @@
  * esbuild options of the CLI bundle, shared by `build.js` and the end-to-end
  * tests, which build into their own directory.
  *
- * @param {{ isProduction: boolean, publicPosthogToken?: string, outdir?: string }} args
+ * @param {{ outdir?: string }} [args]
  * @returns {import("esbuild").BuildOptions}
  */
 export function buildOptions(args) {
   return {
     entryPoints: ["./src/main.ts"],
     bundle: true,
-    outdir: args.outdir ?? "./dist",
+    outdir: args?.outdir ?? "./dist",
     platform: "node",
     format: "esm",
     target: "node16",
@@ -30,12 +30,6 @@ const __dirname = pathPolyfill123.dirname(__filename)
 
 // -------------------------------------------------
 `,
-    },
-    define: {
-      ENV_DEFINED_IN_BUILD_STEP: JSON.stringify({
-        IS_PRODUCTION: args.isProduction,
-        PUBLIC_POSTHOG_TOKEN: args.publicPosthogToken,
-      }),
     },
     // @inlang/sdk owns Lix's native and WASM assets. Keep its module URLs
     // relative to the installed SDK instead of rebasing them into dist/main.js.

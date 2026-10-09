@@ -2,19 +2,14 @@ import { Command } from "commander";
 import { machine } from "./commands/machine/index.js";
 import { plugin } from "./commands/plugin/index.js";
 import { version } from "../package.json";
-import { initErrorMonitoring } from "./services/error-monitoring/implementation.js";
-import { silenceKnownShutdownNoise } from "./services/error-monitoring/silenceKnownShutdownNoise.js";
+import { silenceKnownShutdownNoise } from "./utilities/silenceKnownShutdownNoise.js";
 import { validate } from "./commands/validate/index.js";
-import { capture } from "./telemetry/capture.js";
-import { commandTelemetryProperties } from "./telemetry/commandProperties.js";
-import { isTelemetryDisabled } from "./telemetry/isTelemetryDisabled.js";
 import { lint } from "./commands/lint/index.js";
 import { check } from "./commands/check/index.js";
 import { cloud } from "./commands/cloud/index.js";
 
 // --------------- INIT ---------------
 
-initErrorMonitoring();
 silenceKnownShutdownNoise();
 // checks whether the gitOrigin corresponds to the pattern
 
@@ -39,20 +34,4 @@ export const cli = new Command()
   )
   // Deprecated, hidden from --help: use `check`.
   .addCommand(validate, { hidden: true })
-  .addCommand(lint, { hidden: true })
-  // Hooks
-  .hook("postAction", async (_cli, actionCommand) => {
-    if (isTelemetryDisabled()) return;
-    await capture({
-      event: `CLI command executed`,
-      properties: {
-        // the command's name and the names of the flags used, never their
-        // values or arguments: those can be paths, globs, locales or keys
-        ...commandTelemetryProperties(actionCommand),
-        node_version: process.versions.node,
-        platform: process.platform,
-        version,
-      },
-    });
-    // process should exit by itself once promises are resolved
-  });
+  .addCommand(lint, { hidden: true });
