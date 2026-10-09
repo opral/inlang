@@ -2,11 +2,13 @@ import type {
   Bundle,
   InlangPlugin,
   MessageImport,
+  Variant,
   VariantImport,
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
 import { parseMessage } from "./parse.js";
 import { serializeMessage } from "./serialize.js";
+import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
 
 export const PLUGIN_KEY = "plugin.inlang.icu-messageformat-1";
 
@@ -48,79 +50,107 @@ export const plugin: InlangPlugin<PluginConfig> = {
     return files;
   },
 
-  importFiles: ({ files }: ImportFilesArgs) => {
-    const bundles = new Map<string, Bundle>();
-    const messages: MessageImport[] = [];
-    const variants: VariantImport[] = [];
-    const decoder = new TextDecoder("utf-8");
+  importFiles: ({ files }: ImportFilesArgs) => importFiles({ files }),
 
-    for (const file of files) {
-      const json = JSON.parse(decoder.decode(file.content));
-      for (const [key, value] of Object.entries(json)) {
-        if (key === "$schema") continue;
-        if (typeof value !== "string") continue;
+  exportFiles: async (args: ExportFilesArgs) =>
+    keepUnchangedJsonEntries({
+      exported: exportWholeFiles(args),
+      files: args.files,
+      settings: args.settings,
+      importFiles,
+      exportFiles: exportWholeFiles,
+      // with several path patterns, a locale has several files
+      isSameFile: (exported, existing) => exported.name === existing.path,
+    }),
+};
 
-        const parsed = parseMessage({
-          messageSource: value,
-          bundleId: key,
-          locale: file.locale,
-        });
+function importFiles({ files }: Pick<ImportFilesArgs, "files">) {
+  const bundles = new Map<string, Bundle>();
+  const messages: MessageImport[] = [];
+  const variants: VariantImport[] = [];
+  const decoder = new TextDecoder("utf-8");
 
-        const bundle = bundles.get(key) ?? { id: key, declarations: [] };
-        bundle.declarations = uniqueDeclarations([
-          ...bundle.declarations,
-          ...parsed.declarations,
-        ]);
-        bundles.set(key, bundle);
+  for (const file of files) {
+    const json = JSON.parse(decoder.decode(file.content));
+    for (const [key, value] of Object.entries(json)) {
+      if (key === "$schema") continue;
+      if (typeof value !== "string") continue;
 
-        messages.push({
-          bundleId: key,
-          locale: file.locale,
-          selectors: parsed.selectors,
-        });
-        variants.push(...parsed.variants);
-      }
-    }
-
-    return { bundles: [...bundles.values()], messages, variants };
-  },
-
-  exportFiles: ({ bundles, messages, variants, settings }: ExportFilesArgs) => {
-    const encoder = new TextEncoder();
-    const result: Record<string, Record<string, string>> = {};
-
-    for (const message of messages) {
-      const bundle = bundles.find((b) => b.id === message.bundleId);
-      if (!bundle) continue;
-      const messageVariants = variants.filter(
-        (variant) => variant.messageId === message.id,
-      );
-      const serialized = serializeMessage({
-        bundle,
-        message,
-        variants: messageVariants,
+      const parsed = parseMessage({
+        messageSource: value,
+        bundleId: key,
+        locale: file.locale,
       });
 
-      result[message.locale] = {
-        ...result[message.locale],
-        [message.bundleId]: serialized,
-      };
+      const bundle = bundles.get(key) ?? { id: key, declarations: [] };
+      bundle.declarations = uniqueDeclarations([
+        ...bundle.declarations,
+        ...parsed.declarations,
+      ]);
+      bundles.set(key, bundle);
+
+      messages.push({
+        bundleId: key,
+        locale: file.locale,
+        selectors: parsed.selectors,
+      });
+      variants.push(...parsed.variants);
     }
+  }
 
-    const pathPattern = settings[PLUGIN_KEY]?.pathPattern;
-    const formattedPathPatterns = Array.isArray(pathPattern)
-      ? pathPattern
-      : [pathPattern ?? "{locale}.json"];
+  return { bundles: [...bundles.values()], messages, variants };
+}
 
-    return Object.entries(result).flatMap(([locale, messagesByKey]) =>
-      formattedPathPatterns.map((pattern) => ({
-        locale,
-        name: pattern.replace(/{locale}/, locale),
-        content: encoder.encode(JSON.stringify(messagesByKey, undefined, "\t")),
-      })),
-    );
-  },
-};
+/**
+ * Writes whole files, without the previous files.
+ */
+function exportWholeFiles({
+  bundles,
+  messages,
+  variants,
+  settings,
+}: Omit<ExportFilesArgs, "files">) {
+  const encoder = new TextEncoder();
+  const result: Record<string, Record<string, string>> = {};
+
+  const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+  const variantsByMessageId = new Map<string, Variant[]>();
+  for (const variant of variants) {
+    const messageVariants = variantsByMessageId.get(variant.messageId) ?? [];
+    messageVariants.push(variant);
+    variantsByMessageId.set(variant.messageId, messageVariants);
+  }
+
+  for (const message of messages) {
+    const bundle = bundlesById.get(message.bundleId);
+    if (!bundle) continue;
+    const serialized = serializeMessage({
+      bundle,
+      message,
+      variants: variantsByMessageId.get(message.id) ?? [],
+    });
+
+    result[message.locale] ??= {};
+    result[message.locale]![message.bundleId] = serialized;
+  }
+
+  const pathPattern = settings[PLUGIN_KEY]?.pathPattern;
+  const formattedPathPatterns = Array.isArray(pathPattern)
+    ? pathPattern
+    : [pathPattern ?? "{locale}.json"];
+
+  return Object.entries(result).flatMap(([locale, messagesByKey]) =>
+    formattedPathPatterns.map((pattern) => ({
+      locale,
+      name: pattern.replace(/{locale}/, locale),
+      content: encoder.encode(JSON.stringify(messagesByKey, undefined, "\t")),
+      // each file to its own path if there are several path patterns
+      ...(Array.isArray(pathPattern)
+        ? { metadata: { pathPattern: pattern } }
+        : {}),
+    })),
+  );
+}
 
 function uniqueDeclarations(
   declarations: Bundle["declarations"],
