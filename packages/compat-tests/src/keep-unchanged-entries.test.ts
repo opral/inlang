@@ -927,3 +927,147 @@ describe("android: a real-world res/values/strings.xml", () => {
 		}
 	);
 });
+
+describe("android: locale qualifiers in a project directory", () => {
+	const fixture = fixtures.find((candidate) => candidate.dir === "android")!;
+	const en = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title">Title</string>
+    <string name="body">Body</string>
+</resources>
+`;
+	const pt = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="title">Título</string>
+</resources>
+`;
+
+	/** Runs `fn` with a project directory of `files` (paths under `res/`). */
+	async function withDirectory(
+		locales: string[],
+		files: Record<string, string>,
+		fn: (args: {
+			project: Project;
+			save: () => Promise<void>;
+			read: () => Record<string, string>;
+		}) => Promise<void>
+	) {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-android-"));
+		try {
+			const projectPath = path.join(root, "project.inlang");
+			fs.mkdirSync(projectPath);
+			fs.writeFileSync(
+				path.join(projectPath, "settings.json"),
+				JSON.stringify({
+					baseLocale: "en",
+					locales,
+					modules: [plugins[fixture.key].url],
+					[fixture.key]: fixture.pluginSettings,
+				})
+			);
+			for (const [file, content] of Object.entries(files)) {
+				fs.mkdirSync(path.dirname(path.join(root, "res", file)), {
+					recursive: true,
+				});
+				fs.writeFileSync(path.join(root, "res", file), content);
+			}
+			servePlugins("current");
+			const project = await loadFromDirectory("current", {
+				path: projectPath,
+				fs,
+			});
+			expect(await project.errors.get()).toEqual([]);
+			await fn({
+				project,
+				save: () =>
+					saveToDirectory("current", { path: projectPath, fs, project }),
+				read: () =>
+					Object.fromEntries(
+						fs
+							.readdirSync(path.join(root, "res"), { recursive: true })
+							.map(String)
+							.filter((file) => file.endsWith(".xml"))
+							.sort()
+							.map((file) => [
+								file,
+								fs.readFileSync(path.join(root, "res", file), "utf8"),
+							])
+					),
+			});
+			await project.close();
+		} finally {
+			servePlugins("published");
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	}
+
+	test.each(["values-pt-rBR", "values-b+pt+BR"])(
+		"pt-BR in %s is imported, kept and written to its file",
+		async (dir) => {
+			const files = {
+				"values/strings.xml": en,
+				[`${dir}/strings.xml`]: pt,
+			};
+			await withDirectory(["en", "pt-BR"], files, async (p) => {
+				const t = tables(p.project.version);
+				const message = await p.project.db
+					.selectFrom(t.message)
+					.where(t.bundleId, "=", "title")
+					.where("locale", "=", "pt-BR")
+					.select("id")
+					.executeTakeFirstOrThrow();
+				await p.save();
+				expect(p.read()).toEqual(files);
+				await p.project.db
+					.updateTable(t.variant)
+					.set({ pattern: [{ type: "text", value: "Titulo" }] })
+					.where(t.messageId, "=", message.id)
+					.execute();
+				await p.save();
+				expect(p.read()).toEqual({
+					...files,
+					[`${dir}/strings.xml`]: pt.replace(">Título<", '>"Titulo"<'),
+				});
+			});
+		}
+	);
+
+	test("new locales are written to the qualifiers as Android Studio writes them", async () => {
+		await withDirectory(
+			["en", "pt-BR", "es-419", "zh-Hans"],
+			{ "values/strings.xml": en },
+			async (p) => {
+				const t = tables(p.project.version);
+				for (const locale of ["pt-BR", "es-419", "zh-Hans"]) {
+					await p.project.db
+						.insertInto(t.message)
+						.values({
+							id: `title_${locale}`,
+							[t.bundleId]: "title",
+							locale,
+							selectors: [],
+						})
+						.execute();
+					await p.project.db
+						.insertInto(t.variant)
+						.values({
+							id: `title_${locale}_variant`,
+							[t.messageId]: `title_${locale}`,
+							matches: [],
+							pattern: [{ type: "text", value: `Title ${locale}` }],
+						})
+						.execute();
+				}
+				await p.save();
+				const written = (locale: string) =>
+					`<?xml version="1.0" encoding="utf-8"?>\n<resources>\n  <string name="title">"Title ${locale}"</string>\n</resources>\n`;
+				expect(p.read()).toEqual({
+					"values-b+es+419/strings.xml": written("es-419"),
+					"values-b+zh+Hans/strings.xml": written("zh-Hans"),
+					"values-pt-rBR/strings.xml": written("pt-BR"),
+					"values/strings.xml": en,
+				});
+			}
+		);
+	});
+});

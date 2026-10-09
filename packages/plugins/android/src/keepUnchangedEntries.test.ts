@@ -838,6 +838,176 @@ describe("real-world files: edge cases", () => {
   });
 });
 
+describe("locale qualifiers", () => {
+  const localeSettings = {
+    ...settings,
+    locales: ["en", "de", "pt-BR", "zh-Hans", "es-419", "fil"],
+  };
+
+  test("toBeImportedFiles lists the qualifier as Android Studio writes it first, then the BCP 47 one", async () => {
+    const files = await plugin.toBeImportedFiles!({
+      settings: localeSettings,
+    } as any);
+    expect(files.map((file) => [file.locale, file.path])).toEqual([
+      ["en", "./res/values/strings.xml"],
+      ["de", "./res/values-de/strings.xml"],
+      ["pt-BR", "./res/values-pt-rBR/strings.xml"],
+      ["pt-BR", "./res/values-b+pt+BR/strings.xml"],
+      ["zh-Hans", "./res/values-b+zh+Hans/strings.xml"],
+      ["es-419", "./res/values-b+es+419/strings.xml"],
+      ["fil", "./res/values-fil/strings.xml"],
+    ]);
+  });
+
+  test("every {locale} and {languageTag} of the path pattern is replaced", async () => {
+    const files = await plugin.toBeImportedFiles!({
+      settings: {
+        ...settings,
+        locales: ["en", "pt-BR"],
+        [PLUGIN_KEY]: {
+          pathPattern: "./res{locale}/values{languageTag}/strings{locale}.xml",
+        },
+      },
+    } as any);
+    expect(files.map((file) => file.path)).toEqual([
+      "./res/values/strings.xml",
+      "./res-pt-rBR/values-pt-rBR/strings-pt-rBR.xml",
+      "./res-b+pt+BR/values-b+pt+BR/strings-b+pt+BR.xml",
+    ]);
+  });
+
+  test("a locale is written to its existing file, else to the qualifier as Android Studio writes it", () => {
+    const pt = `<resources>\n    <string name="a">A</string>\n</resources>\n`;
+    const data = identifyRows(
+      plugin.importFiles!({
+        settings: localeSettings,
+        files: [{ locale: "pt-BR", content: encode(pt) }],
+      }) as Data,
+    );
+    const exportWith = (files: any[] | undefined) =>
+      (
+        plugin.exportFiles!({
+          settings: localeSettings,
+          ...data,
+          files,
+        }) as any[]
+      ).map((file) => [file.name, file.metadata?.pathPattern]);
+    expect(exportWith(undefined)).toEqual([
+      ["./res/values-pt-rBR/strings.xml", undefined],
+    ]);
+    expect(exportWith([])).toEqual([
+      ["./res/values-pt-rBR/strings.xml", "./res/values-pt-rBR/strings.xml"],
+    ]);
+    for (const path of [
+      "./res/values-pt-rBR/strings.xml",
+      "./res/values-b+pt+BR/strings.xml",
+    ])
+      expect(
+        exportWith([{ path, locale: "pt-BR", content: encode(pt) }]),
+      ).toEqual([[path, path]]);
+  });
+
+  test("two files of one locale are rejected", () => {
+    const file = (path: string) => ({
+      locale: "pt-BR",
+      content: encode("<resources></resources>"),
+      toBeImportedFilesMetadata: { path },
+    });
+    expect(() =>
+      plugin.importFiles!({
+        settings: localeSettings,
+        files: [
+          file("./res/values-pt-rBR/strings.xml"),
+          file("./res/values-b+pt+BR/strings.xml"),
+        ],
+      } as any),
+    ).toThrow('Locale "pt-BR" has two Android resource files');
+  });
+});
+
+describe("product variants and formatted plurals", () => {
+  test("non-translatable product variants are accepted and kept", () => {
+    const file = `<resources>
+    <string name="a" product="tablet" translatable="false">Tablet</string>
+    <string name="a" product="default" translatable="false">Phone</string>
+    <string name="b">B</string>
+</resources>
+`;
+    expect(importAndroid(file).bundles.map((bundle) => bundle.id)).toEqual([
+      "b",
+    ]);
+    expect(reexport(file)).toBe(file);
+    // a message "a" doesn't replace one of the products
+    expect(reexport(file, (data) => addMessage(data, "a", "A"))).toBe(
+      file.replace(
+        '    <string name="b">',
+        '    <string name="a">"A"</string>\n    <string name="b">',
+      ),
+    );
+    // translatable product variants can't be represented
+    expect(() =>
+      importAndroid(
+        '<resources><string name="a" product="tablet">T</string><string name="a" product="default">P</string></resources>',
+      ),
+    ).toThrow("product-specific resources are not supported");
+  });
+
+  test('formatted="false" plurals are text and round-trip', () => {
+    const file = `<resources xmlns:tools="http://schemas.android.com/tools">
+    <plurals name="p" tools:ignore="X" formatted="false">
+        <item quantity="one">50% of %d</item>
+        <item quantity="other">%d% of %d</item>
+    </plurals>
+</resources>
+`;
+    const data = importAndroid(file);
+    expect(findVariant(data, "p", "one").pattern).toEqual([
+      { type: "text", value: "50% of %d" },
+    ]);
+    expect(reexport(file)).toBe(file);
+    expect(
+      reexport(file, (data) => setText(data, "p", "60% of %d", "one")),
+    ).toBe(file.replace(">50% of %d<", '>"60% of %d"<'));
+    // the full export writes formatted="false" too
+    expect(exportOf(data)).toContain('<plurals name="p" formatted="false">');
+    expect(importAndroid(exportOf(data)).variants).toEqual(data.variants);
+  });
+
+  test('formatted="false" is added to or removed from a <plurals> and keeps its other attributes', () => {
+    const file = `<resources xmlns:tools="http://schemas.android.com/tools">
+    <plurals name="p" tools:ignore="X">
+        <item quantity="one">One song</item>
+        <item quantity="other">Songs</item>
+    </plurals>
+    <plurals name="q" formatted="false" tools:ignore="Y">
+        <item quantity="one">One</item>
+        <item quantity="other">50% of them</item>
+    </plurals>
+</resources>
+`;
+    // text that reads as printf: added, the unchanged item is kept
+    expect(reexport(file, (data) => setText(data, "p", "%d%", "other"))).toBe(
+      file
+        .replace(
+          '<plurals name="p" tools:ignore="X">',
+          '<plurals name="p" formatted="false" tools:ignore="X">',
+        )
+        .replace(">Songs<", '>"%d%"<'),
+    );
+    // an expression: removed
+    expect(
+      reexport(file, (data) => setText(data, "q", "%1$d of them", "other")),
+    ).toBe(
+      file
+        .replace(
+          '<plurals name="q" formatted="false" tools:ignore="Y">',
+          '<plurals name="q" tools:ignore="Y">',
+        )
+        .replace(">50% of them<", '>"%1$d of them"<'),
+    );
+  });
+});
+
 type Data = { bundles: any[]; messages: any[]; variants: any[] };
 
 function reexport(text: string, edit?: (data: Data) => void): string {

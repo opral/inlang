@@ -15,6 +15,10 @@ export type ScannedEntry = Omit<Entry, "children"> & {
   /** `true` for `formatted="false"` */
   unformatted: boolean;
   selfClosing: boolean;
+  /** whether the element has a `product` attribute */
+  product: boolean;
+  /** offset after the start tag, or of the `/>` of a self-closing element */
+  tagEnd: number;
   children?: ScannedEntry[];
 };
 
@@ -177,6 +181,8 @@ export function scanResources(text: string): ScannedResources {
       translatable: !isFalse(open.attributes.get("translatable")),
       unformatted: isFalse(open.attributes.get("formatted")),
       selfClosing,
+      product: open.attributes.has("product"),
+      tagEnd: open.contentStart,
     };
     if (
       depth === 1 &&

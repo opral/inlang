@@ -9,7 +9,12 @@ import type {
   VariantImport,
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
-import { mergeEntries, type Entry, type EntryText } from "./mergeEntries.js";
+import {
+  applyEdits,
+  mergeEntries,
+  type Entry,
+  type EntryText,
+} from "./mergeEntries.js";
 import { isFalse, scanResources, type ScannedEntry } from "./scanResources.js";
 
 export const PLUGIN_KEY = "plugin.inlang.android";
@@ -31,19 +36,28 @@ const quantities = new Set(["zero", "one", "two", "few", "many", "other"]);
 export const plugin: InlangPlugin<Config> = {
   key: PLUGIN_KEY,
   settingsSchema: PluginSettings,
+  // Every spelling of the qualifier of a locale, the preferred one first
+  // (e.g. `values-pt-rBR` and `values-b+pt+BR`). Missing files are skipped.
   toBeImportedFiles: ({ settings }) =>
-    settings.locales.map((locale) => ({
-      locale,
-      path: androidPath(
-        settings[PLUGIN_KEY].pathPattern,
-        locale,
-        settings.baseLocale,
-      ),
-    })),
-  importFiles: ({ files }: ImportArgs) => importAndroidFiles(files),
+    settings.locales.flatMap((locale) =>
+      androidLocaleSuffixes(locale, settings.baseLocale).map((suffix) => {
+        const path = androidPath(settings[PLUGIN_KEY].pathPattern, suffix);
+        return { locale, path, metadata: { path } };
+      }),
+    ),
+  importFiles: ({ files }: ImportArgs) => {
+    assertOneFilePerLocale(files);
+    return importAndroidFiles(files);
+  },
   exportFiles: (args: ExportArgs) => {
     const data = withoutExtraTranslations(args);
-    const files = keepUnchangedEntries(exportAndroidFiles(data), data);
+    const files = keepUnchangedEntries(exportAndroidFiles(data), data).map(
+      (file) => {
+        // the spelling of the existing file, e.g. `values-b+pt+BR`
+        const existing = existingFile(args.files, file.locale);
+        return existing ? { ...file, name: existing.path } : file;
+      },
+    );
     // Hosts that pass the existing files (inlang SDK 4) write each file to
     // `metadata.pathPattern`. Without it, `saveProjectToDirectory` replaces
     // `{locale}` with the locale (`res/valuesde/…`) instead of the Android
@@ -69,9 +83,36 @@ export const plugin: InlangPlugin<Config> = {
  * "ExtraTranslation"), so e.g. a German message for `app_name` created in
  * an editor is not written.
  */
+/**
+ * The existing file of a locale. `toBeImportedFiles` lists the preferred
+ * spelling of the qualifier first.
+ */
+function existingFile(files: ExportArgs["files"], locale: string) {
+  return files?.find((file) => file.locale === locale);
+}
+
+/**
+ * Android merges the directories of the spellings of one qualifier (e.g.
+ * `values-pt-rBR` and `values-b+pt+BR`), which inlang can't write back:
+ * every message of a locale is written to one file.
+ */
+function assertOneFilePerLocale(files: ImportArgs["files"]) {
+  const paths = new Map<string, string>();
+  for (const file of files) {
+    const path = file.toBeImportedFilesMetadata?.path;
+    if (typeof path !== "string") continue;
+    const other = paths.get(file.locale);
+    if (other !== undefined && other !== path)
+      throw new Error(
+        `Locale "${file.locale}" has two Android resource files, ${other} and ${path}. Move the strings of one into the other and delete it.`,
+      );
+    paths.set(file.locale, path);
+  }
+}
+
 function withoutExtraTranslations(args: ExportArgs): ExportArgs {
   const baseLocale = args.settings.baseLocale;
-  const base = args.files?.find((file) => file.locale === baseLocale);
+  const base = existingFile(args.files, baseLocale);
   if (base === undefined) return args;
   const names = (content: Uint8Array, translatable?: boolean) => {
     try {
@@ -95,9 +136,7 @@ function withoutExtraTranslations(args: ExportArgs): ExportArgs {
     const name = `${message.selectors.length === 0 ? "string" : "plurals"}\0${message.bundleId}`;
     if (!nonTranslatable.has(name)) return true;
     if (!existing.has(message.locale)) {
-      const file = args.files!.find(
-        (candidate) => candidate.locale === message.locale,
-      );
+      const file = existingFile(args.files, message.locale);
       existing.set(
         message.locale,
         file ? names(file.content) : new Set<string>(),
@@ -145,7 +184,7 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       if (!item || typeof item !== "object" || !("@_name" in item))
         throw new Error("Every Android <string> must have a name attribute");
       const id = String(item["@_name"]);
-      assertUnique(seen, file.locale, "string", id);
+      assertUnique(seen, file.locale, "string", id, item["@_product"]);
       if (!isTranslatable(item)) continue;
       assertNoProduct(item, id);
       assertOneMessage(imported, file.locale, id);
@@ -169,17 +208,24 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       if (!plural || typeof plural !== "object" || !("@_name" in plural))
         throw new Error("Every Android <plurals> must have a name attribute");
       const id = String(plural["@_name"]);
-      assertUnique(seen, file.locale, "plurals", id);
+      assertUnique(seen, file.locale, "plurals", id, plural["@_product"]);
       if (!isTranslatable(plural)) continue;
       assertNoProduct(plural, id);
       assertOneMessage(imported, file.locale, id);
+      // `formatted="false"`: the items are text, as of a `<string>`
+      const unformatted = isFalse(plural["@_formatted"]);
       const parsedItems = array(plural.item).map((item) => {
         const quantity = String(
           item && typeof item === "object" ? item["@_quantity"] : undefined,
         );
         if (!quantities.has(quantity))
           throw new Error(`Unsupported Android plural quantity "${quantity}"`);
-        return { quantity, parsed: parseAndroidPattern(textValue(item)) };
+        return {
+          quantity,
+          parsed: unformatted
+            ? parseUnformatted(textValue(item))
+            : parseAndroidPattern(textValue(item)),
+        };
       });
       const pluralQuantities = parsedItems.map((item) => item.quantity);
       if (new Set(pluralQuantities).size !== pluralQuantities.length)
@@ -239,9 +285,7 @@ function keepUnchangedEntries(
 ): ExportFile[] {
   if (!args.files?.length) return exported;
   return exported.map((file) => {
-    const previous = args.files!.find(
-      (candidate) => candidate.locale === file.locale,
-    );
+    const previous = existingFile(args.files, file.locale);
     if (previous === undefined) return file;
     try {
       const content = keepUnchangedEntriesOfFile({
@@ -264,11 +308,63 @@ function keepUnchangedEntriesOfFile(args: {
   locale: string;
   settings: ExportArgs["settings"];
 }): Uint8Array | undefined {
+  const exportedText = decode(args.exported);
+  const exportedEntries = new Map(
+    scanResources(exportedText).entries.map((entry) => [entry.key, entry]),
+  );
+  /** Names of messages that the full export writes as only text. */
+  const exportedRows = rowsOf(
+    importAndroidFiles([{ locale: args.locale, content: args.exported }]),
+  );
+  const nameOf = (messageId: string) => messageId.split("\u0000")[0]!;
+  const withExpressions = new Set(
+    exportedRows.variants
+      .filter((variant) => variant.pattern.some((part) => part.type !== "text"))
+      .map((variant) => nameOf(variant.messageId)),
+  );
+  const textOnly = new Set(
+    exportedRows.messages
+      .map((message) => nameOf(message.id))
+      .filter((name) => !withExpressions.has(name)),
+  );
+  /**
+   * Whether the content of an element of the file reads as the new data
+   * with its `formatted` attribute: a `formatted="false"` element only if
+   * the new data is only text, another one if the full export doesn't need
+   * `formatted="false"`.
+   */
+  const readsAsExported = (entry: ScannedEntry) => {
+    const exported = exportedEntries.get(entry.key);
+    return (
+      exported === undefined ||
+      exported.element !== entry.element ||
+      (entry.unformatted ? textOnly.has(entry.key) : !exported.unformatted)
+    );
+  };
   // keeps a byte order mark
-  const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+  const original = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
     args.previous,
   );
-  const exportedText = decode(args.exported);
+  // The start tag of a `<plurals>` that needs `formatted` added or removed
+  // is changed first, so that its items are compared as they read then.
+  const text = applyEdits(
+    original,
+    scanResources(original)
+      .entries.filter(
+        (entry) =>
+          entry.element === "plurals" &&
+          entry.translatable &&
+          !readsAsExported(entry),
+      )
+      .map((entry) => ({
+        start: entry.start,
+        end: entry.tagEnd,
+        text: withFormatted(
+          original.slice(entry.start, entry.tagEnd),
+          exportedEntries.get(entry.key)!.unformatted,
+        ),
+      })),
+  );
   /** The text the plugin writes for what `text` imports to. */
   const canonical = (text: string) => {
     const imported = importAndroidFiles([
@@ -285,19 +381,6 @@ function keepUnchangedEntriesOfFile(args: {
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const indent = scanned.indent ?? "  ";
   const next = entryTexts(exportedText);
-  const exportedEntries = new Map(
-    scanResources(exportedText).entries.map((entry) => [entry.key, entry]),
-  );
-  /** Names of `<string>`s that the full export writes as only text. */
-  const textOnly = new Set(
-    rowsOf(
-      importAndroidFiles([{ locale: args.locale, content: args.exported }]),
-    )
-      .variants.filter((variant) =>
-        variant.pattern.every((part) => part.type === "text"),
-      )
-      .map((variant) => variant.messageId.split("\u0000")[0]!),
-  );
   /** Start tags of `<string>`s with `formatted` added or removed, by name. */
   const startTags = new Map<string, string>();
   /** The element of the file in the merge, see `ScannedEntry`. */
@@ -308,7 +391,16 @@ function keepUnchangedEntriesOfFile(args: {
       // text. If the new data has a message with the name of one of the
       // same type, the message replaces it, so that the file doesn't define
       // the name twice.
-      return exported?.element === entry.element
+      // Not one of several products, and not if the file has a translatable
+      // element of the name too.
+      return exported?.element === entry.element &&
+        !entry.product &&
+        !scanned.entries.some(
+          (other) =>
+            other.translatable &&
+            other.key === entry.key &&
+            other.element === entry.element,
+        )
         ? { key: entry.key, start: entry.start, end: entry.end }
         : undefined;
     }
@@ -316,10 +408,7 @@ function keepUnchangedEntriesOfFile(args: {
     // the new text in the start tag of the file, i.e. with or without
     // `formatted="false"` as needed. Otherwise the start tag is written
     // too, with only `formatted` added or removed.
-    const keepsStartTag =
-      entry.element !== "string" ||
-      exported === undefined ||
-      (entry.unformatted ? textOnly.has(entry.key) : !exported.unformatted);
+    const keepsStartTag = entry.element !== "string" || readsAsExported(entry);
     let valueRange = entry.valueRange;
     if (!keepsStartTag && valueRange) {
       startTags.set(
@@ -418,7 +507,11 @@ function entryTexts(text: string): Map<string, EntryText> {
       ...valueText(text, entry),
       ...(entry.children
         ? {
-            shell: /^<[^>]*>/.exec(element)![0],
+            // without `formatted`, which is written in place (see
+            // `keepUnchangedEntriesOfFile`) and follows from the items
+            shell: /^<[^>]*>/
+              .exec(element)![0]
+              .replace(' formatted="false"', ""),
             children: new Map(
               entry.children.map((child) => [
                 child.key,
@@ -618,21 +711,24 @@ function exportAndroidFiles({
         throw new Error(
           `Android plural "${bundle.id}" must export unique quantities and exactly one other`,
         );
+      // only text, of which some reads as printf, e.g. "%d%"
+      const unformatted =
+        messageVariants.every((variant) =>
+          variant.pattern.every((part) => part.type === "text"),
+        ) &&
+        messageVariants.some((variant) => needsUnformatted(variant.pattern));
       lines.push(
-        `  <plurals name="${escapeXmlAttribute(bundle.id)}">\n${items.join("\n")}\n  </plurals>`,
+        `  <plurals name="${escapeXmlAttribute(bundle.id)}"${unformatted ? ' formatted="false"' : ""}>\n${items.join("\n")}\n  </plurals>`,
       );
     }
     files.set(message.locale, lines);
   }
   return [...files].map(([locale, lines]) => ({
     locale,
-    name: settings[PLUGIN_KEY]?.pathPattern
-      ? androidPath(
-          settings[PLUGIN_KEY].pathPattern,
-          locale,
-          settings.baseLocale,
-        )
-      : `res/values${androidLocaleSuffix(locale, settings.baseLocale)}/strings.xml`,
+    name: androidPath(
+      settings[PLUGIN_KEY]?.pathPattern ?? "res/values{locale}/strings.xml",
+      androidLocaleSuffixes(locale, settings.baseLocale)[0]!,
+    ),
     content: encode(
       `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n${lines.sort().join("\n")}\n</resources>\n`,
     ),
@@ -927,25 +1023,40 @@ function decode(value: Uint8Array) {
   return new TextDecoder().decode(value);
 }
 
-function androidLocaleSuffix(locale: string, baseLocale: string) {
-  if (locale === baseLocale) return "";
+/**
+ * The resource qualifiers of a locale, the preferred one first: the base
+ * locale has none, a language `-de`, a language with a two-letter region
+ * `-pt-rBR` (as Android Studio writes it) or `-b+pt+BR`, and everything else
+ * BCP 47 `-b+zh+Hans`, `-b+es+419`.
+ */
+function androidLocaleSuffixes(locale: string, baseLocale: string): string[] {
+  if (locale === baseLocale) return [""];
   const [language, ...parts] = locale.split("-");
   if (!language) throw new Error(`Invalid locale "${locale}"`);
-  if (parts.length === 0) return `-${language}`;
-  return `-b+${[language, ...parts].join("+")}`;
+  if (parts.length === 0) return [`-${language}`];
+  const bcp47 = `-b+${[language, ...parts].join("+")}`;
+  if (
+    parts.length === 1 &&
+    /^[a-zA-Z]{2,3}$/.test(language) &&
+    /^[a-zA-Z]{2}$/.test(parts[0]!)
+  )
+    return [`-${language}-r${parts[0]!.toUpperCase()}`, bcp47];
+  return [bcp47];
 }
 
-function androidPath(pattern: string, locale: string, baseLocale: string) {
-  return pattern.replace("{locale}", androidLocaleSuffix(locale, baseLocale));
+function androidPath(pattern: string, suffix: string) {
+  return pattern.replace(/\{(?:locale|languageTag)\}/g, suffix);
 }
 
+/** Names are unique per resource type and product (`product="tablet"`). */
 function assertUnique(
   seen: Set<string>,
   locale: string,
   type: string,
   id: string,
+  product: unknown,
 ) {
-  const key = `${locale}\0${type}\0${id}`;
+  const key = `${locale}\0${type}\0${id}\0${product ?? ""}`;
   if (seen.has(key))
     throw new Error(
       `Duplicate Android resource <${type} name="${id}"> for locale "${locale}"`,
