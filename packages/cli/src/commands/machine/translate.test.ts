@@ -402,3 +402,36 @@ test("writes the translation files when something was translated", async () => {
     await cleanup();
   }
 });
+
+test("keeps successful translations on disk when others fail", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "demosjarco");
+  skipRetryDelay();
+  const { project, path, read, cleanup } = await projectOnDisk({
+    en: `{"alpha": "Alpha", "zeta": "Zeta"}`,
+    de: `{}`,
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockImplementation(async (url: string) => {
+      const query = new URL(url).searchParams;
+      if (query.get("q") === "Zeta") return unavailableResponse();
+      return Response.json({
+        data: {
+          translations: [
+            { translatedText: `${query.get("q")} (${query.get("target")})` },
+          ],
+        },
+      });
+    }),
+  );
+  try {
+    await expect(translateAndSave({ project, path })).rejects.toBeInstanceOf(
+      PartialMachineTranslateError,
+    );
+    const de = JSON.parse(read("de"));
+    expect(de).toMatchObject({ alpha: "Alpha (de)" });
+    expect(de).not.toHaveProperty("zeta");
+  } finally {
+    await cleanup();
+  }
+});

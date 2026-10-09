@@ -66,9 +66,12 @@ export async function translateAndSave(args: {
   path: string;
 }) {
   let translated: number;
+  let bundles = 0;
   let partialError: PartialMachineTranslateError | undefined;
   try {
-    ({ translated } = await translateCommandAction({ project: args.project }));
+    ({ translated, bundles } = await translateCommandAction({
+      project: args.project,
+    }));
   } catch (error) {
     if (!(error instanceof PartialMachineTranslateError)) {
       throw error;
@@ -83,8 +86,8 @@ export async function translateAndSave(args: {
       path: args.path,
       project: args.project,
     });
-  } else if (!partialError) {
-    log.info("Nothing to translate. No files were changed.");
+  } else if (!partialError && bundles > 0) {
+    log.info("No translations were added, so no files were changed.");
   }
   if (partialError) {
     throw partialError;
@@ -94,7 +97,7 @@ export async function translateAndSave(args: {
 /** Translates missing translations into the project. Returns how many were added. */
 export async function translateCommandAction(args: {
   project: InlangProject;
-}): Promise<{ translated: number }> {
+}): Promise<{ translated: number; bundles: number }> {
   const options = translate.opts();
   const provider = resolveMachineTranslateProvider();
 
@@ -122,7 +125,7 @@ export async function translateCommandAction(args: {
       log.warn(
         "No message bundles found to translate. Check your project setup with `inlang check`",
       );
-      return { translated: 0 };
+      return { translated: 0, bundles: 0 };
     }
 
     bar?.start(bundles.length, 0);
@@ -185,7 +188,7 @@ export async function translateCommandAction(args: {
     }
 
     log.success("Machine translate complete.");
-    return { translated };
+    return { translated, bundles: bundles.length };
   } catch (error) {
     bar?.stop();
     throw error;
