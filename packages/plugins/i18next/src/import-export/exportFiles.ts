@@ -141,7 +141,7 @@ function serializeMessage(
 	for (const variant of sortedVariants) {
 		const pattern = serializePattern(variant.pattern, settings, {
 			bundle,
-			locale: message.locale,
+			message,
 		});
 		const contextMatch = variant.matches.find(
 			(match) => match.type === "literal-match" && match.key === "context"
@@ -247,7 +247,7 @@ function serializeMessage(
 function serializePattern(
 	pattern: Pattern,
 	settings: PluginSettings | undefined,
-	context: { bundle: Bundle; locale: string }
+	context: { bundle: Bundle; message: Message }
 ): string {
 	let result = "";
 
@@ -301,16 +301,17 @@ function serializePattern(
 function serializeExpression(
 	name: string,
 	annotation: Expression["annotation"],
-	context: { bundle: Bundle; locale: string }
+	context: { bundle: Bundle; message: Message }
 ): string {
+	const locale = context.message.locale;
 	if (annotation === undefined) return name;
 	if (annotation.name === POUND) {
 		// ICU `#` displays `count - offset` formatted as a number. i18next
 		// formats `{{count, number}}` the same way, but has no way to subtract.
-		const offset = poundOffset(name, annotation, context.bundle);
+		const offset = poundOffset(name, annotation, context);
 		if (offset !== 0) {
 			throw new Error(
-				`i18next export cannot represent "#" of bundle "${context.bundle.id}" (${context.locale}): it displays ${name} - ${offset} (the plural offset), and i18next cannot subtract from a variable. Replace "#" with a variable or remove the offset.`
+				`i18next export cannot represent "#" of bundle "${context.bundle.id}" (${locale}): it displays ${name} - ${offset} (the plural offset), and i18next cannot subtract from a variable. Replace "#" with a variable or remove the offset.`
 			);
 		}
 		return `${name}, number`;
@@ -323,7 +324,7 @@ function serializeExpression(
 			)
 			.join(" ");
 		throw new Error(
-			`i18next export cannot represent the options "${options}" of the function "${annotation.name}" on "${name}" in bundle "${context.bundle.id}" (${context.locale}): i18next formats take no options in this export. Remove the options.`
+			`i18next export cannot represent the options "${options}" of the function "${annotation.name}" on "${name}" in bundle "${context.bundle.id}" (${locale}): i18next formats take no options in this export. Remove the options.`
 		);
 	}
 	return `${name}, ${annotation.name}`;
@@ -336,11 +337,13 @@ const POUND = "icu:pound";
  * from its argument: its `offset` option. Imports from before the offset was
  * kept on `#` have no option, so a `#` without one has the offset of the
  * plural on its argument when every plural on its argument has an offset.
+ * Same rule as the icu1 export: only the plurals the message selects on
+ * count, or all plurals of the bundle if the message selects on none.
  */
 function poundOffset(
 	name: string,
 	annotation: FunctionReference,
-	bundle: Bundle
+	context: { bundle: Bundle; message: Message }
 ): number {
 	const option = annotation.options.find((option) => option.name === "offset");
 	if (option !== undefined) {
@@ -348,8 +351,12 @@ function poundOffset(
 			? Number(option.value.value) || 0
 			: 0;
 	}
-	const pluralOffsets = new Set<number>();
-	for (const declaration of bundle.declarations) {
+	const selected = new Set(
+		context.message.selectors.map((selector) => selector.name)
+	);
+	const all = new Set<number>();
+	const ofMessage = new Set<number>();
+	for (const declaration of context.bundle.declarations) {
 		if (
 			declaration.type === "local-variable" &&
 			declaration.value.arg.type === "variable-reference" &&
@@ -357,14 +364,18 @@ function poundOffset(
 			declaration.value.annotation?.type === "function-reference" &&
 			declaration.value.annotation.name === "plural"
 		) {
-			const offset = declaration.value.annotation.options.find(
+			const offsetOption = declaration.value.annotation.options.find(
 				(option) => option.name === "offset"
 			);
-			pluralOffsets.add(
-				offset?.value.type === "literal" ? Number(offset.value.value) || 0 : 0
-			);
+			const offset =
+				offsetOption?.value.type === "literal"
+					? Number(offsetOption.value.value) || 0
+					: 0;
+			all.add(offset);
+			if (selected.has(declaration.name)) ofMessage.add(offset);
 		}
 	}
+	const pluralOffsets = ofMessage.size > 0 ? ofMessage : all;
 	if (pluralOffsets.size === 0 || pluralOffsets.has(0)) return 0;
 	// a legacy `#` of a plural with an offset
 	return [...pluralOffsets][0]!;
