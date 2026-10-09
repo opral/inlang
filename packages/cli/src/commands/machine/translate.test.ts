@@ -4,8 +4,7 @@ import {
   translateCommandAction,
 } from "./translate.js";
 import {
-  MAX_RETRIES,
-  retryDelayMs,
+  retryWait,
   SERVICE_UNAVAILABLE_ERROR,
 } from "./providers/demosjarco.js";
 import {
@@ -20,6 +19,15 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+});
+
+test("skipping the retry waits leaves other timers alone (Lix's close watchdog is 5000 ms)", async () => {
+  skipRetryDelay();
+  let fired = false;
+  const timer = setTimeout(() => (fired = true), 5_000);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  expect(fired).toBe(false);
+  clearTimeout(timer);
 });
 
 test("requires INLANG_GOOGLE_TRANSLATE_API_KEY", async () => {
@@ -47,20 +55,9 @@ function unavailableResponse() {
   });
 }
 
-/** Skips the provider's retry waits so retries don't slow the test down. */
+/** Skips the provider's retry waits so retries don't slow the test down; other timers keep their delays. */
 function skipRetryDelay() {
-  const retryDelays = new Set(
-    Array.from({ length: MAX_RETRIES }, (_, retry) => retryDelayMs(retry)),
-  );
-  const realSetTimeout = globalThis.setTimeout;
-  vi.spyOn(globalThis, "setTimeout").mockImplementation(((
-    callback: () => void,
-    ms?: number,
-  ) =>
-    realSetTimeout(
-      callback,
-      ms !== undefined && retryDelays.has(ms) ? 0 : ms,
-    )) as typeof setTimeout);
+  vi.spyOn(retryWait, "sleep").mockResolvedValue();
 }
 
 function textBundle(id: string, text: string): NewBundleNested {
