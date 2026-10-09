@@ -202,6 +202,7 @@ function serializeMessage(
 					: `_${pluralMatch.value}`;
 		}
 		if (
+			countMatch === undefined &&
 			pluralMatch?.value === "zero" &&
 			pluralTypeMatch?.value !== "ordinal" &&
 			key.endsWith("_zero")
