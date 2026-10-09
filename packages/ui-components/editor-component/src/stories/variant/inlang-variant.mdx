@@ -14,6 +14,9 @@ The component consists out 3 parts. A main text editor that shows the pattern (s
 
 #### Props:
 
+- `declarations`: Optional bundle declarations. The component otherwise reads them from its enclosing `inlang-bundle`.
+- `locale`: Optional message locale, otherwise read from its enclosing `inlang-message`.
+- `variants`: Optional sibling variants for existing literal-value suggestions, otherwise read from its enclosing message.
 - `variant`: The variant includes the pattern (we need some variant information to dispatch a meaningful event)
 
 <Canvas of={InlangVariant.Example} />
@@ -34,3 +37,9 @@ The component consists out 3 parts. A main text editor that shows the pattern (s
 The InlangVariant component is used in the message component. To achieve this you need to slot is as `variant`.
 
 <Canvas of={InlangVariant.VariantInMessage} />
+
+## Typed matches
+
+Plural declarations (`plural`, including local-variable aliases) provide a menu of locale-specific categories with number examples. Literal `type: ordinal` and digit options are respected. Unknown locales or runtime-dependent options remain open instead of guessing rules. `*` is a fallback, distinct from the `other` plural category.
+
+For text and other resolvers, the menu suggests existing literal values and allows custom values. Known plural categories are checked before a change is emitted; invalid input remains visible with an error so it can be corrected.

@@ -1,16 +1,25 @@
-import { type VariantRow } from "@inlang/sdk";
+import { type VariantRow, type Declaration } from "@inlang/sdk";
 import { LitElement, css, html } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
 import { baseStyling } from "../../styling/base.js";
 
 //helpers
 import overridePrimitiveColors from "../../helper/overridePrimitiveColors.js";
 import { createChangeEvent } from "../../helper/event.js";
 
+import { selectorMatches } from "../../helper/selectorMatches.js";
+
 //components
 import SlInput from "@shoelace-style/shoelace/dist/components/input/input.component.js";
 import SlTooltip from "@shoelace-style/shoelace/dist/components/tooltip/tooltip.component.js";
 import SlButton from "@shoelace-style/shoelace/dist/components/button/button.component.js";
+
+import SlDropdown from "@shoelace-style/shoelace/dist/components/dropdown/dropdown.component.js";
+import SlMenu from "@shoelace-style/shoelace/dist/components/menu/menu.component.js";
+import SlMenuItem from "@shoelace-style/shoelace/dist/components/menu-item/menu-item.component.js";
+if (!customElements.get("sl-dropdown")) customElements.define("sl-dropdown", SlDropdown);
+if (!customElements.get("sl-menu")) customElements.define("sl-menu", SlMenu);
+if (!customElements.get("sl-menu-item")) customElements.define("sl-menu-item", SlMenuItem);
 
 if (!customElements.get("sl-input")) customElements.define("sl-input", SlInput);
 if (!customElements.get("sl-tooltip"))
@@ -41,6 +50,14 @@ export default class InlangVariant extends LitElement {
         display: flex;
         align-items: stretch;
       }
+      .match-cell { width: 120px; flex-shrink: 0; position: relative; }
+      .match-cell:focus-within { z-index: 3; }
+      .match-cell .match { width: 100%; }
+      .match-menu { max-height: 280px; max-width: min(360px, calc(100vw - 32px)); overflow-y: auto; }
+      .match-type { padding: 8px 12px; color: var(--sl-color-neutral-500); font-size: 12px; }
+      .match-example { margin-left: 16px; color: var(--sl-color-neutral-500); font-size: 12px; }
+      .match-error { padding: 4px 8px; color: var(--sl-color-danger-600); font-size: 12px; }
+      .suggestion-trigger { border: none; background: transparent; color: inherit; padding: 0 4px; min-height: 24px; cursor: pointer; }
       .match {
         min-height: 44px;
         width: 120px;
@@ -52,6 +69,7 @@ export default class InlangVariant extends LitElement {
       .match:focus-within {
         z-index: 3;
       }
+      .match::part(form-control-label) { display: none; }
       .match::part(base) {
         border: none;
         border-radius: 0;
@@ -108,8 +126,36 @@ export default class InlangVariant extends LitElement {
   @property()
   variant: VariantRow;
 
+  /** Optional context; nested consumers inherit it from their bundle/message. */
+  @property({ attribute: false }) declarations?: Declaration[];
+  @property() locale?: string;
+  @property({ attribute: false }) variants?: VariantRow[];
+  @state() private errors: Record<string, string> = {};
+
+  private _options(name: string) {
+    return selectorMatches(name,
+      this.declarations ?? (this.closest("inlang-bundle") as (HTMLElement & { bundle?: { declarations: Declaration[] } }) | null)?.bundle?.declarations ?? [],
+      this.locale ?? (this.closest("inlang-message") as (HTMLElement & { message?: { locale: string } }) | null)?.message?.locale ?? "",
+      this.variants ?? (this.closest("inlang-message") as (HTMLElement & { variants?: VariantRow[] }) | null)?.variants ?? []);
+  }
+
   private _updateMatch = (selectorName: string, value: string) => {
-    //TODO improve this function
+    // Unchanged values (e.g. imported categories outside this locale) are not re-validated on blur.
+    const existing = this.variant?.matches.find(match => match.key === selectorName);
+    if (existing && (existing.type === "catchall-match" ? "*" : existing.value) === value) {
+      this.errors = { ...this.errors, [selectorName]: "" };
+      return;
+    }
+    const options = this._options(selectorName);
+    if (options.allowed && !options.allowed.includes(value)) {
+      this.errors = { ...this.errors, [selectorName]: `Choose ${options.allowed.join(", ")}.` };
+      return;
+    }
+    if (value.trim() === "") {
+      this.errors = { ...this.errors, [selectorName]: "Enter a value, or * for the fallback." };
+      return;
+    }
+    this.errors = { ...this.errors, [selectorName]: "" };
     if (this.variant) {
       const newVariant = structuredClone(this.variant);
 
@@ -173,12 +219,16 @@ export default class InlangVariant extends LitElement {
       ? html`<div class="variant">
           ${this.variant
             ? this.variant.matches.map((match) => {
-                return html`
+                const options = this._options(match.key);
+                return html`<div class="match-cell">
                   <sl-input
                     exportparts="input:match"
                     id="${this.variant.id}-${match.key}"
                     class="match"
                     size="small"
+                    label=${`Match ${match.key}`}
+                    title=${options.label}
+                    aria-invalid=${this.errors[match.key] ? "true" : "false"}
                     dir="auto"
                     value=${match.type === "literal-match" ? match.value : "*"}
                     @sl-blur=${(e: Event) => {
@@ -192,7 +242,20 @@ export default class InlangVariant extends LitElement {
                         );
                       }
                     }}
-                  ></sl-input>
+                  ><sl-dropdown part="match-options" slot="suffix" placement="bottom-start" hoist>
+                    <button slot="trigger" class="suggestion-trigger" type="button" aria-label=${`Match options for ${match.key}`}>⌄</button>
+                    <sl-menu class="match-menu" @sl-select=${(event: CustomEvent) => {
+                      const value = event.detail.item.value as string;
+                      const input = this.shadowRoot?.getElementById(`${this.variant.id}-${match.key}`) as SlInput;
+                      if (input) input.value = value;
+                      this._updateMatch(match.key, value);
+                    }}>
+                      <div class="match-type">${options.label}</div>
+                      ${options.suggestions.map(option => html`<sl-menu-item value=${option.value}>${option.value}<span slot="suffix" class="match-example">${option.description}</span></sl-menu-item>`)}
+                    </sl-menu>
+                  </sl-dropdown></sl-input>
+                  ${this.errors[match.key] ? html`<div class="match-error" role="alert">${this.errors[match.key]}</div>` : undefined}
+                </div>
                 `;
               })
             : undefined}
