@@ -589,6 +589,37 @@ describe("keys after a complex message that start with its key", () => {
 		expect(await exportTexts(rowsOf(imported), { files })).toEqual(files);
 	});
 
+	test.each([
+		["with only match", { match: { "countPlural=*": "Other" } }],
+		[
+			"without declarations",
+			{ selectors: [], match: { "countPlural=*": "Other" } },
+		],
+	])(
+		"a second complex message object %s in the array is ignored as before, also other keys of the first",
+		async (_, second) => {
+			const files = { en: file([{ ...plural, description: "Items" }, second]) };
+			const imported = await importTexts(files);
+			expect(imported.bundles.map((bundle) => bundle.id)).toEqual(["items"]);
+			expect(await exportTexts(rowsOf(imported), { files })).toEqual(files);
+		}
+	);
+
+	test("a complex message under another key of the complex message is read as its message", async () => {
+		// the plural `items`, the plural `items.0.x`
+		const files = { en: file([{ ...plural, x: [nPlural] }]) };
+		const imported = await importTexts(files);
+		expect(imported.bundles.map((bundle) => bundle.id).sort()).toEqual([
+			"items",
+			"items.0.x",
+		]);
+		expect(textsOf(imported, "items.0.x")).toEqual({
+			"n=1": "one",
+			"n=*": "many",
+		});
+		expect(await exportTexts(rowsOf(imported), { files })).toEqual(files);
+	});
+
 	test("a second complex message object in the array is ignored as before", async () => {
 		const imported = await importTexts({
 			en: {

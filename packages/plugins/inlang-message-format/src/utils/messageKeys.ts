@@ -108,7 +108,8 @@ export function flattenMessageKeys(
 	 *
 	 * Only shapes that can't be a complex message as it is written by hand
 	 * are split: in its object under `"0"` (see `visit`), with an entry after
-	 * it that is no complex message, or with a complex message under `"0"`.
+	 * it that is no complex message, or with a complex message under one of
+	 * its keys (`"0"` for `a.0`, `"x"` for `a.0.x`).
 	 * Otherwise other keys, e.g. a `description`, are ignored as before.
 	 * Further complex message objects in the array are ignored as before.
 	 */
@@ -121,14 +122,19 @@ export function flattenMessageKeys(
 	) => {
 		const [first, ...later] = items as [Record<string, unknown>, ...unknown[]];
 		const { declarations, selectors, match, ...rest } = first;
+		// a later entry that is no complex message, as the schema allows it
+		const isComplexEntry = (item: unknown) => isComplexMessage([item]);
 		const split =
 			inObject ||
 			isComplexMessageObject(rest["0"]) ||
+			// a complex message in it, e.g. `a.0.x`
+			Object.values(rest).some(
+				(part) =>
+					Array.isArray(part) && part.length > 0 && isComplexMessage(part)
+			) ||
 			later.some(
 				(item) =>
-					item !== null &&
-					item !== undefined &&
-					isComplexMessageObject(item) === false
+					item !== null && item !== undefined && isComplexEntry(item) === false
 			);
 		if (split === false) {
 			set(key, items, inLegacy, lenient);
@@ -153,7 +159,7 @@ export function flattenMessageKeys(
 		}
 		later.forEach((item, index) => {
 			if (item === null || item === undefined) return;
-			if (isComplexMessageObject(item)) return;
+			if (isComplexEntry(item)) return;
 			visit(`${key}.${index + 1}`, item, true, true);
 		});
 	};
