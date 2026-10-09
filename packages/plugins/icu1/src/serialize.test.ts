@@ -253,6 +253,161 @@ describe("serializeMessage", () => {
     });
   });
 
+  describe("# displays what it displayed in the source", () => {
+    const counts = [0, 1, 2, 5, 22];
+    const format = (source: string, values: Record<string, unknown>) =>
+      new IntlMessageFormat(source, "en").format(values);
+
+    // imports from before the offset was kept on # have no offset option
+    const withoutPoundOffsets = (variants: Variant[]): Variant[] =>
+      variants.map((variant) => ({
+        ...variant,
+        pattern: variant.pattern.map((part) =>
+          part.type === "expression" && part.annotation?.name === "icu:pound"
+            ? { ...part, annotation: { ...part.annotation, options: [] } }
+            : part,
+        ),
+      }));
+
+    const expectSameDisplay = (
+      source: string,
+      exported: string,
+      valuesFor: (count: number) => Record<string, unknown>,
+    ) => {
+      for (const count of counts) {
+        expect(format(exported, valuesFor(count))).toBe(
+          format(source, valuesFor(count)),
+        );
+      }
+    };
+
+    it("keeps # without an offset as the number in a plural with an offset", () => {
+      const source =
+        "{count, plural, one {# item} other {# items}}: {count, plural, offset:1 one {you and # other} other {you and # others}}";
+      const { bundle, message, variants } = buildMessage(source);
+      const exported = serializeMessage({ bundle, message, variants });
+      expectSameDisplay(source, exported, (count) => ({ count }));
+      expect(format(exported, { count: 2 })).toBe("2 items: you and 1 other");
+    });
+
+    it("keeps # with an offset in a plural without an offset", () => {
+      const source =
+        "{count, plural, offset:1 one {you and # other} other {you and # others}} ({count, plural, one {# guest} other {# guests}})";
+      const { bundle, message, variants } = buildMessage(source);
+      const exported = serializeMessage({ bundle, message, variants });
+      expectSameDisplay(source, exported, (count) => ({ count }));
+    });
+
+    for (const legacy of [false, true]) {
+      const label = legacy ? "a legacy #" : "#";
+      const prepare = (variants: Variant[]) =>
+        legacy ? withoutPoundOffsets(variants) : variants;
+
+      it(`keeps the offset of ${label} hoisted out of its plural by a select`, () => {
+        const source =
+          "{gender, select, male {{count, plural, offset:1 other {# his}}} other {{count, plural, offset:1 other {# their}}}}";
+        const { bundle, message, variants } = buildMessage(source);
+        const exported = serializeMessage({
+          bundle,
+          message,
+          variants: prepare(variants),
+        });
+        for (const gender of ["male", "other"]) {
+          expectSameDisplay(source, exported, (count) => ({ count, gender }));
+        }
+      });
+
+      it(`keeps the offset of ${label} that ends up in a plural on another argument`, () => {
+        const source =
+          "{guests, plural, other {{gender, select, male {{count, plural, offset:1 other {# his}}} other {{count, plural, offset:1 other {# their}}}}}}";
+        const { bundle, message, variants } = buildMessage(source);
+        const exported = serializeMessage({
+          bundle,
+          message,
+          variants: prepare(variants),
+        });
+        for (const gender of ["male", "other"]) {
+          expectSameDisplay(source, exported, (count) => ({
+            count,
+            gender,
+            guests: 3,
+          }));
+        }
+      });
+
+      it(`keeps the offset of ${label} after an editor removed its plural`, () => {
+        const { bundle, message, variants } = buildMessage(
+          "{count, plural, offset:1 one {You and # other} other {You and # others}}",
+        );
+        const exported = serializeMessage({
+          bundle,
+          message: { ...message, selectors: [] },
+          variants: prepare([{ ...variants.at(-1)!, matches: [] }]),
+        });
+        for (const count of counts) {
+          expect(format(exported, { count })).toBe(
+            `You and ${count - 1} others`,
+          );
+        }
+      });
+    }
+
+    it("keeps # without an offset that a select moves into a plural with an offset", () => {
+      // the select under the offset plural moves the shared `#` of the
+      // nested offset-free plural out of it
+      const source =
+        "{count, plural, offset:1 other {{gender, select, male {{count, plural, other {# x}}} other {{count, plural, other {# y}}}}}}";
+      const { bundle, message, variants } = buildMessage(source);
+      const exported = serializeMessage({ bundle, message, variants });
+      for (const gender of ["male", "other"]) {
+        expectSameDisplay(source, exported, (count) => ({ count, gender }));
+      }
+      expect(format(exported, { count: 2, gender: "male" })).toBe("2 x");
+    });
+
+    it("resolves a legacy # by the plurals of its own message", () => {
+      // the bundle's declarations are shared by all locales: another locale
+      // using the argument without an offset must not change this one
+      const source =
+        "{count, plural, offset:1 =0 {nobody} one {you and # other} other {you and # others}}";
+      const { bundle, message, variants } = buildMessage(source);
+      const de = buildMessage(
+        "{count, plural, one {# Person} other {# Personen}}",
+      );
+      const exported = serializeMessage({
+        bundle: {
+          ...bundle,
+          declarations: [
+            ...bundle.declarations,
+            ...de.bundle.declarations.filter(
+              (declaration) =>
+                !bundle.declarations.some(
+                  (existing) => existing.name === declaration.name,
+                ),
+            ),
+          ],
+        },
+        message,
+        variants: withoutPoundOffsets(variants),
+      });
+      expect(exported).toBe(source);
+      expectSameDisplay(source, exported, (count) => ({ count }));
+    });
+
+    it("keeps a legacy # in the plural with an offset it sits in", () => {
+      const source =
+        "{count, plural, offset:1 =0 {no one} one {you and # other} other {you and # others}}";
+      const { bundle, message, variants } = buildMessage(source);
+      const exported = serializeMessage({
+        bundle,
+        message,
+        variants: withoutPoundOffsets(variants),
+      });
+      expect(exported).toBe(source);
+      expectSameDisplay(source, exported, (count) => ({ count }));
+    });
+  });
+
   it("escapes a literal # inside a select nested in a plural", () => {
     const source =
       "{count, plural, other {{gender, select, male {He has '#'#} other {# they have '#'}}}}";

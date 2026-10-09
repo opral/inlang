@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
 import type {
 	Bundle,
+	Expression,
+	FunctionReference,
 	LiteralMatch,
 	Message,
 	Pattern,
@@ -137,7 +139,10 @@ function serializeMessage(
 		.sort((a, b) => matchSpecificity(a) - matchSpecificity(b));
 
 	for (const variant of sortedVariants) {
-		const pattern = serializePattern(variant.pattern, settings);
+		const pattern = serializePattern(variant.pattern, settings, {
+			bundle,
+			message,
+		});
 		const contextMatch = variant.matches.find(
 			(match) => match.type === "literal-match" && match.key === "context"
 		) as LiteralMatch | undefined;
@@ -239,7 +244,11 @@ function serializeMessage(
 	return result;
 }
 
-function serializePattern(pattern: Pattern, settings?: PluginSettings): string {
+function serializePattern(
+	pattern: Pattern,
+	settings: PluginSettings | undefined,
+	context: { bundle: Bundle; message: Message }
+): string {
 	let result = "";
 
 	const variableRefPattern = settings?.variableReferencePattern ?? ["{{", "}}"];
@@ -269,13 +278,7 @@ function serializePattern(pattern: Pattern, settings?: PluginSettings): string {
 				if (part.arg.type !== "variable-reference") {
 					throw new Error("Only variable references are supported.");
 				}
-				if (part.annotation === undefined) {
-					result += `${variableRefPattern[0]}${part.arg.name}${variableRefPattern[1]}`;
-				} else if (part.annotation.options.length === 0) {
-					result += `${variableRefPattern[0]}${part.arg.name}, ${part.annotation.name}${variableRefPattern[1]}`;
-				} else {
-					throw new Error("Not implemented");
-				}
+				result += `${variableRefPattern[0]}${serializeExpression(part.arg.name, part.annotation, context)}${variableRefPattern[1]}`;
 				break;
 			case "markup-start":
 				result += `<${part.name}>`;
@@ -290,6 +293,92 @@ function serializePattern(pattern: Pattern, settings?: PluginSettings): string {
 	}
 
 	return result;
+}
+
+/**
+ * The inside of an i18next interpolation: `name` or `name, format`.
+ */
+function serializeExpression(
+	name: string,
+	annotation: Expression["annotation"],
+	context: { bundle: Bundle; message: Message }
+): string {
+	const locale = context.message.locale;
+	if (annotation === undefined) return name;
+	if (annotation.name === POUND) {
+		// ICU `#` displays `count - offset` formatted as a number. i18next
+		// formats `{{count, number}}` the same way, but has no way to subtract.
+		const offset = poundOffset(name, annotation, context);
+		if (offset !== 0) {
+			throw new Error(
+				`i18next export cannot represent "#" of bundle "${context.bundle.id}" (${locale}): it displays ${name} - ${offset} (the plural offset), and i18next cannot subtract from a variable. Replace "#" with a variable or remove the offset.`
+			);
+		}
+		return `${name}, number`;
+	}
+	if (annotation.options.length > 0) {
+		const options = annotation.options
+			.map(
+				(option) =>
+					`${option.name}=${option.value.type === "literal" ? option.value.value : `$${option.value.name}`}`
+			)
+			.join(" ");
+		throw new Error(
+			`i18next export cannot represent the options "${options}" of the function "${annotation.name}" on "${name}" in bundle "${context.bundle.id}" (${locale}): i18next formats take no options in this export. Remove the options.`
+		);
+	}
+	return `${name}, ${annotation.name}`;
+}
+
+const POUND = "icu:pound";
+
+/**
+ * The offset `#` (imported by `@inlang/plugin-icu1` as `icu:pound`) subtracts
+ * from its argument: its `offset` option. Imports from before the offset was
+ * kept on `#` have no option, so a `#` without one has the offset of the
+ * plural on its argument when every plural on its argument has an offset.
+ * Same rule as the icu1 export: only the plurals the message selects on
+ * count, or all plurals of the bundle if the message selects on none.
+ */
+function poundOffset(
+	name: string,
+	annotation: FunctionReference,
+	context: { bundle: Bundle; message: Message }
+): number {
+	const option = annotation.options.find((option) => option.name === "offset");
+	if (option !== undefined) {
+		return option.value.type === "literal"
+			? Number(option.value.value) || 0
+			: 0;
+	}
+	const selected = new Set(
+		context.message.selectors.map((selector) => selector.name)
+	);
+	const all = new Set<number>();
+	const ofMessage = new Set<number>();
+	for (const declaration of context.bundle.declarations) {
+		if (
+			declaration.type === "local-variable" &&
+			declaration.value.arg.type === "variable-reference" &&
+			declaration.value.arg.name === name &&
+			declaration.value.annotation?.type === "function-reference" &&
+			declaration.value.annotation.name === "plural"
+		) {
+			const offsetOption = declaration.value.annotation.options.find(
+				(option) => option.name === "offset"
+			);
+			const offset =
+				offsetOption?.value.type === "literal"
+					? Number(offsetOption.value.value) || 0
+					: 0;
+			all.add(offset);
+			if (selected.has(declaration.name)) ofMessage.add(offset);
+		}
+	}
+	const pluralOffsets = ofMessage.size > 0 ? ofMessage : all;
+	if (pluralOffsets.size === 0 || pluralOffsets.has(0)) return 0;
+	// a legacy `#` of a plural with an offset
+	return [...pluralOffsets][0]!;
 }
 
 /**

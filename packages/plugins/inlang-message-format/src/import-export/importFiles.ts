@@ -8,6 +8,7 @@ import type {
 	Bundle,
 	Pattern,
 	Declaration,
+	Expression,
 	VariableReference,
 	Message,
 } from "@inlang/sdk";
@@ -275,17 +276,17 @@ function parsePattern(value: string): {
 				continue;
 			}
 
+			const expression = parseExpressionPlaceholder(placeholder) ?? {
+				type: "expression",
+				arg: { type: "variable-reference", name: placeholder },
+			};
 			// this is a heuristic. there is no guarentee that the variable might not be
 			// a local variable. only use the returned declarations in a single variant
 			// context
-			declarations.push({
-				type: "input-variable",
-				name: placeholder,
-			});
-			pattern.push({
-				type: "expression",
-				arg: { type: "variable-reference", name: placeholder },
-			});
+			for (const name of expressionReferences(expression)) {
+				declarations.push({ type: "input-variable", name });
+			}
+			pattern.push(expression);
 			index = closingIndex;
 			continue;
 		}
@@ -299,6 +300,89 @@ function parsePattern(value: string): {
 		declarations,
 		pattern,
 	};
+}
+
+/**
+ * Parses an annotated expression `name: function option=value …`, like a local
+ * declaration, e.g. `count: icu:pound offset=1`. Option values are
+ * `$variable`, `|quoted literal|` or a literal without whitespace.
+ *
+ * Returns undefined for anything else, which stays a plain `{name}`
+ * placeholder as before.
+ */
+function parseExpressionPlaceholder(
+	placeholder: string
+): Expression | undefined {
+	// `name: function`, with whitespace after the colon as export writes it.
+	// Without it, `{user:name}` stays a variable named `user:name` as before.
+	const match = placeholder.match(/^([^\s:|{}]+):\s+([^\s=|{}]+)(.*)$/s);
+	if (match === null) return undefined;
+	const [, name, functionName, rest] = match as unknown as [
+		string,
+		string,
+		string,
+		string,
+	];
+	const options: Option[] = [];
+	let index = 0;
+	while (index < rest.length) {
+		const afterWhitespace = skipWhitespace(rest, index);
+		if (afterWhitespace === rest.length) break;
+		// options are separated by whitespace
+		if (afterWhitespace === index) return undefined;
+		index = afterWhitespace;
+		const optionName = rest.slice(index).match(/^[^\s=|{}$]+/)?.[0];
+		if (optionName === undefined || rest[index + optionName.length] !== "=") {
+			return undefined;
+		}
+		index += optionName.length + 1;
+		const value = parseExpressionOptionValue(rest, index);
+		if (value === undefined) return undefined;
+		options.push({ name: optionName, value: value.value });
+		index = value.nextIndex;
+	}
+	return {
+		type: "expression",
+		arg: { type: "variable-reference", name },
+		annotation: { type: "function-reference", name: functionName, options },
+	};
+}
+
+function parseExpressionOptionValue(
+	value: string,
+	index: number
+): { value: Option["value"]; nextIndex: number } | undefined {
+	if (value[index] === "|") {
+		// same quoting as markup options
+		return parseMarkupValue(value, index);
+	}
+	const token = value.slice(index).match(/^[^\s|]+/)?.[0];
+	if (token === undefined) return undefined;
+	const nextIndex = index + token.length;
+	if (token.startsWith("$")) {
+		if (token.length === 1) return undefined;
+		return {
+			value: { type: "variable-reference", name: token.slice(1) },
+			nextIndex,
+		};
+	}
+	return { value: { type: "literal", value: token }, nextIndex };
+}
+
+/**
+ * The variables an expression reads: its argument and variable options.
+ */
+function expressionReferences(expression: Expression): string[] {
+	const names: string[] = [];
+	if (expression.arg.type === "variable-reference") {
+		names.push(expression.arg.name);
+	}
+	for (const option of expression.annotation?.options ?? []) {
+		if (option.value.type === "variable-reference") {
+			names.push(option.value.name);
+		}
+	}
+	return names;
 }
 
 function findPlaceholderClosingIndex(
