@@ -222,23 +222,55 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	// files that the export doesn't replace. This guarantees that no edit is
 	// lost, e.g. if a previous file has a shape that this function doesn't
 	// understand, or kept text of one file changes how another one is read.
-	const replaced = new Set(withExisting.map((pair) => pair.existing!));
-	const untouched = existingFiles.filter(
-		(existing) =>
-			!replaced.has(existing) &&
-			!args.exported.some((file) => isSameFile(file, existing))
-	);
-	const onDisk = () => [
-		...pairs.map((pair) => ({
-			locale: pair.existing?.locale ?? pair.file.locale,
-			metadata: pair.existing?.metadata ?? pair.file.metadata,
-			content:
-				pair.kept === undefined || pair.kept === pair.exportedText
-					? pair.file.content
-					: new TextEncoder().encode(pair.kept),
-		})),
-		...untouched,
-	];
+	//
+	// The files are read in the order a project load reads them, the order of
+	// `files` (`toBeImportedFiles`): when files have the same message (e.g.
+	// overlapping i18next namespaces), the one read last wins, so another
+	// order can accept kept text that loses an edit on the next load. An
+	// exported file goes to the place of the file it replaces (to every place,
+	// if it replaces several, like the host writes it to every file of a
+	// `pathPattern` array); new files, whose place isn't known, go last.
+	const onDisk = () => {
+		const contentOf = (pair: (typeof pairs)[number]) =>
+			pair.kept === undefined || pair.kept === pair.exportedText
+				? pair.file.content
+				: new TextEncoder().encode(pair.kept);
+		const placed = new Set<(typeof pairs)[number]>();
+		const result: Array<{
+			locale: string;
+			content: Uint8Array;
+			metadata?: Record<string, any>;
+		}> = [];
+		for (const existing of existingFiles) {
+			const pair =
+				pairs.find((candidate) => candidate.existing === existing) ??
+				pairs.find(
+					(candidate) =>
+						candidate.existing === undefined &&
+						isSameFile(candidate.file, existing)
+				);
+			if (pair === undefined) {
+				// untouched by the export
+				result.push(existing);
+				continue;
+			}
+			placed.add(pair);
+			result.push({
+				locale: existing.locale,
+				metadata: existing.metadata,
+				content: contentOf(pair),
+			});
+		}
+		for (const pair of pairs) {
+			if (placed.has(pair)) continue;
+			result.push({
+				locale: pair.file.locale,
+				metadata: pair.file.metadata,
+				content: contentOf(pair),
+			});
+		}
+		return result;
+	};
 	const changed = () =>
 		pairs.filter(
 			(pair) => pair.kept !== undefined && pair.kept !== pair.exportedText
