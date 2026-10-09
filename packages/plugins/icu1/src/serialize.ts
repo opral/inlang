@@ -8,6 +8,7 @@ import type {
   Variant,
   VariableReference,
 } from "@inlang/sdk";
+import { escapeIcuText } from "./escape.js";
 
 const POUND_FUNCTION = "icu:pound";
 
@@ -509,10 +510,7 @@ function escapeText(
   value: string,
   options: { plural: PluralContext | undefined },
 ): string {
-  // Quote each run of special characters as one segment: quoting them one
-  // by one gives `'#''#'`, where `''` reads as an apostrophe.
-  const special = options.plural ? /[{}#]+/g : /[{}]+/g;
-  return value.replace(/'/g, "''").replace(special, (run) => `'${run}'`);
+  return escapeIcuText(value, options.plural !== undefined);
 }
 
 export const _private = {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Bundle, Message, Variant } from "@inlang/sdk";
+import { IntlMessageFormat } from "intl-messageformat";
 import { parseMessage } from "./parse.js";
 import { serializeMessage } from "./serialize.js";
 
@@ -173,6 +174,83 @@ describe("serializeMessage", () => {
       const again = buildMessage(exported);
       expect(serializeMessage(again)).toBe(source);
     }
+  });
+
+  describe("literal text round-trips with the same display", () => {
+    // Exports `text` as the only text of a message, in a plural or not.
+    const exportText = (text: string, inPlural: boolean): string => {
+      const { bundle, message, variants } = buildMessage(
+        inPlural ? "{n, plural, other {x}}" : "x",
+      );
+      return serializeMessage({
+        bundle,
+        message,
+        variants: [
+          { ...variants[0]!, pattern: [{ type: "text", value: text }] },
+        ],
+      });
+    };
+    const display = (source: string) =>
+      new IntlMessageFormat(source, "en").format({ n: 1 });
+
+    const expectRoundTrip = (text: string, inPlural: boolean) => {
+      const exported = exportText(text, inPlural);
+      expect(display(exported), exported).toBe(text);
+      // a second export is byte-identical
+      expect(serializeMessage(buildMessage(exported))).toBe(exported);
+      // and the import reads back the same text
+      const imported = parseMessage({ ...baseArgs, messageSource: exported });
+      expect(
+        imported.variants[0]?.pattern
+          ?.map((part) => (part.type === "text" ? part.value : ""))
+          .join(""),
+      ).toBe(text);
+    };
+
+    it("quotes special characters separated by apostrophes as one segment", () => {
+      // '#' + '' + '#' reads as one quoted segment in which '' is one
+      // apostrophe, so quoting them one by one gains an apostrophe per export
+      expect(exportText("#'#", true)).toBe("{n, plural, other {'#''#'}}");
+      expectRoundTrip("#'#", true);
+      expect(exportText("{'}", false)).toBe("'{''}'");
+      expectRoundTrip("{'}", false);
+      expect(
+        serializeMessage(buildMessage("{count, plural, other {'#''#'}}")),
+      ).toBe("{count, plural, other {'#''#'}}");
+      expect(serializeMessage(buildMessage("'{''}'"))).toBe("'{''}'");
+    });
+
+    it("escapes function styles the same way", () => {
+      // the import keeps the style as ICU source, escaped by the same rules
+      for (const source of [
+        "{v, fmt, '{''}'}",
+        "{v, fmt, it''s '{'x'}'}",
+        "{n, number, ::currency/EUR}",
+      ]) {
+        expect(serializeMessage(buildMessage(source))).toBe(source);
+      }
+    });
+
+    it("round-trips random text (seeded)", () => {
+      // mulberry32
+      let seed = 4443;
+      const random = () => {
+        seed = (seed + 0x6d2b79f5) | 0;
+        let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+      const alphabet = ["a", " ", "'", "'", "{", "}", "#"];
+      for (let i = 0; i < 2000; i++) {
+        const length = Math.floor(random() * 10);
+        let text = "";
+        for (let j = 0; j < length; j++) {
+          text += alphabet[Math.floor(random() * alphabet.length)];
+        }
+        expectRoundTrip(text, true);
+        expectRoundTrip(text, false);
+      }
+    });
   });
 
   it("escapes a literal # inside a select nested in a plural", () => {

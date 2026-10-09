@@ -16,6 +16,7 @@ import type {
   VariableReference,
   VariantImport,
 } from "@inlang/sdk";
+import { escapeIcuText } from "./escape.js";
 
 export type ParsedMessage = {
   declarations: Declaration[];
@@ -582,10 +583,7 @@ function serializeTokens(
 }
 
 function escapeText(value: string, options: { inPlural: boolean }): string {
-  // Quote each run of special characters as one segment: quoting them one
-  // by one gives `'#''#'`, where `''` reads as an apostrophe.
-  const special = options.inPlural ? /[{}#]+/g : /[{}]+/g;
-  return value.replace(/'/g, "''").replace(special, (run) => `'${run}'`);
+  return escapeIcuText(value, options.inPlural);
 }
 
 function cloneBranch(branch: Branch): Branch {
