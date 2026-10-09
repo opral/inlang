@@ -634,6 +634,7 @@ test("translation checks compare each locale with the reference locale", async (
 		"missing-translation",
 		"unused-message",
 		"empty-translation",
+		"empty-variant",
 		"missing-variable",
 		"unknown-variable",
 		"missing-markup",

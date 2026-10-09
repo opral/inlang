@@ -29,6 +29,7 @@ export type AnalyzeUsage = (args: {
 export type CheckId =
 	| "missing-translation"
 	| "empty-translation"
+	| "empty-variant"
 	| "missing-variable"
 	| "unknown-variable"
 	| "missing-markup"
@@ -64,6 +65,13 @@ export type CheckDiagnostic = DiagnosticBase &
 	(
 		| { checkId: "missing-translation" | "unused-message" }
 		| { checkId: "empty-translation"; messageId: string }
+		| {
+				checkId: "empty-variant";
+				messageId: string;
+				variantId: string;
+				/** The match combination of the empty variant. */
+				matches: Match[];
+		  }
 		| {
 				checkId: "missing-variable" | "missing-markup";
 				messageId: string;

@@ -155,3 +155,55 @@ test("selected checks and fallback exemptions", () => {
 	expect(run({ checks: ["missing-variant"] })).toEqual([]);
 	expect(run({ ignoreMissingTranslations: ["de", "fr"] })).toEqual([]);
 });
+
+test("an empty form next to filled ones is an empty variant, the reference's included", () => {
+	const bundle = {
+		id: "files",
+		declarations,
+		messages: [
+			message("en", { one: [t("  ")], "*": [v("count"), t(" files")] }),
+			message("de", {
+				"0": [],
+				one: [v("count"), t(" Datei")],
+				"*": [v("count"), t(" Dateien")],
+			}),
+		],
+	};
+	const diagnostics = checkBundle({
+		bundle,
+		locales: ["de"],
+		referenceLocale: "en",
+	});
+	expect(diagnostics).toEqual([
+		{
+			checkId: "empty-variant",
+			bundleId: "files",
+			locale: "en",
+			messageId: "files_en",
+			variantId: "files_en_one",
+			matches: [key("one")],
+			severity: "warning",
+			fixes: [],
+			message: 'Message "files" has an empty form (countPlural=one) in "en".',
+		},
+		{
+			checkId: "empty-variant",
+			bundleId: "files",
+			locale: "de",
+			messageId: "files_de",
+			variantId: "files_de_0",
+			matches: [key("0")],
+			severity: "warning",
+			fixes: [],
+			message: 'Message "files" has an empty form (countPlural=0) in "de".',
+		},
+	]);
+	expect(
+		checkBundle({
+			bundle,
+			locales: ["de"],
+			referenceLocale: "en",
+			checks: ["missing-variant"],
+		})
+	).toEqual([]);
+});

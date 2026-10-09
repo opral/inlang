@@ -182,6 +182,21 @@ test("an ICU exact-number form may spell the number out", () => {
 		declarations: icuDeclarations,
 	});
 	expect(issues).toEqual([]);
+	// An empty `=0 {}` next to filled forms is reported, in the reference too.
+	const empty = icu("en", [
+		["0", "*", []],
+		["*", "one", [v("count"), t(" file")]],
+		["*", "*", [v("count"), t(" files")]],
+	]);
+	expect(
+		checkTranslation({ target: empty, declarations: icuDeclarations })
+	).toEqual([
+		{
+			type: "empty-variant",
+			variantId: "en-0-*",
+			matches: empty.variants[0]!.matches,
+		},
+	]);
 });
 
 test("a plural category of one number may spell it out, others need the variable", () => {
