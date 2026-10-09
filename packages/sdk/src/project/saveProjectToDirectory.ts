@@ -1,11 +1,10 @@
 import type nodeFs from "node:fs";
 import type fs from "node:fs/promises";
-import type { ExistingFile, InlangProject } from "./api.js";
+import type { ExistingFile, ExportFile, InlangProject } from "./api.js";
 import path from "node:path";
 import { toMessageV1 } from "../json-schema/old-v1-message/toMessageV1.js";
 import { absolutePathFromProject, withAbsolutePaths } from "./path-helpers.js";
 import { detectJsonFormatting } from "../utilities/detectJsonFormatting.js";
-import { guessJsonIndent } from "../utilities/guessJsonIndent.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import { README_CONTENT } from "./README_CONTENT.js";
 import { selectPluginRows } from "../import-export/pluginRows.js";
@@ -83,7 +82,8 @@ async function readExistingFiles(args: {
 			settings: args.settings,
 		});
 	} catch {
-		// without the list, the plugin writes whole files as before
+		// The import already reported the error. Without the list, the plugin
+		// writes whole files as before.
 		return undefined;
 	}
 	const result: ExistingFile[] = [];
@@ -98,21 +98,69 @@ async function readExistingFiles(args: {
 				content: new Uint8Array(content),
 				metadata: file.metadata,
 			});
-		} catch {
-			// the file doesn't exist (yet) or can't be read
+		} catch (error) {
+			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+				// a new file
+				continue;
+			}
+			// Without the content of an existing file, the plugin would write
+			// it from scratch. Let the plugin write all files as before.
+			return undefined;
 		}
 	}
 	return result;
 }
 
 /**
- * Whether `exported` has the indentation and final newline of `existing`.
+ * Writes an exported file.
+ *
+ * JSON is indented like the existing file, unless the plugin marked the file
+ * as `verbatim`, i.e. it already kept the formatting of the existing file.
+ * A file that didn't change is not written.
  */
-function hasSameJsonFormatting(existing: string, exported: string): boolean {
-	return (
-		guessJsonIndent(existing) === guessJsonIndent(exported) &&
-		existing.endsWith("\n") === exported.endsWith("\n")
-	);
+async function writeExportedFile(args: {
+	fs: typeof fs;
+	path: string;
+	file: ExportFile;
+}): Promise<void> {
+	let existing: Uint8Array | undefined;
+	try {
+		existing = new Uint8Array(await args.fs.readFile(args.path));
+	} catch {
+		// the file doesn't exist yet
+		existing = undefined;
+	}
+	let content: Uint8Array = new Uint8Array(args.file.content);
+	if (
+		existing !== undefined &&
+		args.file.verbatim !== true &&
+		args.path.endsWith(".json")
+	) {
+		try {
+			const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+				existing
+			);
+			const bom = text.startsWith("\uFEFF") ? "\uFEFF" : "";
+			const stringify = detectJsonFormatting(text.slice(bom.length));
+			content = new TextEncoder().encode(
+				bom + stringify(JSON.parse(new TextDecoder().decode(content)))
+			);
+		} catch {
+			// not valid JSON, write the plugin's output as is
+		}
+	}
+	if (existing !== undefined && bytesEqual(existing, content)) {
+		return;
+	}
+	await args.fs.writeFile(args.path, content);
+}
+
+function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
+	if (a.length !== b.length) return false;
+	for (let i = 0; i < a.length; i++) {
+		if (a[i] !== b[i]) return false;
+	}
+	return true;
 }
 
 /**
@@ -236,19 +284,20 @@ export async function saveProjectToDirectory(args: {
 			const { bundles, messages, variants } = await selectPluginRows(
 				args.project.db
 			);
+			// the files as they are on disk, so that the plugin can keep the
+			// text of unchanged entries
+			const existingFiles = await readExistingFiles({
+				fs: fsModule,
+				projectPath: args.path,
+				plugin,
+				settings,
+			});
 			const files = await plugin.exportFiles({
 				bundles,
 				messages,
 				variants,
 				settings,
-				// the files as they are on disk, so that the plugin can keep the
-				// text of unchanged entries
-				files: await readExistingFiles({
-					fs: fsModule,
-					projectPath: args.path,
-					plugin,
-					settings,
-				}),
+				files: existingFiles,
 			});
 			for (const file of files) {
 				const pathPattern = settings[plugin.key]?.pathPattern;
@@ -287,25 +336,7 @@ export async function saveProjectToDirectory(args: {
 
 				for (const p of targetPaths) {
 					await fsModule.mkdir(path.dirname(p), { recursive: true });
-					if (p.endsWith(".json")) {
-						try {
-							const existing = await fsModule.readFile(p, "utf-8");
-							const exported = new TextDecoder().decode(file.content);
-							// A plugin that kept the formatting of the existing file
-							// (see `files` of `exportFiles`) is written as is. Other
-							// plugins' output is indented like the existing file.
-							const content = hasSameJsonFormatting(existing, exported)
-								? exported
-								: detectJsonFormatting(existing)(JSON.parse(exported));
-							await fsModule.writeFile(p, new TextEncoder().encode(content));
-						} catch {
-							// write the file to disk (json doesn't exist yet)
-							// yeah ugly duplication of write file but it works.
-							await fsModule.writeFile(p, new Uint8Array(file.content));
-						}
-					} else {
-						await fsModule.writeFile(p, new Uint8Array(file.content));
-					}
+					await writeExportedFile({ fs: fsModule, path: p, file });
 				}
 			}
 		}

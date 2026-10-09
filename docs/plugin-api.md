@@ -162,15 +162,19 @@ exportFiles: async ({ bundles, messages, variants, settings }) => {
 - `messages` — All messages
 - `variants` — All variants
 - `settings` — Project settings
-- `files` _(optional)_ — The current content of the files the export overwrites: `{ path, locale, content, metadata? }`, where `path`, `locale` and `metadata` are the ones `toBeImportedFiles` returned. Only files that exist are passed. Hosts that don't support it (SDK 3) and exports of new files pass none.
+- `files` _(optional)_ — The current content of the files the export overwrites: `{ path, locale, content, metadata? }`, where `path`, `locale` and `metadata` are the ones `toBeImportedFiles` returned (pass `metadata` as `toBeImportedFilesMetadata` to import a file with your own `importFiles`). Only files that exist are passed. Hosts that don't support it (SDK < 4) and exports of new files pass none. With a `pathPattern` array, a locale can have several existing files.
 
 **Keep unchanged entries.** An export should only change the bytes of the messages that changed, so that saving a project doesn't rewrite translation files in git. If `files` has the file that an exported file replaces, keep the text of every entry whose message didn't change, the key order of the file and its formatting (indentation, final newline, line endings), and only write the entries that changed, were added or were removed. Compare messages by what they import to, not by their text: a file can use another representation than the plugin writes, e.g. a legacy shape or other escaping. Without a previous file, write the whole file.
+
+Set `verbatim: true` on an exported file that keeps the formatting of the existing file. `saveProjectToDirectory` then writes it byte for byte. Without it, `saveProjectToDirectory` re-indents exported JSON like the existing file (and writes LF line endings).
 
 **Returns:** Array of files to write:
 
 - `locale` — The locale
 - `name` — Filename (e.g., `"en.json"`)
 - `content` — Binary content (`Uint8Array`)
+- `metadata` _(optional)_ — Information for the writer, e.g. `{ namespace }` for a namespaced `pathPattern`
+- `verbatim` _(optional)_ — `true` if `content` keeps the formatting of the existing file and must be written byte for byte
 
 ## Settings schema
 

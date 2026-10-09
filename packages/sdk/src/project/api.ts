@@ -65,7 +65,11 @@ export type ImportFile = {
  *
  * `path`, `locale` and `metadata` are the ones the plugin returns from
  * `toBeImportedFiles`, so that a plugin can match an exported file with the
- * file it replaces.
+ * file it replaces. To import it with the plugin's `importFiles`, pass
+ * `metadata` as `toBeImportedFilesMetadata`.
+ *
+ * With a `pathPattern` array, a locale can have several existing files,
+ * while `saveProjectToDirectory` writes one exported file to every path.
  */
 export type ExistingFile = {
 	/** The path as returned by `toBeImportedFiles`. */
@@ -105,6 +109,15 @@ export type ExportFile = {
 	 * https://github.com/opral/inlang/issues/4356
 	 */
 	metadata?: Record<string, any>;
+	/**
+	 * If `true`, `content` is written byte for byte.
+	 *
+	 * Otherwise `saveProjectToDirectory` indents exported JSON like the
+	 * existing file. A plugin that kept the formatting of the existing file
+	 * (see `files` of `exportFiles`) sets `verbatim`, so that the entries it
+	 * kept stay as they were.
+	 */
+	verbatim?: boolean;
 };
 
 /**

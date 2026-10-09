@@ -69,9 +69,10 @@ export type InlangPlugin<
 	 *   overwrites, as listed by `toBeImportedFiles`. Only files that exist are
 	 *   passed. A plugin should keep the text of every entry whose message
 	 *   didn't change, and the formatting of the file, so that an export only
-	 *   changes the bytes of edited messages. `files` is optional: older hosts
-	 *   (SDK 3) don't pass it, and a new file has no previous content. Without
-	 *   a previous file, plugins write the whole file.
+	 *   changes the bytes of edited messages, and mark such a file as
+	 *   `verbatim`. `files` is optional: older hosts (SDK < 4) don't pass it,
+	 *   and a new file has no previous content. Without a previous file,
+	 *   plugins write the whole file.
 	 */
 	exportFiles?: (args: {
 		bundles: Bundle[];
