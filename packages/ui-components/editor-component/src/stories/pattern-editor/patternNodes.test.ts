@@ -23,7 +23,9 @@ import {
 	$readPattern,
 	$setCaretOffset,
 	$setPattern,
+	isDeletion,
 	registerVariableText,
+	typedRange,
 	PatternTokenNode,
 	tokenText,
 	tokenTitle,
@@ -469,4 +471,22 @@ it("reads a {query before the caret and replaces it with a variable", () => {
 	]);
 	update(editor, () => select(2, 2));
 	expect(read(editor, $caretQuery)).toBeUndefined();
+});
+
+it("tells what an edit typed from the text alone, not from a selection", () => {
+	// a deletion, wherever the caret is, also one that joins "{na" and "me}"
+	expect(isDeletion("Hi {name}!", "Hi {name}")).toBe(true);
+	expect(isDeletion("{na-me}", "{name}")).toBe(true);
+	expect(isDeletion("ab", "ab")).toBe(false);
+	expect(isDeletion("Hi {name}", "Hi {name}!")).toBe(false);
+	// typed text ends at the caret
+	expect(typedRange("Hi {name}", "Hi {name}!", 10)).toEqual([9, 10]);
+	// "{" typed before stored "{lit}" is the one before the caret, not the stored one
+	expect(typedRange("a {lit}", "a {{lit}", 3)).toEqual([2, 3]);
+	// typed over a selection
+	expect(typedRange("Pay {amount} now", "Pay {total} now", 11)).toEqual([5, 11]);
+	// nothing typed
+	expect(typedRange("ab", "ab", 1)).toEqual([1, 1]);
+	// the caret is not where the edit ended
+	expect(typedRange("abc", "abXc", 1)).toBeUndefined();
 });
