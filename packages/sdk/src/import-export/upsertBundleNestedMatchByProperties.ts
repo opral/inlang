@@ -11,8 +11,8 @@ export const upsertBundleNestedMatchByProperties = async (
 	if (bundle.id === undefined) {
 		throw new Error("upsert expets a bundle id for matching");
 	}
-	// Pick the columns explicitly so the deprecated `bundleId`/`messageId`
-	// inputs and any `lixcol_*` properties never reach the insert.
+	// Pick the columns explicitly so that nested arrays and `lixcol_*`
+	// properties of the input never reach the insert.
 	const bundleToInsert = { id: bundle.id, declarations: bundle.declarations };
 
 	await db.transaction().execute(async (trx) => {

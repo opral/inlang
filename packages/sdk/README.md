@@ -319,7 +319,7 @@ SDK 4.0 queries `project.db` with the table and column names Lix stores. Nothing
 + bundle.messages[0].bundle_id;
 ```
 
-`insertBundleNested()`, `upsertBundleNested()`, `updateBundleNested()`, `createMessage()` and `createVariant()` use the same snake_case names. A message's `bundle_id` is readable from its parent too (`bundle.id`), which works with every SDK version.
+`insertBundleNested()`, `upsertBundleNested()` and `updateBundleNested()` take the same snake_case names, and `createMessage()` and `createVariant()` return them. Their arguments stay `createMessage({ bundleId, … })` and `createVariant({ messageId, … })`. A message's `bundle_id` is readable from its parent too (`bundle.id`), which works with every SDK version.
 
 ### Row types and plugin types
 
