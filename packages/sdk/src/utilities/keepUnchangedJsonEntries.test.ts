@@ -732,6 +732,7 @@ describe("keepUnchangedJsonEntries", () => {
 			return keepUnchangedJsonEntries({
 				exported,
 				files: files.map(({ text, ...file }) => ({
+					imported: true,
 					...file,
 					content: encode(text),
 				})),
@@ -760,7 +761,7 @@ describe("keepUnchangedJsonEntries", () => {
 				},
 				{
 					locale: "de",
-					name: "de.json",
+					name: "./messages/de.json",
 					// the host writes it to exactly this file
 					metadata: { pathPattern: "./messages/de.json" },
 					content: '{\n  "$schema": "schema"\n}\n',
@@ -795,6 +796,127 @@ describe("keepUnchangedJsonEntries", () => {
 				["./a/de.json", "{}\n"],
 				["./b/de.json", '{\n\t"$schema": "schema"\n}'],
 			]);
+		});
+
+		test("is not written if the project didn't read it", async () => {
+			// e.g. of a locale that was added to the settings after loading
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{
+					path: "./de.json",
+					locale: "de",
+					text: '{"a": "A-de"}',
+					imported: false,
+				} as any,
+			]);
+			expect(files.map((file) => file.locale)).toEqual(["en"]);
+		});
+
+		test("keeps nested keys that aren't messages, and `__proto__`", async () => {
+			// a plugin that reads nested keys, except `order`
+			const importNested: typeof importFiles = async ({ files }) =>
+				importFiles({
+					files: files.map((file) => ({
+						...file,
+						content: encode(
+							JSON.stringify(
+								Object.fromEntries(
+									Object.entries(
+										flatten(JSON.parse(decode(file.content)))
+									).filter(
+										([key]) =>
+											!key.endsWith("order") && !key.endsWith("__proto__")
+									)
+								)
+							)
+						),
+					})),
+				});
+			const exported = await exportFiles({
+				...rowsFromImport(
+					await importNested({
+						files: [{ locale: "en", content: encode('{"a": "A"}') }],
+					})
+				),
+				settings: {} as any,
+			});
+			const de =
+				'{\n  "nav": {\n    "home": "Start",\n    "order": 5\n  },\n  "__proto__": 1,\n  "b": "B"\n}';
+			const files = await keepUnchangedJsonEntries({
+				exported,
+				files: [
+					{
+						path: "./de.json",
+						locale: "de",
+						content: encode(de),
+						imported: true,
+					},
+				],
+				settings: {} as any,
+				importFiles: importNested,
+				exportFiles,
+			});
+			expect(decode(files[1]!.content)).toBe(
+				'{\n  "nav": {\n    "order": 5\n  },\n  "__proto__": 1\n}'
+			);
+		});
+
+		test("variants that reference their message by an id of the file", async () => {
+			// like the json plugin: message and variant ids from the file's path
+			const importWithIds: typeof importFiles = async ({
+				files,
+			}): Promise<any> => {
+				const result = await importFiles({ files });
+				const path = (files[0] as any)?.toBeImportedFilesMetadata?.namespace;
+				const id = (message: { bundleId: string; locale: string }) =>
+					`${path}:${message.bundleId}:${message.locale}`;
+				return {
+					bundles: result.bundles,
+					messages: result.messages.map((message) => ({
+						...message,
+						id: id(message),
+					})),
+					variants: result.variants.map((variant: any) => ({
+						messageId: id({
+							bundleId: variant.messageBundleId,
+							locale: variant.messageLocale,
+						}),
+						matches: variant.matches,
+						pattern: variant.pattern,
+					})),
+				};
+			};
+			const exported = await exportFiles({
+				...rowsFromImport(
+					await importFiles({
+						files: [{ locale: "en", content: encode('{"a": "A"}') }],
+					})
+				),
+				settings: {} as any,
+			});
+			// `a` of en is also in another namespace's file, which isn't written
+			const files = await keepUnchangedJsonEntries({
+				exported,
+				files: [
+					{
+						path: "./en.json",
+						locale: "en",
+						content: encode('{"a": "A"}'),
+						imported: true,
+					},
+					{
+						path: "./old/en.json",
+						locale: "en",
+						metadata: { namespace: "old" },
+						content: encode('{"a": "Old"}'),
+						imported: true,
+					},
+				],
+				settings: {} as any,
+				importFiles: importWithIds,
+				exportFiles,
+			});
+			expect(files.map((file) => file.name)).toEqual(["en.json"]);
 		});
 
 		test("is not written if the project still has all its messages", async () => {

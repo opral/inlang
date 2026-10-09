@@ -74,8 +74,8 @@ export type InlangPlugin<
 	 *   and a new file has no previous content. Without a previous file,
 	 *   plugins write the whole file.
 	 * - With `files`, a plugin also returns a file for every previous file
-	 *   that holds messages the project no longer has and that the export
-	 *   doesn't otherwise write, e.g. if every message of a locale or of a
+	 *   that the project read (`imported`), that holds messages the project
+	 *   no longer has and that the export doesn't otherwise write, e.g. if every message of a locale or of a
 	 *   namespace was deleted: the previous file without those messages
 	 *   (keeping what is not a message, like `$schema`), e.g. `{}`. The host
 	 *   only writes the files that the export returns, so without it the

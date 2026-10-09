@@ -80,6 +80,18 @@ export type ExistingFile = {
 	content: Uint8Array;
 	/** The metadata as returned by `toBeImportedFiles`. */
 	metadata?: Record<string, any>;
+	/**
+	 * Whether the messages of the project were read from this content: the
+	 * host imported (or wrote) the file and it didn't change since.
+	 *
+	 * Only such a file can hold messages that were deleted from the project.
+	 * Plugins remove deleted messages only from these files (see
+	 * `exportFiles`), not from a file the project never read, e.g. of a
+	 * locale added to the settings after loading. `saveProjectToDirectory`
+	 * sets it for files that `loadProjectFromDirectory` imported or that it
+	 * wrote itself. Hosts that can't tell leave it out.
+	 */
+	imported?: boolean;
 };
 
 export type ExportFile = {

@@ -781,12 +781,15 @@ test("passes the existing files of toBeImportedFiles to exportFiles", async () =
 			locale: "en",
 			content: '{ "hello": "Hello" }',
 			metadata: { namespace: "common" },
+			// the project didn't read it
+			imported: false,
 		},
 		{
 			path: "./de/app.json",
 			locale: "de",
 			content: '{ "title": "Meine App" }',
 			metadata: { namespace: "app" },
+			imported: false,
 		},
 	]);
 });
@@ -1362,9 +1365,8 @@ test("uses saveMessages when exportFiles is not defined", async () => {
 	expect(saveMessagesSpy).toHaveBeenCalled();
 });
 
-test("deleting every message of a locale empties its files, also of a pathPattern array", async () => {
-	// a JSON plugin `{ "key": "text" }` that keeps unchanged entries
-	const pathPattern = ["./a/{locale}.json", "./b/{locale}.json"];
+/** A JSON plugin for `{ "key": "text" }` files that keeps unchanged entries. */
+function keepingJsonPlugin(pathPattern: string[]): InlangPlugin {
 	const importJson: NonNullable<InlangPlugin["importFiles"]> = async ({
 		files,
 	}) => {
@@ -1417,6 +1419,12 @@ test("deleting every message of a locale empties its files, also of a pathPatter
 				exportFiles: exportWhole,
 			}),
 	};
+	return mockPlugin;
+}
+
+test("deleting every message of a locale empties its files, also of a pathPattern array", async () => {
+	const pathPattern = ["./a/{locale}.json", "./b/{locale}.json"];
+	const mockPlugin = keepingJsonPlugin(pathPattern);
 	const files = {
 		"/repo/a/en.json": '{\n  "hello": "Hello"\n}',
 		"/repo/b/en.json": '{\n  "bye": "Bye"\n}',
@@ -1477,4 +1485,94 @@ test("deleting every message of a locale empties its files, also of a pathPatter
 			.select("id")
 			.execute()
 	).toEqual([]);
+});
+
+test("files the project didn't read keep their messages", async () => {
+	const pathPattern = ["./{locale}.json"];
+	const files = {
+		"/repo/en.json": '{"hello": "Hello"}',
+		// not read: fr is not a locale of the project yet
+		"/repo/fr.json": '{"hello": "Bonjour"}',
+	};
+	const volume = Volume.fromJSON({
+		...files,
+		"/repo/project.inlang/settings.json": JSON.stringify({
+			baseLocale: "en",
+			locales: ["en", "de"],
+			modules: [],
+			mock: { pathPattern },
+		}),
+	});
+	const project = await loadProjectFromDirectory({
+		fs: volume as any,
+		path: "/repo/project.inlang",
+		providePlugins: [keepingJsonPlugin(pathPattern)],
+	});
+	const settings = await project.settings.get();
+	await project.settings.set({ ...settings, locales: ["en", "de", "fr"] });
+
+	await saveProjectToDirectory({
+		fs: volume as any,
+		project,
+		path: "/repo/project.inlang",
+	});
+
+	expect(volume.readFileSync("/repo/fr.json", "utf-8")).toBe(
+		files["/repo/fr.json"]
+	);
+});
+
+test("marks the files the project read or wrote as imported", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => [
+			{
+				locale: "en",
+				name: "en.json",
+				content: new TextEncoder().encode('{"hello":"Hi"}'),
+			},
+		]
+	);
+	const plugin: InlangPlugin = {
+		...keepingJsonPlugin(["./{locale}.json"]),
+		exportFiles,
+	};
+	const volume = Volume.fromJSON({
+		"/repo/en.json": '{"hello": "Hello"}',
+		"/repo/de.json": '{"hello": "Hallo"}',
+		"/repo/project.inlang/settings.json": JSON.stringify({
+			baseLocale: "en",
+			locales: ["en", "de"],
+			modules: [],
+			mock: { pathPattern: ["./{locale}.json"] },
+		}),
+	});
+	const project = await loadProjectFromDirectory({
+		fs: volume as any,
+		path: "/repo/project.inlang",
+		providePlugins: [plugin],
+	});
+	const save = () =>
+		saveProjectToDirectory({
+			fs: volume as any,
+			project,
+			path: "/repo/project.inlang",
+		});
+	const imported = (call: number) =>
+		exportFiles.mock.calls[call]![0].files!.map((file) => [
+			file.locale,
+			file.imported,
+		]);
+
+	await save();
+	expect(imported(0)).toEqual([
+		["en", true],
+		["de", true],
+	]);
+	volume.writeFileSync("/repo/de.json", '{"hello": "Hallo!"}');
+	await save();
+	// en was written by the save, de changed on disk
+	expect(imported(1)).toEqual([
+		["en", true],
+		["de", false],
+	]);
 });

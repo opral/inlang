@@ -97,11 +97,14 @@ function keepUnchangedEntries(
  * writes no file for such a locale, so without this the file would stay as
  * it is and the deleted messages would come back on the next load. Comments
  * that are not directly above an entry stay, and the file is not deleted.
- * Files that hold no message (e.g. only comments) are not returned.
+ * Files that hold no message (e.g. only comments) and files the project
+ * didn't read (`imported`) are not returned.
  */
 function emptiedFiles(exported: ExportFile[], args: ExportArgs): ExportFile[] {
   const result: ExportFile[] = [];
   for (const existing of args.files ?? []) {
+    // a file the project never read has no deleted messages
+    if (existing.imported !== true) continue;
     if (exported.some((file) => file.locale === existing.locale)) continue;
     try {
       const imported = importAppleStrings([

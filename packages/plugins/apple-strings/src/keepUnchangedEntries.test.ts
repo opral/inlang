@@ -323,7 +323,12 @@ describe("export with the existing file", () => {
       ...data,
       files: [
         { path, locale: "en", content: encode(previous) },
-        { path: dePath, locale: "de", content: encode(previous) },
+        {
+          path: dePath,
+          locale: "de",
+          content: encode(previous),
+          imported: true,
+        },
       ],
     }) as any[];
     expect(files.map((file) => [file.locale, file.name])).toEqual([
@@ -344,7 +349,26 @@ describe("export with the existing file", () => {
       ...data,
       files: [
         { path, locale: "en", content: encode(previous) },
-        { path: "./de.strings", locale: "de", content: encode("/* none */\n") },
+        {
+          path: "./de.strings",
+          locale: "de",
+          content: encode("/* none */\n"),
+          imported: true,
+        },
+      ],
+    }) as any[];
+    expect(files.map((file) => file.locale)).toEqual(["en"]);
+  });
+
+  test("a file the project didn't read is not written", () => {
+    // e.g. of a locale added to the settings after the project was loaded
+    const data = importStrings(previous);
+    const files = plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [
+        { path, locale: "en", content: encode(previous) },
+        { path: "./de.strings", locale: "de", content: encode(previous) },
       ],
     }) as any[];
     expect(files.map((file) => file.locale)).toEqual(["en"]);
