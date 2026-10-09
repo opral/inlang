@@ -396,74 +396,281 @@ describe("falls back to the full export", () => {
   });
 });
 
-test("several path patterns keep each file", async () => {
+describe("several path patterns", () => {
   const multiSettings = {
     ...settings,
-    locales: ["en"],
     [PLUGIN_KEY]: {
       pathPattern: ["./a/{locale}.json", "./b/{locale}.json"],
     },
   };
-  const a = '{\n  "x": "X {n,number}"\n}\n';
-  const b = '{\n    "y": "Y"\n}';
-  const imported = await plugin.importFiles!({
-    files: [a, b].map((text) => ({
-      locale: "en",
-      content: new TextEncoder().encode(text),
-    })),
-    settings: multiSettings,
-  });
-  const rows: Rows = {
-    bundles: imported.bundles as Bundle[],
-    messages: imported.messages.map((message) => ({
-      ...message,
-      id: message.bundleId,
-      selectors: message.selectors ?? [],
-    })),
-    variants: imported.variants.map((variant) => ({
-      id: variant.messageBundleId!,
-      messageId: variant.messageBundleId!,
-      matches: [],
-      pattern: variant.pattern!,
-    })),
+  // b has a message that a has too, with the same text
+  const files: Record<string, string> = {
+    "./a/en.json": '{\n  "x": "X {n,number}",\n  "shared": "S"\n}\n',
+    "./b/en.json": '{\n    "y": "Y",\n    "shared": "S"\n}',
+    "./a/de.json": '{"x":"X {n,number}"}',
+    "./b/de.json": '{\r\n\t"y": "Y"\r\n}\r\n',
   };
-  const exported = await plugin.exportFiles!({
-    ...rows,
-    settings: multiSettings,
-    files: [
-      {
-        path: "./a/en.json",
-        locale: "en",
-        content: new TextEncoder().encode(a),
-      },
-      {
-        path: "./b/en.json",
-        locale: "en",
-        content: new TextEncoder().encode(b),
-      },
-    ],
+
+  /** The rows of a project that imported `files` (by path). */
+  async function importMulti(files: Record<string, string>): Promise<Rows> {
+    const toBeImported = await plugin.toBeImportedFiles!({
+      settings: multiSettings,
+    });
+    const imported = await plugin.importFiles!({
+      files: toBeImported
+        .filter((file) => files[file.path] !== undefined)
+        .map((file) => ({
+          locale: file.locale,
+          content: new TextEncoder().encode(files[file.path]),
+        })),
+      settings: multiSettings,
+    });
+    // like the SDK: one message per bundle and locale, the last one wins
+    const messages = new Map<string, Message>();
+    for (const message of imported.messages) {
+      const id = `${message.bundleId}:${message.locale}`;
+      messages.set(id, {
+        id,
+        bundleId: message.bundleId,
+        locale: message.locale,
+        selectors: message.selectors ?? [],
+      });
+    }
+    const variants = new Map<string, Variant>();
+    for (const variant of imported.variants) {
+      const messageId = `${variant.messageBundleId}:${variant.messageLocale}`;
+      const id = `${messageId}:${JSON.stringify(variant.matches)}`;
+      variants.set(id, {
+        id,
+        messageId,
+        matches: variant.matches ?? [],
+        pattern: variant.pattern ?? [],
+      });
+    }
+    return {
+      bundles: imported.bundles as Bundle[],
+      messages: [...messages.values()],
+      variants: [...variants.values()],
+    };
+  }
+
+  /** Exports `rows` with the previous files (by path), as text by path. */
+  async function exportMulti(
+    rows: Rows,
+    previous?: Record<string, string>,
+  ): Promise<Record<string, string>> {
+    const toBeImported = await plugin.toBeImportedFiles!({
+      settings: multiSettings,
+    });
+    const exported = await plugin.exportFiles!({
+      ...structuredClone(rows),
+      settings: multiSettings,
+      files:
+        previous === undefined
+          ? undefined
+          : toBeImported
+              .filter((file) => previous[file.path] !== undefined)
+              .map((file) => ({
+                ...file,
+                content: new TextEncoder().encode(previous[file.path]),
+              })),
+    });
+    for (const file of exported) {
+      // each file is written to its own path
+      expect(
+        file.metadata?.["pathPattern"]?.replace("{locale}", file.locale),
+      ).toBe(file.name);
+    }
+    return Object.fromEntries(
+      exported.map((file) => [
+        file.name,
+        new TextDecoder().decode(file.content),
+      ]),
+    );
+  }
+
+  /** The rows after setting `key` of the file at `path` to `source`. */
+  function editMulti(path: string, key: string, source: string | undefined) {
+    const json = JSON.parse(files[path]!);
+    if (source === undefined) {
+      delete json[key];
+    } else {
+      json[key] = source;
+    }
+    return importMulti({ ...files, [path]: JSON.stringify(json) });
+  }
+
+  test("without edits, each file stays as it is", async () => {
+    // the full export writes all messages of a locale to every file
+    const whole = await exportMulti(await importMulti(files));
+    expect(JSON.parse(whole["./b/de.json"]!)).toStrictEqual({
+      x: "X {n, number}",
+      y: "Y",
+    });
+    expect(await exportMulti(await importMulti(files), files)).toStrictEqual(
+      files,
+    );
   });
-  // The files are read together, so each file stays as it is: the messages
-  // of the other file are not added (the full export writes all messages to
-  // every file).
-  expect(
-    exported.map((file) => ({
-      name: file.name,
-      metadata: file.metadata,
-      text: new TextDecoder().decode(file.content),
-    })),
-  ).toStrictEqual([
-    {
-      name: "./a/en.json",
-      metadata: { pathPattern: "./a/{locale}.json" },
-      text: a,
-    },
-    {
-      name: "./b/en.json",
-      metadata: { pathPattern: "./b/{locale}.json" },
-      text: b,
-    },
-  ]);
+
+  test("an edited message changes only in the files that have it", async () => {
+    expect(
+      await exportMulti(await editMulti("./b/de.json", "y", "Y2"), files),
+    ).toStrictEqual({
+      ...files,
+      "./b/de.json": '{\r\n\t"y": "Y2"\r\n}\r\n',
+    });
+    expect(
+      await exportMulti(await editMulti("./a/en.json", "x", "X2"), files),
+    ).toStrictEqual({
+      ...files,
+      "./a/en.json": '{\n  "x": "X2",\n  "shared": "S"\n}\n',
+    });
+    // a message that both files have changes in both
+    expect(
+      await exportMulti(await editMulti("./b/en.json", "shared", "S2"), files),
+    ).toStrictEqual({
+      ...files,
+      "./a/en.json": '{\n  "x": "X {n,number}",\n  "shared": "S2"\n}\n',
+      "./b/en.json": '{\n    "y": "Y",\n    "shared": "S2"\n}',
+    });
+  });
+
+  test("a new message is added to every file of the locale, like the full export", async () => {
+    expect(
+      await exportMulti(await editMulti("./b/de.json", "z", "Z"), files),
+    ).toStrictEqual({
+      ...files,
+      "./a/de.json": '{"x":"X {n,number}","z":"Z"}',
+      "./b/de.json": '{\r\n\t"y": "Y",\r\n\t"z": "Z"\r\n}\r\n',
+    });
+  });
+
+  test("a deleted message is removed from the files that have it", async () => {
+    expect(
+      await exportMulti(await editMulti("./b/de.json", "y", undefined), files),
+    ).toStrictEqual({
+      ...files,
+      "./b/de.json": "{}\r\n",
+    });
+    const rows = await importMulti(files);
+    rows.messages = rows.messages.filter(
+      (message) => message.id !== "shared:en",
+    );
+    expect(await exportMulti(rows, files)).toStrictEqual({
+      ...files,
+      "./a/en.json": '{\n  "x": "X {n,number}"\n}\n',
+      "./b/en.json": '{\n    "y": "Y"\n}',
+    });
+  });
+
+  test("saveProjectToDirectory writes only the edits, and they are read back", async () => {
+    // the package has no @types/node
+    const nodeFs: any = await import("node:fs" as string);
+    const nodeOs: any = await import("node:os" as string);
+    const nodePath: any = await import("node:path" as string);
+    const dir = nodeFs.mkdtempSync(
+      nodePath.join(nodeOs.tmpdir(), "icu1-keep-multi-"),
+    );
+    const projectPath = nodePath.join(dir, "project.inlang");
+    const read = () =>
+      Object.fromEntries(
+        Object.keys(files).map((path) => [
+          path,
+          nodeFs.readFileSync(nodePath.join(dir, path), "utf-8"),
+        ]),
+      );
+    const load = () =>
+      loadProjectFromDirectory({
+        path: projectPath,
+        fs: nodeFs,
+        providePlugins: [plugin as InlangPlugin],
+      });
+    const setText = async (
+      project: Awaited<ReturnType<typeof load>>,
+      bundleId: string,
+      locale: string,
+      value: string,
+    ) => {
+      const message = await project.db
+        .selectFrom("inlang_message")
+        .selectAll()
+        .where("bundle_id", "=", bundleId)
+        .where("locale", "=", locale)
+        .executeTakeFirstOrThrow();
+      await project.db
+        .updateTable("inlang_variant")
+        .set({ pattern: [{ type: "text", value }] })
+        .where("message_id", "=", message.id)
+        .execute();
+    };
+    try {
+      for (const [path, text] of Object.entries(files)) {
+        nodeFs.mkdirSync(nodePath.dirname(nodePath.join(dir, path)), {
+          recursive: true,
+        });
+        nodeFs.writeFileSync(nodePath.join(dir, path), text);
+      }
+      nodeFs.mkdirSync(projectPath, { recursive: true });
+      nodeFs.writeFileSync(
+        nodePath.join(projectPath, "settings.json"),
+        JSON.stringify(multiSettings),
+      );
+
+      const project = await load();
+      try {
+        await saveProjectToDirectory({
+          project,
+          path: projectPath,
+          fs: nodeFs,
+        });
+        expect(read()).toStrictEqual(files);
+
+        await setText(project, "y", "de", "Y2");
+        await setText(project, "shared", "en", "S2");
+        await saveProjectToDirectory({
+          project,
+          path: projectPath,
+          fs: nodeFs,
+        });
+        expect(read()).toStrictEqual({
+          ...files,
+          "./a/en.json": '{\n  "x": "X {n,number}",\n  "shared": "S2"\n}\n',
+          "./b/en.json": '{\n    "y": "Y",\n    "shared": "S2"\n}',
+          "./b/de.json": '{\r\n\t"y": "Y2"\r\n}\r\n',
+        });
+      } finally {
+        await project.close();
+      }
+
+      // the edits are read back
+      const reloaded = await load();
+      try {
+        const texts = await reloaded.db
+          .selectFrom("inlang_message")
+          .innerJoin(
+            "inlang_variant",
+            "inlang_variant.message_id",
+            "inlang_message.id",
+          )
+          .select(["bundle_id", "locale", "pattern"])
+          .execute();
+        expect(
+          Object.fromEntries(
+            texts.map((row) => [
+              `${row.bundle_id}:${row.locale}`,
+              (row.pattern as Array<{ type: string; value?: string }>)
+                .map((part) => part.value ?? `{${part.type}}`)
+                .join(""),
+            ]),
+          ),
+        ).toMatchObject({ "y:de": "Y2", "shared:en": "S2", "y:en": "Y" });
+      } finally {
+        await reloaded.close();
+      }
+    } finally {
+      nodeFs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 test("saveProjectToDirectory only writes the edited entry", async () => {
