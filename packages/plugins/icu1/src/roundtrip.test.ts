@@ -231,6 +231,40 @@ test("roundtrip: exact matches with offsets across cases", async () => {
   expect(exported).toStrictEqual(input);
 });
 
+test("roundtrip: # keeps the plural offset", async () => {
+  const input = {
+    en: {
+      guests:
+        "{count, plural, offset:1 =0 {Nobody} =1 {You} one {You and # other} other {You and # others}}",
+    },
+    de: {
+      guests:
+        "{count, plural, offset:1 =0 {Niemand} =1 {Du} one {Du und # weitere Person} other {Du und # weitere Personen}}",
+    },
+  };
+
+  const imported = await runImportFiles(input);
+  const exported = await runExportFilesParsed(imported);
+
+  expect(exported).toStrictEqual(input);
+});
+
+test("roundtrip: # inside a select nested in a plural with offset", async () => {
+  const input = {
+    en: {
+      party:
+        "{count, plural, offset:2 other {{host, select, me {You and # guests} other {{host} and # guests}}}}",
+    },
+  };
+
+  const imported = await runImportFiles(input);
+  const exported = await runExportFilesParsed(imported);
+
+  // the export hoists the shared "# guests" out of the select, which is
+  // equivalent; the offset on # survives
+  expectParsedMessageEquality(input.en.party, exported.en!.party!);
+});
+
 test("roundtrip: nested function params inside selectors", async () => {
   const input = {
     en: {

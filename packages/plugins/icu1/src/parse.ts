@@ -39,6 +39,14 @@ type PluralSelector = {
   offset?: number;
 };
 
+/**
+ * The plural or selectordinal a `#` refers to: the innermost enclosing one.
+ */
+type PluralContext = {
+  arg: string;
+  offset?: number;
+};
+
 type ParseContext = {
   inputVariables: Map<string, Declaration>;
   localVariables: Map<string, LocalVariable>;
@@ -92,7 +100,7 @@ function expandTokens(
   tokens: TokenList,
   branch: Branch,
   context: ParseContext,
-  pluralContext: { arg: string } | undefined,
+  pluralContext: PluralContext | undefined,
 ): Branch[] {
   let branches: Branch[] = [cloneBranch(branch)];
 
@@ -135,6 +143,20 @@ function expandTokens(
         }
 
         ensureInputVariable(context, pluralContext.arg);
+        // `#` displays `arg - offset`. Keep the offset on the expression, so
+        // consumers can format `#` without finding the enclosing plural.
+        const poundOptions: FunctionReference["options"] =
+          pluralContext.offset && pluralContext.offset !== 0
+            ? [
+                {
+                  name: "offset",
+                  value: {
+                    type: "literal",
+                    value: String(pluralContext.offset),
+                  },
+                },
+              ]
+            : [];
         for (const current of branches) {
           current.pattern.push({
             type: "expression",
@@ -142,7 +164,7 @@ function expandTokens(
             annotation: {
               type: "function-reference",
               name: "icu:pound",
-              options: [],
+              options: poundOptions,
             },
           });
         }
@@ -202,7 +224,9 @@ function expandTokens(
               selectCase.tokens,
               newBranch,
               context,
-              token.type === "select" ? pluralContext : { arg: token.arg },
+              token.type === "select"
+                ? pluralContext
+                : { arg: token.arg, offset: token.pluralOffset },
             );
             nextBranches.push(...expanded);
           }
@@ -423,7 +447,9 @@ function collectExactPluralSelectorKeys(tokens: TokenList): Set<string> {
 
   for (const token of tokens) {
     if (token.type === "plural" || token.type === "selectordinal") {
-      if (token.cases.some((selectCase) => isExactPluralCaseKey(selectCase.key))) {
+      if (
+        token.cases.some((selectCase) => isExactPluralCaseKey(selectCase.key))
+      ) {
         keys.add(
           createPluralSelectorKey({
             arg: token.arg,
