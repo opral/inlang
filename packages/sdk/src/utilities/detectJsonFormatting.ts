@@ -107,3 +107,8 @@ const normalizeIndent = (indent: string | any[] | undefined) => {
 
 	return indent[0] === " " ? indent.length : indent;
 };
+
+export {
+	keepUnchangedJsonEntries,
+	stringifyJsonKeepingEntries,
+} from "./keepUnchangedJsonEntries.js";
