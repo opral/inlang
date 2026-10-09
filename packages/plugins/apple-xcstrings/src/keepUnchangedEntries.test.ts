@@ -1062,23 +1062,31 @@ describe("catalogs of Xcode 26 and format strings in keys", () => {
         '  "version" : "1.0"',
         "}",
       ].join("\n");
-    // implicit and positional arguments mixed
-    const previous = substitution("%lld Artikel und %2$lld");
-    expect(await reexport(previous)).toBe(previous);
-    const output = await reexport(previous, (data) => {
-      setText(data, "cart", "de", "%1$@ hat %2$lld Stück", "one");
-    });
-    const catalog = JSON.parse(output);
-    const de = catalog.strings.cart.localizations.de;
-    // the text around `%#@items@` is moved into the variants, the unreadable
-    // variant as it is: it displays the same
-    expect(de.stringUnit.value).toBe("%#@items@");
-    expect(
-      de.substitutions.items.variations.plural.other.stringUnit.value,
-    ).toBe("%1$@ hat %lld Artikel und %2$lld");
-    expect(de.substitutions.items.variations.plural.one.stringUnit.value).toBe(
-      "%1$@ hat %2$lld Stück",
-    );
+    for (const other of [
+      // implicit and positional arguments mixed
+      "%lld Artikel und %2$lld",
+      // a `%` that the plugin reads as text: Xcode pads the number, or reads
+      // `% o` as a number
+      "%-5lld Artikel",
+      "50% off",
+    ]) {
+      const previous = substitution(other);
+      expect(await reexport(previous)).toBe(previous);
+      const output = await reexport(previous, (data) => {
+        setText(data, "cart", "de", "%1$@ hat %2$lld Stück", "one");
+      });
+      const catalog = JSON.parse(output);
+      const de = catalog.strings.cart.localizations.de;
+      // the text around `%#@items@` is moved into the variants, the
+      // unreadable variant as it is: it displays the same
+      expect(de.stringUnit.value).toBe("%#@items@");
+      expect(
+        de.substitutions.items.variations.plural.other.stringUnit.value,
+      ).toBe(`%1$@ hat ${other}`);
+      expect(
+        de.substitutions.items.variations.plural.one.stringUnit.value,
+      ).toBe("%1$@ hat %2$lld Stück");
+    }
   });
 
   test("a key the plugin can't read as a format string is text, and a translation of it reads the same again", async () => {

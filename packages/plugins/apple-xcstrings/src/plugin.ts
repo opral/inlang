@@ -367,9 +367,16 @@ function importLocalization(
     // together with the text around `%#@name@`, which the export writes as
     // it is in the variant. Escaping it next to the variables of the
     // template would change what it displays.
+    // A `%` that the plugin reads as text (e.g. `%-5lld`, `50% off`) would be
+    // escaped next to variables too.
     const tryParse = (value: string, implicitStart?: number) => {
       try {
-        return parsePattern(value, implicitStart);
+        const parsed = parsePattern(value, implicitStart);
+        // without variables, `parsePattern` keeps the text as it is
+        return parsed.pattern.every((part) => part.type === "text") &&
+          hasLonePercent(value)
+          ? undefined
+          : parsed;
       } catch {
         return undefined;
       }
@@ -1365,6 +1372,15 @@ function hasPrintfExpression(source: string, regex: RegExp) {
       continue;
     }
     if (source[cursor] === "%" && regex.test(source.slice(cursor))) return true;
+  }
+  return false;
+}
+
+/** Whether `source` has a `%` that is not part of `%%`. */
+function hasLonePercent(source: string) {
+  for (let cursor = 0; cursor < source.length; cursor++) {
+    if (source.startsWith("%%", cursor)) cursor++;
+    else if (source[cursor] === "%") return true;
   }
   return false;
 }
