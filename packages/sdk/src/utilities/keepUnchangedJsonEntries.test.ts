@@ -758,5 +758,5 @@ test("the module is ASCII, so that plugins that bundle it load in SDK 3", async 
 		new URL("./keepUnchangedJsonEntries.ts", import.meta.url),
 		"utf8"
 	);
-	expect(source.match(/[^\x00-\x7F]/g) ?? []).toEqual([]);
+	expect([...source].filter((char) => char.charCodeAt(0) > 127)).toEqual([]);
 });
