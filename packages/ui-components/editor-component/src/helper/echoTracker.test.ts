@@ -40,3 +40,19 @@ it("bounds its memory", () => {
 	expect(tracker.consume("0")).toBe(false);
 	expect(tracker.consume(String(ECHO_HISTORY + 49))).toBe(true);
 });
+
+it("receive() replaces the content only with a pattern that changed on the host's side", () => {
+	const tracker = new EchoTracker();
+	// the first pattern always replaces the (empty) content
+	expect(tracker.receive("p0", undefined)).toBe("replace");
+	// typed "p1" right after a new form was added; the host's save of the form passes p0 again
+	tracker.record("p1");
+	expect(tracker.receive("p0", "p1")).toBe("keep");
+	// the save of the typing comes back: an echo
+	expect(tracker.receive("p1", "p1")).toBe("keep");
+	// someone else changed the pattern
+	expect(tracker.receive("theirs", "p1")).toBe("replace");
+	// after forgetting (an undo), the same pattern replaces the content again
+	tracker.clear();
+	expect(tracker.receive("theirs", "typed")).toBe("replace");
+});

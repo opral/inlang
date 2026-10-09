@@ -33,3 +33,20 @@ it("caches per locale and type and returns {} for unsupported locales", () => {
 	expect(pluralExamples("zz")).toEqual({});
 	expect(pluralExamples("bad_locale")).toEqual({});
 });
+
+it("leaves out numbers that have their own form", () => {
+	expect(pluralExamples("en", "cardinal", { exclude: [0] })).toEqual({
+		one: "1",
+		other: "2, 3, 4…",
+	});
+	expect(pluralExamples("ja", "cardinal", { exclude: ["0"] })).toEqual({
+		other: "1, 2, 3…",
+	});
+	// every number of "one" has its own form
+	expect(pluralExamples("en", "cardinal", { exclude: [0, 1] })).toEqual({
+		other: "2, 3, 4…",
+	});
+	expect(pluralExamples("en", "cardinal", { exclude: [0] })).not.toBe(
+		pluralExamples("en")
+	);
+});

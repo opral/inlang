@@ -158,6 +158,9 @@ export default class InlangPatternEditor extends LitElement {
 	 */
 	private _echoes = new EchoTracker();
 
+	/** Focus requested before the editable area was rendered. */
+	private _pendingFocus?: FocusOptions;
+
 	//disable shadow root -> because of contenteditable selection API
 	override createRenderRoot() {
 		return this;
@@ -175,22 +178,21 @@ export default class InlangPatternEditor extends LitElement {
 
 	// update editor state when variant prop changes
 	override updated(changedProperties: PropertyValues<this>) {
-		const incoming = JSON.stringify(this.variant?.pattern ?? []);
-		if (changedProperties.has("variant") && this._echoes.consume(incoming)) {
-			// An echo of our own edit: dropped together with everything emitted before it.
-		} else if (
+		// Echoes of our own edits and copies of the pattern passed before keep what was typed.
+		if (
 			changedProperties.has("variant") &&
-			incoming !== JSON.stringify(this._patternState ?? [])
-		) {
-			this._echoes.clear();
+			this._echoes.receive(
+				JSON.stringify(this.variant?.pattern ?? []),
+				this._patternState && JSON.stringify(this._patternState)
+			) === "replace"
+		)
 			this._setEditorState();
-		} else if (
-			changedProperties.has("variant") &&
-			this._patternState === undefined
-		) {
-			this._setEditorState();
-		}
 		if (changedProperties.has("declarations")) this._refreshTitles();
+		if (this._pendingFocus) {
+			const options = this._pendingFocus;
+			this._pendingFocus = undefined;
+			this.contentEditableElementRef.value?.focus(options);
+		}
 	}
 
 	/** Replaces the content with the variant's pattern, keeping the caret if focused. */
@@ -567,9 +569,16 @@ export default class InlangPatternEditor extends LitElement {
 		this._echoes.clear();
 	}
 
-	/** Focuses the editable area. */
+	/**
+	 * Focuses the editable area. Right after the editor was created or got a
+	 * new `variant`, it focuses once that is rendered, so keys typed right away
+	 * (after "+ Add form") land in the editor.
+	 */
 	override focus(options?: FocusOptions) {
-		this.contentEditableElementRef.value?.focus(options);
+		const element = this.contentEditableElementRef.value;
+		if (element && this.hasUpdated && !this.isUpdatePending)
+			element.focus(options);
+		else this._pendingFocus = options ?? {};
 	}
 
 	private get _isEmpty() {

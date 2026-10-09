@@ -1,5 +1,6 @@
 import type { Declaration, MessageRow, VariantRow } from "@inlang/sdk";
 import {
+	isEmptyPattern,
 	isNumericKey,
 	matchValue,
 	missingVariants,
@@ -46,7 +47,9 @@ export type AddVariantEventDetail = { matches: Match[] };
  *
  * Forms the locale needs (`missingVariants` of `@inlang/sdk`, the rule behind
  * the `missing-variant` check) render as "+ Add form" buttons, other empty
- * combinations as a quiet "+ Add". Narrow containers scroll horizontally with a sticky
+ * combinations as a quiet "+ Add". An empty form next to filled ones (the
+ * `empty-variant` check) shows "Empty" as a warning. Plural examples leave out
+ * numbers that have their own form ("other" 2, 3, 4… next to `=0`). Narrow containers scroll horizontally with a sticky
  * first column.
  *
  * @fires select-variant - `{ variantId }` when a form is clicked.
@@ -124,6 +127,11 @@ export default class InlangMessageForms extends LitElement {
 			.empty {
 				color: var(--_text-subtle);
 				font-style: italic;
+			}
+			/* an empty form next to filled ones: the \`empty-variant\` check */
+			.empty.problem {
+				color: var(--_warning);
+				font-weight: 500;
 			}
 			.label {
 				font-size: var(--_font-size-small);
@@ -314,8 +322,11 @@ export default class InlangMessageForms extends LitElement {
 				keys: group.keys,
 				values: group.values,
 				keyOf: group.keyOf,
+				// numbers with their own form (ICU `=0`) are not examples of a category
 				examples: group.plural
-					? pluralExamples(this._locale, group.plural.type)
+					? pluralExamples(this._locale, group.plural.type, {
+							exclude: group.keys.filter(isNumericKey),
+						})
 					: {},
 			})
 		);
@@ -388,9 +399,11 @@ export default class InlangMessageForms extends LitElement {
 		const description = labels.join(" · ");
 		if (variant) {
 			const selected = variant.id === this.selectedVariantId;
-			const isEmpty = variant.pattern.every(
-				(part) => part.type === "text" && part.value.trim() === ""
-			);
+			const isEmpty = isEmptyPattern(variant.pattern);
+			// the SDK's `empty-variant` check: other forms of the message have text
+			const problem =
+				isEmpty &&
+				this._variants.some((other) => !isEmptyPattern(other.pattern));
 			return html`<button
 				type="button"
 				class="form"
@@ -400,7 +413,9 @@ export default class InlangMessageForms extends LitElement {
 				@click=${() => this._emit("select-variant", { variantId: variant.id })}
 			>
 				${prefix ?? nothing}${isEmpty
-					? html`<span class="empty">Empty</span>`
+					? html`<span class=${problem ? "empty problem" : "empty"}
+							>Empty</span
+						>`
 					: html`<inlang-pattern-view
 							.pattern=${variant.pattern}
 							.declarations=${this.declarations}

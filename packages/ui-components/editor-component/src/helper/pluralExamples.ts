@@ -15,18 +15,28 @@ const BUDGET = 3;
  * counts as two), followed by "…" when more exist. Categories that no
  * integer reaches show a decimal example instead (e.g. Russian "other" → "1.5").
  *
+ * `exclude` leaves out numbers that have their own form, such as an ICU
+ * `=0` next to the plural: English "other" then shows "2, 3, 4…", not
+ * "0, 2, 3…". A category whose every number is excluded has no example.
+ *
  * Returns an empty object for unsupported or invalid locales rather than
  * guessing another language's rules.
  *
  * @example
  * pluralExamples("ru")
  * // { one: "1, 21, 31…", few: "2–4, 22…", many: "0, 5–20…", other: "1.5" }
+ * pluralExamples("en", "cardinal", { exclude: [0] })
+ * // { one: "1", other: "2, 3, 4…" }
  */
 export function pluralExamples(
 	locale: string,
-	type: "cardinal" | "ordinal" = "cardinal"
+	type: "cardinal" | "ordinal" = "cardinal",
+	options: { exclude?: Iterable<number | string> } = {}
 ): Record<string, string> {
-	const key = `${locale}\u0000${type}`;
+	const exclude = new Set(
+		[...(options.exclude ?? [])].map(Number).filter(Number.isFinite)
+	);
+	const key = `${locale}\u0000${type}\u0000${[...exclude].sort((a, b) => a - b).join()}`;
 	const cached = cache.get(key);
 	if (cached) return cached;
 	let rules: Intl.PluralRules;
@@ -41,6 +51,7 @@ export function pluralExamples(
 		...Array.from({ length: MAX_INTEGER + 1 }, (_, index) => index),
 		...LARGE_INTEGERS,
 	]) {
+		if (exclude.has(number)) continue;
 		const category = rules.select(number);
 		const list = integers.get(category) ?? [];
 		list.push(number);
@@ -53,7 +64,9 @@ export function pluralExamples(
 			result[category] = describe(numbers);
 			continue;
 		}
-		const decimal = DECIMALS.find((value) => rules.select(value) === category);
+		const decimal = DECIMALS.find(
+			(value) => !exclude.has(value) && rules.select(value) === category
+		);
 		if (decimal !== undefined) result[category] = String(decimal);
 	}
 	if (cache.size >= 128) cache.delete(cache.keys().next().value!);

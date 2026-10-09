@@ -329,3 +329,65 @@ it("does not add select values to a plural or its exact-number selector", async 
 		addSelectValue(bundle!, { selector: "nope", value: "x", locale: "en" })
 	).toThrow(/not a selector/);
 });
+
+it("removes an exact number whose selector is the input itself (the i18next import shape)", () => {
+	// i18next `count_zero` / `count_one` / `count_other`: the `count` input selects =0 next to `countPlural`
+	const match = (count: string, plural: string) => [
+		count === "*"
+			? ({ type: "catchall-match", key: "count" } as const)
+			: ({ type: "literal-match", key: "count", value: count } as const),
+		plural === "*"
+			? ({ type: "catchall-match", key: "countPlural" } as const)
+			: ({ type: "literal-match", key: "countPlural", value: plural } as const),
+	];
+	const text = (value: string): Pattern => [{ type: "text", value }];
+	const bundle: Bundle = {
+		id: "files",
+		declarations: [
+			{ type: "input-variable", name: "count" },
+			{
+				type: "local-variable",
+				name: "countPlural",
+				value: {
+					type: "expression",
+					arg: { type: "variable-reference", name: "count" },
+					annotation: { type: "function-reference", name: "plural", options: [] },
+				},
+			},
+		],
+		messages: ["en", "de"].map((locale) => ({
+			id: `files_${locale}`,
+			locale,
+			selectors: [
+				{ type: "variable-reference", name: "count" },
+				{ type: "variable-reference", name: "countPlural" },
+			],
+			variants: [
+				{ id: `${locale}_0`, matches: match("0", "*"), pattern: text("none") },
+				{ id: `${locale}_one`, matches: match("*", "one"), pattern: text("one") },
+				{ id: `${locale}_other`, matches: match("*", "*"), pattern: text("many") },
+			],
+		})),
+	};
+	const en = { ...bundle.messages[0]!, locale: "en" };
+	expect(selectorGroups(en, bundle.declarations)[0]).toMatchObject({
+		exactSelector: "count",
+		selector: "countPlural",
+		keys: ["0", "one", "*"],
+	});
+	const removed = removeExactNumber(bundle, { selector: "count", value: 0 });
+	// the input stays declared: countPlural reads it
+	expect(removed.declarations).toEqual(bundle.declarations);
+	for (const message of removed.messages) {
+		expect(message.selectors).toEqual([
+			{ type: "variable-reference", name: "countPlural" },
+		]);
+		expect(message.variants.map((v) => [v.id, v.matches])).toEqual([
+			[`${message.locale}_one`, [match("*", "one")[1]]],
+			[`${message.locale}_other`, [match("*", "*")[1]]],
+		]);
+		expect(
+			missingVariants({ ...message, locale: message.locale! }, removed.declarations)
+		).toEqual([]);
+	}
+});
