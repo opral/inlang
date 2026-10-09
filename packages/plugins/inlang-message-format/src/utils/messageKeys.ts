@@ -99,15 +99,21 @@ export function flattenMessageKeys(
 /**
  * Whether an array is a complex message, `[{ declarations, selectors,
  * match }]`, and not an array that `unflatten` made of number keys. In those,
- * a complex message is an array itself and an object is a nested key.
+ * a complex message is an array itself and an object is a nested key, also
+ * one with a key named `match` (`items.0.match` -> `[{ "match": "…" }]`):
+ * in a complex message, `match` is an object (or an array in a legacy
+ * form), and `declarations` and `selectors` are arrays.
  */
 function isComplexMessage(value: unknown[]): boolean {
 	const first = value[0];
+	if (!isObject(first)) return false;
+	const has = (key: string) => hasOwn(first, key);
 	return (
-		isObject(first) &&
-		(hasOwn(first, "match") ||
-			hasOwn(first, "declarations") ||
-			hasOwn(first, "selectors"))
+		(has("match") || has("declarations") || has("selectors")) &&
+		(!has("match") ||
+			(typeof first.match === "object" && first.match !== null)) &&
+		(!has("declarations") || Array.isArray(first.declarations)) &&
+		(!has("selectors") || Array.isArray(first.selectors))
 	);
 }
 

@@ -247,6 +247,25 @@ describe("import of arrays and match objects the published plugin wrote", () => 
 		});
 	});
 
+	test("an object in an array with a key named like a part of a complex message is no complex message", async () => {
+		// `items.0.match`, `items.0.title` and `steps.0.selectors`
+		const imported = await importTexts({
+			en: {
+				items: [{ match: "Match!", title: "Title" }],
+				steps: [{ selectors: "Selectors" }],
+			},
+		});
+		expect(imported.bundles.map((bundle) => bundle.id)).toEqual([
+			"items.0.match",
+			"items.0.title",
+			"steps.0.selectors",
+		]);
+		expect(textsOf(imported, "items.0.match")).toEqual({ "": "Match!" });
+		expect(textsOf(imported, "steps.0.selectors")).toEqual({
+			"": "Selectors",
+		});
+	});
+
 	test("a complex message, an array with one object, is one message as before", async () => {
 		const imported = await importTexts({
 			en: {
@@ -417,6 +436,29 @@ describe("export of keys with dots", () => {
 		];
 		expect(await exportTexts(rows, { files })).toEqual({
 			en: files.en.replace('"Home title"', '"Start"').replace('"A B"', '"B"'),
+		});
+	});
+
+	test("a flat key is kept when another locale writes it differently", async () => {
+		// en nests `a.b` (it has no message `a`), de writes it flat
+		const files = {
+			en: `{
+	"a.b": "A B",
+	"c": "C"
+}`,
+			de: `{
+	"a": "A",
+	"a.b": "A B"
+}`,
+		};
+		const rows = rowsOf(await importTexts(files));
+		expect(await exportTexts(rows, { files })).toEqual(files);
+		rows.variants.find((variant) => variant.messageId === "a.b/en")!.pattern = [
+			{ type: "text", value: "B" },
+		];
+		expect(await exportTexts(rows, { files })).toEqual({
+			...files,
+			en: files.en.replace('"A B"', '"B"'),
 		});
 	});
 

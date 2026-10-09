@@ -24,22 +24,54 @@ import { importFiles } from "./importFiles.js";
  */
 export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 	args
-) => {
-	const bundleIds = new Set(args.messages.map((message) => message.bundleId));
-	return keepUnchangedJsonEntries({
+) =>
+	keepUnchangedJsonEntries({
 		exported: await exportWholeFiles(args),
 		files: args.files,
 		settings: args.settings,
 		importFiles,
 		exportFiles: exportWholeFiles,
-		// where a flat key of a previous file is in the export, e.g.
-		// `"a.b"` stays flat if `a` is a message
-		splitKey: (key) =>
-			bundleIds.has(key)
-				? messageKeyPath(key, (prefix) => bundleIds.has(prefix))
-				: key.split("."),
+		splitKey: flatKeyPath(args.messages),
 	});
-};
+
+/**
+ * Where the export writes the message of a flat key of a previous file, for
+ * `keepUnchangedJsonEntries`, e.g. `"nav.home"` -> `["nav", "home"]`, and
+ * `"a.b.c"` -> `["a", "b.c"]` if `a.b` is a message too. Keys that are no
+ * message are split at every dot, like the default.
+ *
+ * The nesting depends on the messages of a locale, which `splitKey` doesn't
+ * get. A key that the locales nest differently gets the longest path: a
+ * locale that writes it flat at the top finds it there without `splitKey`.
+ * The SDK also calls `splitKey` with the keys of nested objects, relative to
+ * them; such a key is only read as a message key if it is one. If a path
+ * doesn't fit a file, that file is written in full (nothing is lost).
+ */
+function flatKeyPath(
+	messages: ReadonlyArray<Pick<Message, "bundleId" | "locale">>
+): (key: string) => string[] {
+	const idsByLocale = new Map<string, Set<string>>();
+	for (const message of messages) {
+		let ids = idsByLocale.get(message.locale);
+		if (ids === undefined) idsByLocale.set(message.locale, (ids = new Set()));
+		ids.add(message.bundleId);
+	}
+	const paths = new Map<string, string[]>();
+	return (key) => {
+		let path = paths.get(key);
+		if (path === undefined) {
+			const locales = [...idsByLocale.values()].filter((ids) => ids.has(key));
+			path =
+				locales.length === 0
+					? key.split(".")
+					: locales
+							.map((ids) => messageKeyPath(key, (prefix) => ids.has(prefix)))
+							.reduce((a, b) => (b.length > a.length ? b : a));
+			paths.set(key, path);
+		}
+		return path;
+	};
+}
 
 /**
  * Writes the files of all locales from scratch.
