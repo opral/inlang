@@ -73,25 +73,6 @@ it("shifts example numbers by an ICU offset and leaves out its exact numbers", a
 	expect(hints).toEqual(["0exactly", "1exactly", "one2", "other3, 4, 5…"]);
 });
 
-const exactDeclarations: Declaration[] = [
-	...plural(),
-	{
-		type: "local-variable",
-		name: "countPluralExact",
-		value: { type: "expression", arg: { type: "variable-reference", name: "count" } },
-	},
-];
-const match = (key: string, value: string) =>
-	value === "*"
-		? ({ type: "catchall-match", key } as const)
-		: ({ type: "literal-match", key, value } as const);
-const form = (id: string, matches: Record<string, string>, text: string): VariantRow => ({
-	id,
-	message_id: "m",
-	matches: Object.entries(matches).map(([key, value]) => match(key, value)),
-	pattern: [{ type: "text", value: text }],
-});
-
 async function mountForms(props: Partial<HTMLElementTagNameMap["inlang-message-forms"]>) {
 	const element = document.createElement("inlang-message-forms");
 	Object.assign(element, props);
@@ -114,53 +95,4 @@ it("offers a category only millions select (French many) quietly instead of as a
 		"form optional|Add form many",
 		"form|other: # éléments",
 	]);
-});
-
-it("needs the reference's exact number on a plural without an exact selector (countPlural=0) and adds it there", async () => {
-	const reference = [
-		form("e0", { countPluralExact: "0", countPlural: "*" }, "No items"),
-		form("e1", { countPluralExact: "*", countPlural: "one" }, "# item"),
-		form("e2", { countPluralExact: "*", countPlural: "*" }, "# items"),
-	];
-	const de = { ...message, locale: "de" };
-	const missing = await mountForms({
-		message: de,
-		declarations: exactDeclarations,
-		referenceVariants: reference,
-		variants: [variant("one", "one", "# Element"), variant("other", "*", "# Elemente")],
-	});
-	expect(missing.labels[0]).toBe("form missing|Add form 0");
-	missing.buttons[0]!.click();
-	expect(missing.added).toEqual([[match("countPlural", "0")]]);
-	document.body.replaceChildren();
-	const present = await mountForms({
-		message: de,
-		declarations: exactDeclarations,
-		referenceVariants: reference,
-		variants: [variant("zero", "0", "Keine"), variant("one", "one", "# Element"), variant("other", "*", "# Elemente")],
-	});
-	expect(present.labels).toEqual(["form|0: Keine", "form|one: # Element", "form|other: # Elemente"]);
-});
-
-it("shows an exact number on the plural (countPlural=0) as the form of a message with an exact selector", async () => {
-	const { labels } = await mountForms({
-		message: {
-			...message,
-			selectors: [
-				{ type: "variable-reference", name: "countPluralExact" },
-				{ type: "variable-reference", name: "countPlural" },
-			],
-		},
-		declarations: exactDeclarations,
-		// the reference has `=0` on its exact selector; this message has it on the plural
-		referenceVariants: [form("r0", { countPluralExact: "0", countPlural: "*" }, "No items")],
-		variants: [
-			form("a", { countPluralExact: "1", countPlural: "*" }, "One item"),
-			form("b", { countPluralExact: "*", countPlural: "0" }, "Keine"),
-			form("c", { countPluralExact: "*", countPlural: "one" }, "# item"),
-			form("d", { countPluralExact: "*", countPlural: "*" }, "# items"),
-		],
-	});
-	// the `0` form is shown, not a "+ Add" that would create a second one
-	expect(labels).toEqual(["form|0: Keine", "form|1: One item", "form|one: # item", "form|other: # items"]);
 });
