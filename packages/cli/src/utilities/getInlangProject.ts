@@ -4,8 +4,13 @@ import { resolve } from "node:path";
 
 export let lastUsedProject: InlangProject | undefined;
 
+/** The project couldn't be opened, e.g. because `settings.json` is missing. */
+export class ProjectLoadError extends Error {
+  override name = "ProjectLoadError";
+}
+
 /**
- * Gets the inlang project and exits if the project contains errors.
+ * Opens the inlang project. Throws a {@link ProjectLoadError} if it can't be opened.
  */
 export async function getInlangProject(args: {
   projectPath: string;
@@ -22,7 +27,9 @@ export async function getInlangProject(args: {
     lastUsedProject = project;
     return project;
   } catch (err) {
-    console.error(`Error opening inlang project at ${args.projectPath}`, err);
-    process.exit(1);
+    throw new ProjectLoadError(
+      `Couldn't open the inlang project at ${args.projectPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
   }
 }

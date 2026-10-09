@@ -196,7 +196,7 @@ Lines are 1-based, columns 0-based and `end` is exclusive; a called reference co
 Each check has a status:
 
 - `complete`: the check finished for its supplied inputs.
-- `incomplete`: analysis encountered unresolved usage, unsupported input, plugin errors or failures. Source issues include a path when available.
+- `incomplete`: analysis encountered unresolved usage, unsupported input, plugin errors or failures. Source issues include a path and the location of the construct when available.
 - `unavailable`: source files or a capable plugin are absent.
 
 Incomplete usage analysis withholds **all unused-message diagnostics and deletion fixes**. Missing-translation checks still run. A mixture of a capable plugin and a legacy matcher without usage analysis is incomplete.
@@ -251,7 +251,11 @@ if (diagnostic) {
 
 The source snapshot is caller-owned and cannot be atomically locked with the project database. Applications must keep it current and coordinate source edits when applying fixes. Rechecking the supplied snapshot does not re-read the filesystem or GitHub.
 
-This release offers deletion only. Missing translations have no automatic fix until a translation provider is available; copying the base-locale text is not treated as translation. `applyFix` changes the local project only. Saving, exporting, publishing and UI confirmation remain application concerns. There is no new CLI command in this release.
+This release offers deletion only. Missing translations have no automatic fix until a translation provider is available; copying the base-locale text is not treated as translation. `applyFix` changes the local project only. Saving, exporting, publishing and UI confirmation remain application concerns.
+
+## CLI
+
+`npx @inlang/cli check --project ./project.inlang` runs these checks in CI and prints them grouped by check, or as JSON with `--format json`. It reads the source snapshot from the project's parent directory (or `--source`), respecting `.gitignore` and skipping dependencies, build output and Paraglide's compiled output. See the [CLI documentation](../../cli/README.md#check).
 
 ## Real-time editors and scalability
 
@@ -289,4 +293,4 @@ const plugin: InlangPlugin = {
 };
 ```
 
-Return canonical stored bundle IDs, including references passed as functions. Analyzers can also return `references` (bundle ID, path, start and end positions) for `findUsages`; the m-function matcher does. Return `incomplete` with issues whenever parsing or unresolved usage prevents a conclusion. The SDK unions usages across all installed analyzers; every analyzer must complete before unused findings are emitted. Analyzers must treat inputs as immutable: the SDK supplies frozen source records and an isolated, deeply frozen settings copy. Malformed runtime results and rejected analyzers are reported as incomplete and retried on the next check. The SDK validates and copies indexed result entries, normalizes issue metadata to `path` and `reason`, and isolates public result objects from its cache.
+Return canonical stored bundle IDs, including references passed as functions. Analyzers can also return `references` (bundle ID, path, start and end positions) for `findUsages`; the m-function matcher does. Return `incomplete` with issues whenever parsing or unresolved usage prevents a conclusion. An issue can locate the construct with `start` and `end` (as for references), so tools can point at it: `{ path: "src/Field.tsx", reason: "Dynamic message access cannot be resolved.", start: { line: 14, column: 7 }, end: { line: 14, column: 30 } }`. The SDK unions usages across all installed analyzers; every analyzer must complete before unused findings are emitted. Analyzers must treat inputs as immutable: the SDK supplies frozen source records and an isolated, deeply frozen settings copy. Malformed runtime results and rejected analyzers are reported as incomplete and retried on the next check. The SDK validates and copies indexed result entries, normalizes issue metadata to `path`, `reason`, `start` and `end`, and isolates public result objects from its cache.

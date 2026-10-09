@@ -479,3 +479,83 @@ test("an aliased import.meta.hot withholds unused findings", async () => {
 	);
 	expect(result.status).toBe("incomplete");
 });
+test("locates each unresolved construct so tools can point at it", async () => {
+	const content = `import { m } from '@/generated/paraglide/messages';
+export function Field({ fieldName }) {
+	const label = m[\`\${fieldName}_label\`]();
+	return label + m[fieldName]() + m.title();
+}
+type Key = keyof typeof m;`;
+	const result = await analyze(content, "src/Field.tsx");
+	expect(result.status).toBe("incomplete");
+	const slice = (issue: NonNullable<typeof result.issues>[number]) => {
+		const lines = content.split("\n");
+		return lines[issue.start!.line - 1]!.slice(
+			issue.start!.column,
+			issue.start!.line === issue.end!.line ? issue.end!.column : undefined
+		);
+	};
+	expect(
+		result.issues?.map((issue) => ({
+			path: issue.path,
+			line: issue.start?.line,
+			code: slice(issue),
+			reason: issue.reason,
+		}))
+	).toEqual(
+		expect.arrayContaining([
+			{
+				path: "src/Field.tsx",
+				line: 3,
+				code: "m[`${fieldName}_label`]",
+				reason: "Dynamic message access cannot be resolved.",
+			},
+			{
+				path: "src/Field.tsx",
+				line: 4,
+				code: "m[fieldName]",
+				reason: "Dynamic message access cannot be resolved.",
+			},
+			{
+				path: "src/Field.tsx",
+				line: 6,
+				code: "typeof m",
+				reason:
+					"A type depends on a message namespace (keyof typeof m, typeof all, …).",
+			},
+		])
+	);
+	expect(result.issues).toHaveLength(3);
+	expect(result.usedBundleIds).toContain("title");
+});
+test("reports the same unresolved construct once and file-level issues without a location", async () => {
+	const result = await analyzeUsage({
+		files: [
+			{
+				path: "src/a.ts",
+				content: "import { m } from './messages'; m[a](); m[b]();",
+			},
+			{ path: "src/b.cjs", content: "module.exports = {}" },
+		],
+		settings,
+	});
+	expect(result.issues).toEqual([
+		{
+			path: "src/a.ts",
+			reason: "Dynamic message access cannot be resolved.",
+			start: { line: 1, column: 32 },
+			end: { line: 1, column: 36 },
+		},
+		{
+			path: "src/a.ts",
+			reason: "Dynamic message access cannot be resolved.",
+			start: { line: 1, column: 40 },
+			end: { line: 1, column: 44 },
+		},
+		{
+			path: "src/b.cjs",
+			reason:
+				"Unsupported source format. Supply ESM JavaScript, TypeScript or Svelte files.",
+		},
+	]);
+});

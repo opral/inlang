@@ -33,6 +33,12 @@ importers:
         specifier: ^0.19.2
         version: 0.19.12
     devDependencies:
+      '@inlang/plugin-m-function-matcher':
+        specifier: workspace:*
+        version: link:../plugins/m-function-matcher
+      '@inlang/plugin-message-format':
+        specifier: workspace:*
+        version: link:../plugins/inlang-message-format
       '@inlang/tsconfig':
         specifier: workspace:*
         version: link:../tsconfig

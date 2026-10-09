@@ -1,6 +1,11 @@
 import { parse as parseSvelte } from "svelte/compiler";
 import { parse } from "@babel/parser";
-import type { AnalyzeUsage, UsageAnalysis, UsageReference } from "@inlang/sdk";
+import type {
+	AnalyzeUsage,
+	UsageAnalysis,
+	UsageIssue,
+	UsageReference,
+} from "@inlang/sdk";
 
 type Node = { type: string; [key: string]: unknown };
 const isNode = (value: unknown): value is Node =>
@@ -101,7 +106,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 		};
 	}
 	const used = new Set<string>();
-	const issues: { path: string; reason: string }[] = [];
+	const issues: UsageIssue[] = [];
 	const references: UsageReference[] = [];
 	for (const file of files) {
 		// Line starts for turning AST offsets into 1-based lines and 0-based columns.
@@ -142,7 +147,24 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 					end: position(target.end),
 				});
 		};
-		const unresolved = new Set<string>();
+		// Why this file's usages can't all be resolved, located at the construct when possible.
+		const unresolved = new Map<string, UsageIssue>();
+		const unresolve = (reason: string, at: Node) => {
+			const located =
+				typeof at.start === "number" && typeof at.end === "number";
+			const id = located ? `${at.start}:${at.end}:${reason}` : reason;
+			if (!unresolved.has(id))
+				unresolved.set(id, {
+					path: file.path,
+					reason,
+					...(located
+						? {
+								start: position(at.start as number),
+								end: position(at.end as number),
+							}
+						: {}),
+				});
+		};
 		if (!/\.(?:[jt]sx?|m[jt]s|svelte)$/i.test(file.path)) {
 			issues.push({
 				path: file.path,
@@ -168,7 +190,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 				for (const script of scripts) {
 					for (const attribute of script.attributes as Node[]) {
 						if (attribute.name === "src")
-							unresolved.add("External Svelte scripts cannot be analyzed.");
+							unresolve(
+								"External Svelte scripts cannot be analyzed.",
+								attribute
+							);
 						if (attribute.name === "lang") {
 							const value =
 								Array.isArray(attribute.value) && attribute.value.length === 1
@@ -181,7 +206,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files }) => {
 									value.data as string
 								)
 							)
-								unresolved.add("Unsupported Svelte script language.");
+								unresolve(
+									"Unsupported Svelte script language.",
+									attribute
+								);
 						}
 					}
 				}
@@ -234,7 +262,10 @@ const namespaces = new Set<string>(["m"]);
 						source === "node:module" ||
 						source === "module"
 					)
-						unresolved.add("CommonJS loader references are unsupported.");
+						unresolve(
+							"CommonJS loader references are unsupported.",
+							specifier
+						);
 if (
 						local &&
 						(imported === "m" || specifier.type === "ImportNamespaceSpecifier")
@@ -251,7 +282,7 @@ if (
 					)
 						used.add(imported);
 					else if (messageModule(source))
-						unresolved.add("Unsupported message import.");
+						unresolve("Unsupported message import.", specifier);
 				}
 			}
 			if (
@@ -259,8 +290,9 @@ if (
 				(statement.type === "ExportNamedDeclaration" &&
 					isNode(statement.source))
 			)
-				unresolved.add(
-					"Messages are re-exported; downstream usage cannot be resolved."
+				unresolve(
+					"Messages are re-exported; downstream usage cannot be resolved.",
+					statement
 				);
 		}
 		const stack: { node: Node; parent?: Node; key?: string }[] = [
@@ -293,8 +325,9 @@ if (
 					!staticProperty &&
 					!(parent && key === "key" && !parent.computed && !parent.shorthand)
 				)
-					unresolved.add(
-						"A global object is accessed dynamically or passed as a value."
+					unresolve(
+						"A global object is accessed dynamically or passed as a value.",
+						node
 					);
 			}
 			const memberObject = isNode(node.object)
@@ -329,8 +362,9 @@ if (
 						handler.type
 					)
 				)
-					unresolved.add(
-						"Timer handlers may evaluate source strings; only inline function handlers can be resolved."
+					unresolve(
+						"Timer handlers may evaluate source strings; only inline function handlers can be resolved.",
+						node
 					);
 			}
 			const objectKey =
@@ -348,15 +382,17 @@ if (
 					"Function",
 				].includes(node.name as string)
 			)
-				unresolved.add(
-					"CommonJS loader or dynamically evaluated code cannot be analyzed."
+				unresolve(
+					"CommonJS loader or dynamically evaluated code cannot be analyzed.",
+					node
 				);
 			if (
 				node.type === "TSImportEqualsDeclaration" ||
 				node.type === "TSExportAssignment"
 			)
-				unresolved.add(
-					"CommonJS TypeScript imports and exports are unsupported."
+				unresolve(
+					"CommonJS TypeScript imports and exports are unsupported.",
+					node
 				);
 			// Type-level references do not execute. Keep all runtime TS constructs,
 			// including namespaces, enums and parameter-property initializers.
@@ -414,8 +450,9 @@ if (
 								used.add(indexed);
 								refer(indexed, typeParent!);
 							} else
-								unresolved.add(
-									"A type depends on a message namespace (keyof typeof m, typeof all, …)."
+								unresolve(
+									"A type depends on a message namespace (keyof typeof m, typeof all, …).",
+									type
 								);
 						}
 					}
@@ -450,8 +487,9 @@ if (
 							"constructor",
 						].includes(name ?? "")
 					)
-						unresolved.add(
-							"A destructured message namespace, loader or evaluator cannot be resolved."
+						unresolve(
+							"A destructured message namespace, loader or evaluator cannot be resolved.",
+							property
 						);
 				}
 			}
@@ -468,8 +506,9 @@ if (
 						? staticMemberName(parent)
 						: undefined;
 				if (!property || !importMetaProperties.has(property))
-					unresolved.add(
-						"import.meta.glob and other import.meta loaders can load message modules by computed names."
+					unresolve(
+						"import.meta.glob and other import.meta loaders can load message modules by computed names.",
+						node
 					);
 			}
 			if (
@@ -478,7 +517,7 @@ if (
 				!staticProperty &&
 				!objectKey
 			)
-				unresolved.add("Bundler module loaders cannot be resolved.");
+				unresolve("Bundler module loaders cannot be resolved.", node);
 			// `import.meta.hot.accept("./paraglide/messages.js", (mod) => …)` hands the callback the
 			// modules it names; accepting itself (`accept()`, `accept(cb)`) does not.
 			if (
@@ -500,19 +539,21 @@ if (
 					isNode(first) &&
 					!["FunctionExpression", "ArrowFunctionExpression"].includes(first.type)
 				)
-					unresolved.add(
-						"import.meta.hot.accept with dependencies hands their modules to a callback."
+					unresolve(
+						"import.meta.hot.accept with dependencies hands their modules to a callback.",
+						node
 					);
 			}
 			if (node.type === "ImportExpression")
-				unresolved.add("Dynamic message imports cannot be resolved.");
+				unresolve("Dynamic message imports cannot be resolved.", node);
 			if (
 				node.type === "CallExpression" &&
 				(identifier(node.callee) === "require" ||
 					(isNode(node.callee) && node.callee.type === "Import"))
 			) {
-				unresolved.add(
-					"Dynamic ESM imports cannot be resolved; CommonJS require is unsupported."
+				unresolve(
+					"Dynamic ESM imports cannot be resolved; CommonJS require is unsupported.",
+					node
 				);
 			}
 			if (
@@ -537,8 +578,9 @@ const [namespace, member, nested] = node.name.split(".");
 						refer(nested, node);
 					}
 					if (!member || (isNested && !nested))
-						unresolved.add(
-							"A Svelte message namespace escapes through a component or directive."
+						unresolve(
+							"A Svelte message namespace escapes through a component or directive.",
+							node
 						);
 				}
 			}
@@ -557,7 +599,10 @@ if (
 						moduleNamespaces.has(node.object.name as string) &&
 						!(parent?.type === "JSXMemberExpression" && key === "object")
 					)
-						unresolved.add("A JSX message namespace cannot be resolved.");
+						unresolve(
+							"A JSX message namespace cannot be resolved.",
+							node
+						);
 				}
 			}
 			// `<all.m.card />`
@@ -582,7 +627,7 @@ if (
 				parent?.type !== "JSXMemberExpression" &&
 				!(parent?.type === "JSXAttribute" && key === "name")
 			)
-				unresolved.add("A JSX message namespace cannot be resolved.");
+				unresolve("A JSX message namespace cannot be resolved.", node);
 			if (
 				node.type === "MemberExpression" ||
 				node.type === "OptionalMemberExpression"
@@ -600,19 +645,26 @@ if (
 						"constructor",
 					].includes(propertyName)
 				)
-					unresolved.add(
-						"CommonJS loader or dynamically evaluated code references are unsupported."
+					unresolve(
+						"CommonJS loader or dynamically evaluated code references are unsupported.",
+						node
 					);
 				if (
 					propertyName &&
 					globalAliases.has(propertyName) &&
 					(!object || !namespaces.has(object))
 				)
-					unresolved.add("A possible global object alias cannot be resolved.");
+					unresolve(
+						"A possible global object alias cannot be resolved.",
+						node
+					);
 if (object && namespaces.has(object)) {
 					const id = propertyName;
 					if (id === undefined)
-						unresolved.add("Dynamic message access cannot be resolved.");
+						unresolve(
+							"Dynamic message access cannot be resolved.",
+							node
+						);
 					else {
 						used.add(id);
 						refer(id, node, parent, key);
@@ -630,8 +682,9 @@ if (object && namespaces.has(object)) {
 							parent.type === "OptionalCallExpression") &&
 						key === "callee";
 					if (id === "m" && moduleNamespaces.has(object) && !isMember && !isCallee)
-						unresolved.add(
-							"A message namespace is aliased, exported, destructured, or passed as a value."
+						unresolve(
+							"A message namespace is aliased, exported, destructured, or passed as a value.",
+							node
 						);
 				}
 				// `import.meta.hot` only as `import.meta.hot.x`: an alias could call accept(deps, cb) unseen
@@ -646,8 +699,9 @@ if (object && namespaces.has(object)) {
 						key === "object"
 					)
 				)
-					unresolved.add(
-						"An aliased import.meta.hot can hand message modules to a callback."
+					unresolve(
+						"An aliased import.meta.hot can hand message modules to a callback.",
+						node
 					);
 				// `all.m.hello`, `all.m["hello"]`, `all?.m?.hello`
 				const inner = node.object;
@@ -659,7 +713,10 @@ if (object && namespaces.has(object)) {
 					staticMemberName(inner) === "m"
 				) {
 					if (propertyName === undefined)
-						unresolved.add("Dynamic message access cannot be resolved.");
+						unresolve(
+							"Dynamic message access cannot be resolved.",
+							node
+						);
 					else {
 						used.add(propertyName);
 						refer(propertyName, node, parent, key);
@@ -667,7 +724,10 @@ if (object && namespaces.has(object)) {
 				}
 				// Nested/global message namespaces require binding graph analysis.
 				if (propertyName === "m" && (!object || !namespaces.has(object)))
-					unresolved.add("An indirect message namespace cannot be resolved.");
+					unresolve(
+						"An indirect message namespace cannot be resolved.",
+						node
+					);
 			}
 			if (node.type === "Identifier" && namespaces.has(node.name as string)) {
 				const isMemberObject =
@@ -684,8 +744,9 @@ if (object && namespaces.has(object)) {
 					key === "property" &&
 					!parent.computed;
 				if (!isMemberObject && !isPropertyName && !isMemberProperty)
-					unresolved.add(
-						"A message namespace is aliased, exported, destructured, or passed as a value."
+					unresolve(
+						"A message namespace is aliased, exported, destructured, or passed as a value.",
+						node
 					);
 			}
 			for (const [childKey, value] of Object.entries(node)) {
@@ -704,7 +765,14 @@ if (object && namespaces.has(object)) {
 							stack.push({ node: child, parent: node, key: childKey });
 			}
 		}
-		for (const reason of unresolved) issues.push({ path: file.path, reason });
+		// In source order: the traversal visits nodes in reverse.
+		issues.push(
+			...[...unresolved.values()].sort(
+				(a, b) =>
+					(a.start?.line ?? 0) - (b.start?.line ?? 0) ||
+					(a.start?.column ?? 0) - (b.start?.column ?? 0)
+			)
+		);
 	}
 	return {
 		usedBundleIds: [...used],

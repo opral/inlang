@@ -44,7 +44,13 @@ The plugin recognizes these patterns:
 
 ## Project checks
 
-The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript and Svelte AST analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes.
+Find unused messages with the [inlang CLI](https://inlang.com/m/2qj2w8pu/app-inlang-cli):
+
+```sh
+npx @inlang/cli check --project ./project.inlang --unused-messages
+```
+
+The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript and Svelte AST analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes. Each issue names the file and, where possible, the location (`start`/`end`) of the construct, e.g. ``m[`${fieldName}_label`]``.
 
 See the [SDK checks and fixes documentation](../../sdk/docs/checks.md) for source snapshot requirements, supported syntax, limits and programmatic usage. This capability is separate from the existing IDE reference matchers.
 

@@ -29,6 +29,8 @@ export type MachineTranslateResult = {
    * rest of the bundle is still translated and returned in `data`.
    */
   unavailableCount?: number;
+  /** Number of translations added to `data`. `0` means `data` equals the input. */
+  translated?: number;
 };
 
 /**
@@ -56,6 +58,7 @@ export async function machineTranslateBundle(
     const copy = structuredClone(args.bundle);
     let unavailableError: string | undefined;
     let unavailableCount = 0;
+    let translated = 0;
 
     const sourceMessage = copy.messages.find(
       (message) => message.locale === args.sourceLocale,
@@ -120,6 +123,7 @@ export async function machineTranslateBundle(
         }
 
         const pattern = deserializePattern(translation.translatedText);
+        translated++;
 
         if (targetMessage) {
           const existingVariant = findMatchingVariant(
@@ -168,10 +172,11 @@ export async function machineTranslateBundle(
         error: unavailableError,
         unavailable: true,
         unavailableCount,
+        translated,
       };
     }
 
-    return { data: copy };
+    return { data: copy, translated };
   } catch (error) {
     return { error: error?.toString() ?? "unknown error" };
   }

@@ -34,6 +34,7 @@ export {
 export type {
 	SourceFile,
 	UsageAnalysis,
+	UsageIssue,
 	UsageReference,
 	AnalyzeUsage,
 	FindUsagesArgs,

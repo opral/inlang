@@ -516,6 +516,53 @@ test("normalizes plugin issues to serializable public metadata", async () => {
 	expect(JSON.parse(JSON.stringify(result))).toEqual(result);
 });
 
+test("passes issue locations through to checks and findUsages", async () => {
+	const location = {
+		path: "src/Field.tsx",
+		reason: "Dynamic message access cannot be resolved.",
+		start: { line: 24, column: 9 },
+		end: { line: 24, column: 33 },
+	};
+	const project = await setup([
+		{
+			key: "located",
+			analyzeUsage: () => ({
+				status: "incomplete",
+				usedBundleIds: [],
+				issues: [
+					{ ...location, start: { ...location.start, extra: 1 } },
+					{ reason: "Unlocated", start: null, end: null } as never,
+				],
+			}),
+		},
+	]);
+	const result = await checkProject({ project, files });
+	expect(result.checks[1]?.issues).toEqual([location, { reason: "Unlocated" }]);
+	(result.checks[1]!.issues![0]!.start as { line: number }).line = 1;
+	expect((await findUsages({ project, files })).issues).toEqual([
+		location,
+		{ reason: "Unlocated" },
+	]);
+	const invalid = await setup([
+		{
+			key: "invalid",
+			analyzeUsage: () =>
+				({
+					status: "incomplete",
+					usedBundleIds: [],
+					issues: [{ reason: "Dynamic", start: { line: "24", column: 0 } }],
+				}) as unknown as UsageAnalysis,
+		},
+	]);
+	const rejected = await checkProject({ project: invalid, files });
+	expect(rejected.checks[1]?.issues).toEqual([
+		{
+			reason:
+				"Usage analysis failed: The analyzer returned an invalid usage result.",
+		},
+	]);
+});
+
 test("uses validated indexed plugin entries despite custom array methods", async () => {
 	const usedBundleIds = ["old"];
 	Object.defineProperty(usedBundleIds, Symbol.iterator, {

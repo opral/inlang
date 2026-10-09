@@ -32,20 +32,7 @@ export const translate = new Command()
     let exitCode = 0;
     try {
       const project = await getInlangProject({ projectPath: args.project });
-      let partialError: PartialMachineTranslateError | undefined;
-      try {
-        await translateCommandAction({ project });
-      } catch (error) {
-        if (!(error instanceof PartialMachineTranslateError)) {
-          throw error;
-        }
-        partialError = error;
-      }
-      // Keep every translation that succeeded, even if some didn't.
-      await saveProjectToDirectory({ fs, path: args.project, project });
-      if (partialError) {
-        throw partialError;
-      }
+      await translateAndSave({ project, path: args.project });
     } catch (error) {
       logError(error);
       exitCode = 1;
@@ -60,9 +47,57 @@ export const translate = new Command()
  */
 export class PartialMachineTranslateError extends Error {
   override name = "PartialMachineTranslateError";
+  constructor(
+    message: string,
+    /** Translations that succeeded. */
+    readonly translated: number,
+  ) {
+    super(message);
+  }
 }
 
-export async function translateCommandAction(args: { project: InlangProject }) {
+/**
+ * Translates and writes the translation files, but only if something was
+ * translated: re-exporting unchanged files can reformat them and must not
+ * change files in git.
+ */
+export async function translateAndSave(args: {
+  project: InlangProject;
+  path: string;
+}) {
+  let translated: number;
+  let bundles = 0;
+  let partialError: PartialMachineTranslateError | undefined;
+  try {
+    ({ translated, bundles } = await translateCommandAction({
+      project: args.project,
+    }));
+  } catch (error) {
+    if (!(error instanceof PartialMachineTranslateError)) {
+      throw error;
+    }
+    partialError = error;
+    translated = error.translated;
+  }
+  // Keep every translation that succeeded, even if some didn't.
+  if (translated > 0) {
+    await saveProjectToDirectory({
+      fs,
+      path: args.path,
+      project: args.project,
+    });
+  } else if (!partialError && bundles > 0) {
+    log.info("No translations were added, so no files were changed.");
+  }
+  if (partialError) {
+    throw partialError;
+  }
+}
+
+/** Translates missing translations into the project. Returns how many were added. */
+export async function translateCommandAction(args: {
+  project: InlangProject;
+}): Promise<{ translated: number; bundles: number }> {
   const options = translate.opts();
   const provider = resolveMachineTranslateProvider();
 
@@ -88,9 +123,9 @@ export async function translateCommandAction(args: { project: InlangProject }) {
 
     if (bundles.length === 0) {
       log.warn(
-        "No message bundles found to translate. Check your project setup with `inlang validate`",
+        "No message bundles found to translate. Check your project setup with `inlang check`",
       );
-      return;
+      return { translated: 0, bundles: 0 };
     }
 
     bar?.start(bundles.length, 0);
@@ -120,6 +155,7 @@ export async function translateCommandAction(args: { project: InlangProject }) {
 
     let unavailableError: string | undefined;
     let unavailableCount = 0;
+    let translated = 0;
     for (const bundle of updatedBundles) {
       if (bundle.unavailable) {
         // Reported once below rather than once per affected bundle.
@@ -129,8 +165,10 @@ export async function translateCommandAction(args: { project: InlangProject }) {
         errors.push(bundle.error);
         continue;
       }
-      if (bundle.data) {
+      // Unchanged bundles aren't written back.
+      if (bundle.data && (bundle.translated ?? 0) > 0) {
         await upsertBundleNested(args.project.db, bundle.data);
+        translated += bundle.translated!;
       }
     }
     bar?.stop();
@@ -145,10 +183,12 @@ export async function translateCommandAction(args: { project: InlangProject }) {
     if (unavailableError) {
       throw new PartialMachineTranslateError(
         `${unavailableCount} ${unavailableCount === 1 ? "translation" : "translations"} could not be completed.\n${unavailableError}`,
+        translated,
       );
     }
 
     log.success("Machine translate complete.");
+    return { translated, bundles: bundles.length };
   } catch (error) {
     bar?.stop();
     throw error;
