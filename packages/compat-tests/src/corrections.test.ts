@@ -612,7 +612,8 @@ describe("message-format", () => {
 			await project.close();
 			return exported;
 		};
-		const before = JSON.parse(await roundtrip("published", "published"));
+		const written = await roundtrip("published", "published");
+		const before = JSON.parse(written);
 		expect(Object.keys(before.pronoun[0].match)).toEqual([
 			"gender=*",
 			"gender=female",
@@ -624,6 +625,41 @@ describe("message-format", () => {
 				`${sdk} SDK with the ${plugin} plugin`
 			).toBe(handWritten);
 		}
+
+		// The file the published plugin wrote is read with the catch-all last,
+		// the order in which runtimes try the variants, and SDK 4, which passes
+		// the files, keeps its bytes.
+		const project = await open(sorted, "current", "current");
+		await project.importFiles({
+			pluginKey: f.key,
+			files: [{ locale: "en", content: encode(written) }],
+		});
+		const variants = await project.db
+			.selectFrom("inlang_variant")
+			.innerJoin(
+				"inlang_message",
+				"inlang_message.id",
+				"inlang_variant.message_id"
+			)
+			.where("inlang_message.bundle_id", "=", "pronoun")
+			.orderBy("inlang_variant.id")
+			.select("inlang_variant.matches")
+			.execute();
+		expect(variants.map((variant: any) => variant.matches[0].type)).toEqual([
+			"literal-match",
+			"literal-match",
+			"catchall-match",
+		]);
+		const files = await (project.exportFiles as any)({
+			pluginKey: f.key,
+			files: [
+				{ path: "./messages/en.json", locale: "en", content: encode(written) },
+			],
+		});
+		expect(
+			decode(files.find((file: any) => file.locale === "en").content)
+		).toBe(written);
+		await project.close();
 	});
 });
 

@@ -15,6 +15,7 @@ import type {
 import type { plugin } from "../plugin.js";
 import { flattenMessageKeys, matchEntries } from "../utils/messageKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
+import { orderVariants } from "../utils/orderVariants.js";
 import type {
 	ComplexMessage,
 	ComplexMessageObject,
@@ -31,6 +32,9 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	// inputs that only plain strings declare, by bundle
 	const plainInputs = new Map<string, Set<string>>();
 	const declaredInputs = new Map<string, Set<string>>();
+	// the variants of each message, `variants.slice(start, end)`
+	const ranges: Array<{ message: MessageImport; start: number; end: number }> =
+		[];
 
 	for (const file of files) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
@@ -46,7 +50,9 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				value as SimpleMessage | ComplexMessage
 			);
 			messages.push(result.message);
+			const start = variants.length;
 			variants.push(...result.variants);
+			ranges.push({ message: result.message, start, end: variants.length });
 			const inputs = typeof value === "string" ? plainInputs : declaredInputs;
 			for (const declaration of result.bundle.declarations) {
 				if (declaration.type !== "input-variable") continue;
@@ -84,6 +90,28 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				plainInputs.get(bundle.id)?.has(declaration.name) !== true ||
 				declaredInputs.get(bundle.id)?.has(declaration.name) === true
 		);
+	}
+
+	// The variants in the order export writes them, which is the order in
+	// which runtimes like Paraglide JS 2.26 try them. Files that earlier
+	// versions wrote with a variant that is never selected, e.g. sorted with
+	// the catch-all first, select as the message says. Each message keeps its
+	// place in `variants`.
+	for (const { message, start, end } of ranges) {
+		if (end - start < 2) continue;
+		const declarations = bundlesById.get(message.bundleId)!.declarations;
+		const ordered = orderVariants(
+			variants.slice(start, end) as Array<
+				VariantImport & Pick<Variant, "matches">
+			>,
+			orderSelectors(
+				(message.selectors ?? []).map((selector) => selector.name).sort(),
+				declarations
+			),
+			declarations,
+			message.locale
+		);
+		variants.splice(start, ordered.length, ...ordered);
 	}
 
 	return { bundles, messages, variants };

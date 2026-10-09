@@ -4,7 +4,10 @@ import {
 	newProject,
 	saveProjectToDirectory,
 	loadProjectFromDirectory,
+	selectBundleNested,
 	type InlangPlugin,
+	type Match,
+	type Variant,
 	type InlangProject,
 } from "@inlang/sdk";
 import { Volume } from "memfs";
@@ -608,6 +611,59 @@ describe("edits", () => {
 			]);
 			await project.close();
 		}
+	});
+});
+
+describe("files the published plugin wrote with sort", () => {
+	// 4.4.5 sorted the variants too, which put the catch-all first
+	const en = `{
+\t"$schema": "https://inlang.com/schema/inlang-message-format",
+\t"invite": [
+\t\t{
+\t\t\t"declarations": [
+\t\t\t\t"input count",
+\t\t\t\t"input gender",
+\t\t\t\t"local countPlural = count: plural"
+\t\t\t],
+\t\t\t"selectors": [
+\t\t\t\t"countPlural",
+\t\t\t\t"gender"
+\t\t\t],
+\t\t\t"match": {
+\t\t\t\t"countPlural=*, gender=*": "They invited {count} guests",
+\t\t\t\t"countPlural=one, gender=*": "They invited one guest",
+\t\t\t\t"countPlural=one, gender=female": "She invited one guest",
+\t\t\t\t"countPlural=other, gender=female": "She invited {count} guests"
+\t\t\t}
+\t\t}
+\t]
+}`;
+
+	test("are loaded with the catch-all last, and stay byte-identical when exported with them", async () => {
+		const project = await load({ en }, { sort: "asc" });
+		const [bundle] = await selectBundleNested(project.db)
+			.where("inlang_bundle.id", "=", "invite")
+			.selectAll()
+			.execute();
+		// the order in which runtimes (Paraglide JS 2.26) try the variants
+		expect(
+			bundle!.messages[0]!.variants.map((variant: Variant) =>
+				variant.matches
+					.map((match: Match) =>
+						match.type === "literal-match"
+							? `${match.key}=${match.value}`
+							: `${match.key}=*`
+					)
+					.join(", ")
+			)
+		).toEqual([
+			"countPlural=one, gender=female",
+			"countPlural=other, gender=female",
+			"countPlural=one, gender=*",
+			"countPlural=*, gender=*",
+		]);
+		expect(await exportWith(project, { en })).toEqual({ en });
+		await project.close();
 	});
 });
 
