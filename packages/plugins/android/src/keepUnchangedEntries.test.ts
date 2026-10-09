@@ -1467,3 +1467,85 @@ function encode(value: string) {
 function decode(value: Uint8Array) {
   return new TextDecoder("utf-8", { ignoreBOM: true }).decode(value);
 }
+
+describe("a locale whose messages were all deleted", () => {
+  const dePath = "./res/values-de/strings.xml";
+  const de = `<?xml version="1.0" encoding="utf-8"?>
+<!-- German -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name" translatable="false">My App</string>
+
+    <!-- Greeting -->
+    <string name="welcome">Hallo</string>
+    <string-array name="planets">
+        <item>Merkur</item>
+    </string-array>
+</resources>
+`;
+  const en =
+    '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="welcome">Hello</string>\n</resources>\n';
+  const exportWith = (imported: boolean) => {
+    const data = identifyRows(importAndroid(en));
+    return plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [
+        { path, locale: "en", content: encode(en), imported: true },
+        { path: dePath, locale: "de", content: encode(de), imported },
+      ],
+    }) as Array<{ locale: string; name: string; content: Uint8Array }>;
+  };
+
+  test("its file is written without them, other elements stay", () => {
+    // the comment above `welcome` is a heading of the elements below it
+    const files = exportWith(true);
+    expect(files.map((file) => [file.locale, file.name])).toEqual([
+      ["en", path],
+      ["de", dePath],
+    ]);
+    expect(decode(files[0]!.content)).toBe(en);
+    expect(decode(files[1]!.content))
+      .toBe(`<?xml version="1.0" encoding="utf-8"?>
+<!-- German -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="app_name" translatable="false">My App</string>
+
+    <!-- Greeting -->
+    <string-array name="planets">
+        <item>Merkur</item>
+    </string-array>
+</resources>
+`);
+  });
+
+  test("a file the project didn't read is not written", () => {
+    expect(exportWith(false).map((file) => file.locale)).toEqual(["en"]);
+  });
+
+  test("a file that can't be kept and has other elements stays, without failing the export", () => {
+    const withEntity = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY app "My App">]>
+<resources>
+    <string name="welcome">Hallo &app;</string>
+    <string-array name="planets">
+        <item>Merkur</item>
+    </string-array>
+</resources>
+`;
+    const data = identifyRows(importAndroid(en));
+    const files = plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [
+        { path, locale: "en", content: encode(en), imported: true },
+        {
+          path: dePath,
+          locale: "de",
+          content: encode(withEntity),
+          imported: true,
+        },
+      ],
+    }) as Array<{ locale: string }>;
+    expect(files.map((file) => file.locale)).toEqual(["en"]);
+  });
+});

@@ -73,6 +73,16 @@ export type InlangPlugin<
 	 *   `verbatim`. `files` is optional: older hosts (SDK < 4) don't pass it,
 	 *   and a new file has no previous content. Without a previous file,
 	 *   plugins write the whole file.
+	 * - With `files`, a plugin also returns a file for every previous file
+	 *   that the project read (`imported`), that holds messages the project
+	 *   no longer has and that the export doesn't otherwise write, e.g. if every message of a locale or of a
+	 *   namespace was deleted: the previous file without those messages
+	 *   (keeping what is not a message, like `$schema`), e.g. `{}`. The host
+	 *   only writes the files that the export returns, so without it the
+	 *   deleted messages would come back on the next load. Such a file is
+	 *   kept, not deleted. To write it to exactly the previous file, e.g. one
+	 *   of a `pathPattern` array, set its `path` as `metadata.pathPattern`.
+	 *   `keepUnchangedJsonEntries` does all of this for JSON files.
 	 */
 	exportFiles?: (args: {
 		bundles: Bundle[];

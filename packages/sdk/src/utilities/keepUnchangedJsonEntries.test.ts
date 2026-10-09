@@ -707,6 +707,258 @@ describe("keepUnchangedJsonEntries", () => {
 		expect(file).toBe(exported[0]);
 	});
 
+	describe("a previous file whose messages were deleted", () => {
+		/** exports `next` with `files` as the previous files */
+		async function exportWith(
+			next: Record<string, Record<string, string>>,
+			files: Array<{
+				path: string;
+				locale: string;
+				text: string;
+				metadata?: Record<string, any>;
+			}>
+		) {
+			const exported = await exportFiles({
+				...rowsFromImport(
+					await importFiles({
+						files: Object.entries(next).map(([locale, json]) => ({
+							locale,
+							content: encode(JSON.stringify(json)),
+						})),
+					})
+				),
+				settings: {} as any,
+			});
+			return keepUnchangedJsonEntries({
+				exported,
+				files: files.map(({ text, ...file }) => ({
+					imported: true,
+					...file,
+					content: encode(text),
+				})),
+				settings: {} as any,
+				importFiles,
+				exportFiles,
+			});
+		}
+
+		test("is written without them, with its formatting and `$schema`", async () => {
+			const en = '{\n\t"$schema": "schema",\n\t"a": "A"\n}\n';
+			const de =
+				'{\n  "$schema": "schema",\n  "a": "A-de",\n  "b": "B-de"\n}\n';
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./messages/en.json", locale: "en", text: en },
+				{ path: "./messages/de.json", locale: "de", text: de },
+			]);
+			expect(
+				files.map((file) => ({ ...file, content: decode(file.content) }))
+			).toEqual([
+				{
+					locale: "en",
+					name: "en.json",
+					content: en,
+					verbatim: true,
+				},
+				{
+					locale: "de",
+					name: "./messages/de.json",
+					// the host writes it to exactly this file
+					metadata: { pathPattern: "./messages/de.json" },
+					content: '{\n  "$schema": "schema"\n}\n',
+					verbatim: true,
+				},
+			]);
+		});
+
+		test("without `$schema` it becomes an empty object", async () => {
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{ path: "./de.json", locale: "de", text: '{\n\t"a": "A-de"\n}' },
+			]);
+			expect(decode(files[1]!.content)).toBe("{}");
+		});
+
+		test("files of a `pathPattern` array are each written without them", async () => {
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{ path: "./a/de.json", locale: "de", text: '{"a": "A-de"}\n' },
+				{
+					path: "./b/de.json",
+					locale: "de",
+					text: '{\n\t"$schema": "schema",\n\t"b": "B-de"\n}',
+				},
+			]);
+			expect(
+				files
+					.slice(1)
+					.map((file) => [file.metadata?.["pathPattern"], decode(file.content)])
+			).toEqual([
+				["./a/de.json", "{}\n"],
+				["./b/de.json", '{\n\t"$schema": "schema"\n}'],
+			]);
+		});
+
+		test("is not written if the project didn't read it", async () => {
+			// e.g. of a locale that was added to the settings after loading
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{
+					path: "./de.json",
+					locale: "de",
+					text: '{"a": "A-de"}',
+					imported: false,
+				} as any,
+			]);
+			expect(files.map((file) => file.locale)).toEqual(["en"]);
+		});
+
+		test("keeps nested keys that aren't messages, and `__proto__`", async () => {
+			// a plugin that reads nested keys, except `order`
+			const importNested: typeof importFiles = async ({ files }) =>
+				importFiles({
+					files: files.map((file) => ({
+						...file,
+						content: encode(
+							JSON.stringify(
+								Object.fromEntries(
+									Object.entries(
+										flatten(JSON.parse(decode(file.content)))
+									).filter(
+										([key]) =>
+											!key.endsWith("order") && !key.endsWith("__proto__")
+									)
+								)
+							)
+						),
+					})),
+				});
+			const exported = await exportFiles({
+				...rowsFromImport(
+					await importNested({
+						files: [{ locale: "en", content: encode('{"a": "A"}') }],
+					})
+				),
+				settings: {} as any,
+			});
+			const de =
+				'{\n  "nav": {\n    "home": "Start",\n    "order": 5\n  },\n  "__proto__": 1,\n  "b": "B"\n}';
+			const files = await keepUnchangedJsonEntries({
+				exported,
+				files: [
+					{
+						path: "./de.json",
+						locale: "de",
+						content: encode(de),
+						imported: true,
+					},
+				],
+				settings: {} as any,
+				importFiles: importNested,
+				exportFiles,
+			});
+			expect(decode(files[1]!.content)).toBe(
+				'{\n  "nav": {\n    "order": 5\n  },\n  "__proto__": 1\n}'
+			);
+		});
+
+		test("variants that reference their message by an id of the file", async () => {
+			// like the json plugin: message and variant ids from the file's path
+			const importWithIds: typeof importFiles = async ({
+				files,
+			}): Promise<any> => {
+				const result = await importFiles({ files });
+				const path = (files[0] as any)?.toBeImportedFilesMetadata?.namespace;
+				const id = (message: { bundleId: string; locale: string }) =>
+					`${path}:${message.bundleId}:${message.locale}`;
+				return {
+					bundles: result.bundles,
+					messages: result.messages.map((message) => ({
+						...message,
+						id: id(message),
+					})),
+					variants: result.variants.map((variant: any) => ({
+						messageId: id({
+							bundleId: variant.messageBundleId,
+							locale: variant.messageLocale,
+						}),
+						matches: variant.matches,
+						pattern: variant.pattern,
+					})),
+				};
+			};
+			const exported = await exportFiles({
+				...rowsFromImport(
+					await importFiles({
+						files: [{ locale: "en", content: encode('{"a": "A"}') }],
+					})
+				),
+				settings: {} as any,
+			});
+			// `a` of en is also in another namespace's file, which isn't written
+			const files = await keepUnchangedJsonEntries({
+				exported,
+				files: [
+					{
+						path: "./en.json",
+						locale: "en",
+						content: encode('{"a": "A"}'),
+						imported: true,
+					},
+					{
+						path: "./old/en.json",
+						locale: "en",
+						metadata: { namespace: "old" },
+						content: encode('{"a": "Old"}'),
+						imported: true,
+					},
+				],
+				settings: {} as any,
+				importFiles: importWithIds,
+				exportFiles,
+			});
+			expect(files.map((file) => file.name)).toEqual(["en.json"]);
+		});
+
+		test("is not written if the project still has all its messages", async () => {
+			// e.g. an i18next namespace whose messages another file overrides,
+			// a file without messages
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{
+					path: "./en-old.json",
+					locale: "en",
+					metadata: { namespace: "old" },
+					text: '{"a": "A"}',
+				},
+				{ path: "./de.json", locale: "de", text: '{"$schema": "schema"}' },
+			]);
+			expect(files.map((file) => file.metadata?.["pathPattern"])).toEqual([
+				undefined,
+			]);
+		});
+
+		test("loses the deleted messages, also if it has messages the project still has", async () => {
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{
+					path: "./en-old.json",
+					locale: "en",
+					metadata: { namespace: "old" },
+					text: '{"a": "A", "deleted": "D"}',
+				},
+			]);
+			expect(
+				files.map((file) => [
+					file.metadata?.["pathPattern"],
+					decode(file.content),
+				])
+			).toEqual([
+				[undefined, '{"a": "A"}'],
+				["./en-old.json", "{}"],
+			]);
+		});
+	});
+
 	test("files without a previous file or without any previous files are returned as is", async () => {
 		const exported: ExportFile[] = [
 			{ locale: "en", name: "en.json", content: encode("{}") },

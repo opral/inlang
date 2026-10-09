@@ -12,6 +12,7 @@ import { ENV_VARIABLES } from "../services/env-variables/index.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 import type { ProjectSettings } from "../json-schema/settings.js";
 import { compareSemver, pickHighestVersion, readProjectMeta } from "./meta.js";
+import { rememberReadFile, wasReadFile } from "./readFiles.js";
 
 async function fileExists(fsModule: typeof fs, filePath: string) {
 	try {
@@ -67,6 +68,7 @@ async function assertTranslationDataCanBeExported(project: InlangProject) {
  */
 async function readExistingFiles(args: {
 	fs: typeof fs;
+	project: InlangProject;
 	projectPath: string;
 	plugin: InlangPlugin;
 	settings: ProjectSettings;
@@ -92,11 +94,18 @@ async function readExistingFiles(args: {
 			const content = await args.fs.readFile(
 				absolutePathFromProject(args.projectPath, file.path)
 			);
+			const bytes = new Uint8Array(content);
 			result.push({
 				path: file.path,
 				locale: file.locale,
-				content: new Uint8Array(content),
+				content: bytes,
 				metadata: file.metadata,
+				imported: await wasReadFile(
+					args.project,
+					absolutePathFromProject(args.projectPath, file.path),
+					bytes,
+					file
+				),
 			});
 		} catch (error) {
 			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
@@ -120,6 +129,7 @@ async function readExistingFiles(args: {
  */
 async function writeExportedFile(args: {
 	fs: typeof fs;
+	project: InlangProject;
 	path: string;
 	file: ExportFile;
 }): Promise<void> {
@@ -149,10 +159,11 @@ async function writeExportedFile(args: {
 			// not valid JSON, write the plugin's output as is
 		}
 	}
-	if (existing !== undefined && bytesEqual(existing, content)) {
-		return;
+	if (existing === undefined || !bytesEqual(existing, content)) {
+		await args.fs.writeFile(args.path, content);
 	}
-	await args.fs.writeFile(args.path, content);
+	// the project's messages are what the file now holds
+	await rememberReadFile(args.project, args.path, content, args.file);
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
@@ -288,6 +299,7 @@ export async function saveProjectToDirectory(args: {
 			// text of unchanged entries
 			const existingFiles = await readExistingFiles({
 				fs: fsModule,
+				project: args.project,
 				projectPath: args.path,
 				plugin,
 				settings,
@@ -336,7 +348,12 @@ export async function saveProjectToDirectory(args: {
 
 				for (const p of targetPaths) {
 					await fsModule.mkdir(path.dirname(p), { recursive: true });
-					await writeExportedFile({ fs: fsModule, path: p, file });
+					await writeExportedFile({
+						fs: fsModule,
+						project: args.project,
+						path: p,
+						file,
+					});
 				}
 			}
 		}

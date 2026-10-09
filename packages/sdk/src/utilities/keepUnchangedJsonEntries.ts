@@ -34,6 +34,14 @@ import type { ExistingFile, ExportFile } from "../project/api.js";
  *   byte order mark) is kept. Changed and new entries are indented like their
  *   neighbors.
  *
+ * Previous files that the export doesn't replace but that hold messages the
+ * project no longer has (e.g. every message of a locale or a namespace was
+ * deleted) are returned without those messages, so that they don't come back
+ * on the next load, if the project read them (`ExistingFile.imported`).
+ * Keys that aren't messages, like `$schema`, and the formatting stay; a file
+ * without anything else becomes `{}`. The file is kept, not deleted. See
+ * `emptiedFiles`.
+ *
  * The result is only used if the plugin reads it as the full export, i.e. if
  * importing the resulting files together and exporting them gives the full
  * export. Otherwise, and if a previous file is not valid JSON, the full export
@@ -113,8 +121,27 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 			exportedText: decodeUtf8(file.content),
 			/** the text to write if it keeps entries of the existing file */
 			kept: undefined as string | undefined,
+			/** for an emptied file: the parsed previous file */
+			emptiedFrom: undefined as Record<string, unknown> | undefined,
 		};
 	});
+	// previous files that hold deleted messages and that the export doesn't
+	// replace, e.g. every message of a locale was deleted (see emptiedFiles)
+	for (const emptied of await emptiedFiles({
+		exported: args.exported,
+		files: existingFiles,
+		settings: args.settings,
+		importFiles: args.importFiles,
+		isSameFile,
+	})) {
+		pairs.push({
+			file: emptied.file,
+			existing: emptied.existing,
+			exportedText: decodeUtf8(emptied.file.content),
+			kept: undefined,
+			emptiedFrom: emptied.previous,
+		});
+	}
 	const withExisting = pairs.filter((pair) => pair.existing !== undefined);
 	if (withExisting.length === 0) {
 		return args.exported;
@@ -165,7 +192,7 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 		previousCanonical = await canonical(existingFiles);
 	} catch {
 		// e.g. a previous file can't be imported
-		return args.exported;
+		return pairs.map((pair) => pair.file);
 	}
 
 	for (const pair of withExisting) {
@@ -177,7 +204,9 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 		try {
 			pair.kept = stringifyJsonKeepingEntries({
 				previous,
-				previousCanonical: previousCanonical.get(fileKey(pair.file)),
+				// an emptied file removes every key that imports to a message
+				previousCanonical:
+					pair.emptiedFrom ?? previousCanonical.get(fileKey(pair.file)),
 				next: JSON.parse(pair.exportedText),
 				splitKey: args.splitKey,
 				isEntry: args.isEntry,
@@ -270,6 +299,192 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 					verbatim: true,
 				}
 	);
+}
+
+/**
+ * The previous files that hold messages that the project no longer has and
+ * that no exported file replaces, e.g. a locale, or a namespace of a locale,
+ * whose messages were all deleted: the plugin writes no file for them, so
+ * the host would leave them as they are, and the deleted messages would come
+ * back on the next load.
+ *
+ * Only files that the project read (`ExistingFile.imported`) are considered:
+ * a message of a file the project never read (e.g. of a locale that was
+ * added to the settings after loading, or a file that changed on disk since)
+ * was never deleted.
+ *
+ * Each is returned as an exported file with every key that imports to a
+ * message removed, walking into objects that hold messages. Keys that import
+ * to nothing, like `$schema` or keys the plugin doesn't read, stay. So a file
+ * whose messages were all deleted becomes `{}` (with its `$schema`), and is
+ * not deleted: the plugin still lists it, a later message of the locale goes
+ * there, and other tools may expect it. Messages of the file that the project
+ * still has are written to another file by the export (else the file would
+ * be replaced), so removing them from this one doesn't lose them. A file is
+ * only returned if it then imports to no message the project doesn't have.
+ *
+ * The exported file has the `path` of the previous file as its `name` and as
+ * `metadata.pathPattern`, so that the host writes it to exactly that file,
+ * also if it is one of several files of a `pathPattern` array.
+ *
+ * Previous files that hold no deleted message are not returned and stay as
+ * they are, byte for byte.
+ */
+async function emptiedFiles<Settings>(args: {
+	exported: readonly ExportFile[];
+	files: readonly ExistingFile[];
+	settings: Settings;
+	importFiles: Parameters<
+		typeof keepUnchangedJsonEntries<Settings>
+	>[0]["importFiles"];
+	isSameFile: (exported: ExportFile, existing: ExistingFile) => boolean;
+}): Promise<
+	Array<{
+		existing: ExistingFile;
+		file: ExportFile;
+		previous: Record<string, unknown>;
+	}>
+> {
+	// Only a file that the project read can have messages that were deleted.
+	// Others, e.g. of a locale that was added to the settings after loading,
+	// hold messages that never were in the project.
+	const orphans = args.files.filter(
+		(existing) =>
+			existing.imported === true &&
+			!args.exported.some((file) => args.isSameFile(file, existing))
+	);
+	if (orphans.length === 0) return [];
+	/** `[bundleId, locale]` of the messages that `files` import to */
+	const importKeys = async (
+		files: ReadonlyArray<{
+			locale: string;
+			content: Uint8Array;
+			metadata?: Record<string, any>;
+		}>
+	): Promise<Set<string>> => {
+		const imported = await args.importFiles({
+			files: files.map(({ locale, content, metadata }) => ({
+				locale,
+				content,
+				toBeImportedFilesMetadata: metadata,
+			})),
+			settings: structuredClone(args.settings),
+		});
+		const keys = new Set<string>();
+		const messagesById = new Map<string, string>();
+		for (const message of imported.messages) {
+			const key = JSON.stringify([message.bundleId, message.locale]);
+			keys.add(key);
+			if (message.id !== undefined) messagesById.set(message.id, key);
+		}
+		for (const variant of imported.variants) {
+			if ("messageBundleId" in variant && variant.messageBundleId) {
+				keys.add(
+					JSON.stringify([variant.messageBundleId, variant.messageLocale])
+				);
+			} else if (variant.messageId) {
+				// ids that plugins derive from the file (e.g. the json plugin's
+				// key path) differ between files, the message they reference
+				// doesn't
+				const key = messagesById.get(variant.messageId);
+				if (key !== undefined) keys.add(key);
+			}
+		}
+		return keys;
+	};
+	const encode = (value: unknown) =>
+		new TextEncoder().encode(JSON.stringify(value, undefined, "\t"));
+
+	const candidates: Array<{
+		existing: ExistingFile;
+		previous: Record<string, unknown>;
+		messages: Set<string>;
+	}> = [];
+	for (const existing of orphans) {
+		try {
+			const previous = JSON.parse(
+				decodeUtf8(existing.content).replace(/^\uFEFF/, "")
+			);
+			if (!isObject(previous)) continue;
+			const messages = await importKeys([existing]);
+			if (messages.size > 0) candidates.push({ existing, previous, messages });
+		} catch {
+			// a file the plugin can't read stays as it is
+		}
+	}
+	if (candidates.length === 0) return [];
+
+	let current: Set<string>;
+	try {
+		current = await importKeys(args.exported);
+	} catch {
+		return [];
+	}
+	const result = [];
+	for (const { existing, previous, messages } of candidates) {
+		if ([...messages].every((message) => current.has(message))) continue;
+		/**
+		 * `value` at `path` without the keys that import to a message. Objects
+		 * that hold messages are walked, and dropped if nothing is left.
+		 */
+		const withoutMessages = async (
+			value: Record<string, unknown>,
+			path: string[]
+		): Promise<Record<string, unknown>> => {
+			const kept: Record<string, unknown> = {};
+			for (const [key, child] of Object.entries(value)) {
+				let wrapped: unknown = child;
+				for (const segment of [...path, key].reverse()) {
+					wrapped = defineKey({}, segment, wrapped);
+				}
+				const imported = await importKeys([
+					{ ...existing, content: encode(wrapped) },
+				]);
+				if (imported.size === 0) {
+					defineKey(kept, key, child);
+				} else if (isObject(child)) {
+					const rest = await withoutMessages(child, [...path, key]);
+					if (Object.keys(rest).length > 0) defineKey(kept, key, rest);
+				}
+			}
+			return kept;
+		};
+		let next: Record<string, unknown>;
+		try {
+			next = await withoutMessages(previous, []);
+			// the file must not read as a deleted message anymore
+			const left = await importKeys([{ ...existing, content: encode(next) }]);
+			if ([...left].some((message) => !current.has(message))) continue;
+		} catch {
+			continue;
+		}
+		result.push({
+			existing,
+			previous,
+			file: {
+				locale: existing.locale,
+				name: existing.path,
+				metadata: { ...existing.metadata, pathPattern: existing.path },
+				content: encode(next),
+			},
+		});
+	}
+	return result;
+}
+
+/** Sets `key`, also `__proto__`, as an own property. */
+function defineKey(
+	object: Record<string, unknown>,
+	key: string,
+	value: unknown
+): Record<string, unknown> {
+	Object.defineProperty(object, key, {
+		value,
+		enumerable: true,
+		writable: true,
+		configurable: true,
+	});
+	return object;
 }
 
 function fileKey(file: ExportFile): string {

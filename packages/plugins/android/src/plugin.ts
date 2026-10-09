@@ -66,13 +66,15 @@ export const plugin: InlangPlugin<Config> = {
   },
   exportFiles: (args: ExportArgs) => {
     const data = withoutExtraTranslations(args);
-    const files = keepUnchangedEntries(exportAndroidFiles(data), data).map(
-      (file) => {
-        // the spelling of the existing file, e.g. `values-b+pt+BR`
-        const existing = existingFile(args.files, file.locale);
-        return existing ? { ...file, name: existing.path } : file;
-      },
-    );
+    const exported = exportAndroidFiles(data);
+    const files = [
+      ...keepUnchangedEntries(exported, data),
+      ...emptiedFiles(exported, data),
+    ].map((file) => {
+      // the spelling of the existing file, e.g. `values-b+pt+BR`
+      const existing = existingFile(args.files, file.locale);
+      return existing ? { ...file, name: existing.path } : file;
+    });
     // Hosts that pass the existing files (inlang SDK 4) write each file to
     // `metadata.pathPattern`. Without it, `saveProjectToDirectory` replaces
     // `{locale}` with the locale (`res/valuesde/…`) instead of the Android
@@ -359,6 +361,69 @@ function keepUnchangedEntries(
     assertNothingLost(previous);
     return file;
   });
+}
+
+/**
+ * The existing files of locales that have no messages anymore, e.g. every
+ * message of the locale was deleted, without their messages. The export
+ * writes no file for such a locale, so without this the file would stay as
+ * it is and the deleted messages would come back on the next load. Elements
+ * the plugin doesn't import (non-translatable strings, `<string-array>`s,
+ * ...) and comments that don't belong to a removed message stay; the file is
+ * not deleted. Only files the project read (`imported`) and that hold
+ * messages are returned.
+ */
+function emptiedFiles(exported: ExportFile[], args: ExportArgs): ExportFile[] {
+  const result: ExportFile[] = [];
+  for (const existing of args.files ?? []) {
+    // a file the project never read has no deleted messages
+    if (existing.imported !== true) continue;
+    if (exported.some((file) => file.locale === existing.locale)) continue;
+    // like importFiles: a legacy spelling next to the current one isn't read
+    if (
+      existing.metadata?.legacy &&
+      args.files!.some(
+        (other) => other.locale === existing.locale && !other.metadata?.legacy,
+      )
+    )
+      continue;
+    try {
+      const imported = importAndroidFiles([
+        { locale: existing.locale, content: existing.content },
+      ]);
+      if (imported.messages.length === 0) continue;
+    } catch {
+      // a file that can't be read stays as it is
+      continue;
+    }
+    const empty = encode(
+      '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n</resources>\n',
+    );
+    let content: Uint8Array | undefined;
+    try {
+      content = keepUnchangedEntriesOfFile({
+        previous: existing.content,
+        exported: empty,
+        locale: existing.locale,
+        settings: args.settings,
+      });
+    } catch {
+      content = undefined;
+    }
+    if (content === undefined) {
+      // Without the kept text, the empty file would remove elements the
+      // plugin doesn't import: leave the file as it is rather than fail
+      // the whole export.
+      try {
+        assertNothingLost(existing);
+      } catch {
+        continue;
+      }
+      content = empty;
+    }
+    result.push({ locale: existing.locale, name: existing.path, content });
+  }
+  return result;
 }
 
 /**

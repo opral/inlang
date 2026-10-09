@@ -697,6 +697,47 @@ describe("i18next namespaces with `:`", () => {
 		}
 	);
 
+	test("deleting every message of a namespace empties its file, nothing else changes", async () => {
+		const { root, projectPath } = createDirectory();
+		const project = await open("current", projectPath);
+		const before = contentOf(await selectRows(project));
+		const messages = await project.db
+			.selectFrom("inlang_message")
+			.where("bundle_id", "=", "app:errors:notFound")
+			.select("id")
+			.execute();
+		expect(messages).toHaveLength(1);
+		const ids = messages.map((message: { id: string }) => message.id);
+		await project.db
+			.deleteFrom("inlang_variant")
+			.where("message_id", "in", ids)
+			.execute();
+		await project.db
+			.deleteFrom("inlang_message")
+			.where("id", "in", ids)
+			.execute();
+		await saveToDirectory("current", { path: projectPath, fs, project });
+		await project.close();
+
+		expect(translationFilesIn(root)).toEqual({
+			...translationFiles,
+			"locales/en/app-errors.json": "{}\n",
+		});
+		const reopened = await open("current", projectPath);
+		expect(contentOf(await selectRows(reopened))).toEqual({
+			bundles: before.bundles.filter(
+				(bundle) => bundle.id !== "app:errors:notFound"
+			),
+			messages: before.messages.filter(
+				(message) => message.key !== "app:errors:notFound/en"
+			),
+			variants: before.variants.filter(
+				(variant) => variant.message !== "app:errors:notFound/en"
+			),
+		});
+		await reopened.close();
+	});
+
 	test.each(["current", "published"] as const)(
 		"an edit is written to the file of its namespace (%s SDK)",
 		async (sdk) => {
@@ -732,6 +773,124 @@ describe("i18next namespaces with `:`", () => {
 					title: "Veraltet",
 					"err:notFound": "Nicht gefunden",
 				});
+			}
+		}
+	);
+});
+
+/**
+ * Deleting every message of a file (a locale, or a namespace of a locale):
+ * the export has nothing to write for it, so with SDK < 4 and plugins that
+ * don't handle it the file stayed on disk as it was and the deleted messages
+ * came back on the next load. The current plugins write such a file without
+ * the messages; every other file stays byte-identical.
+ */
+describe("deleting every message of a file", () => {
+	const roots: string[] = [];
+	afterAll(() => {
+		for (const root of roots) fs.rmSync(root, { recursive: true, force: true });
+	});
+
+	/** A project directory with the fixture's source files. */
+	async function createDirectory(fixture: Fixture) {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-compat-del-"));
+		roots.push(root);
+		const settings = {
+			...settingsFor(fixture),
+			modules: [plugins[fixture.key].url],
+		};
+		const plugin = await importPlugin(fixture.key, "current");
+		const plans: Array<{ path: string; locale: string }> =
+			await plugin.toBeImportedFiles({ settings });
+		const sources = readSourceFiles(fixture);
+		// the first file of a locale, e.g. of the spellings of an Android
+		// qualifier
+		const firstPlans = plans.filter(
+			(plan, index) =>
+				plans.findIndex((other) => other.locale === plan.locale) === index
+		);
+		for (const plan of firstPlans) {
+			const source = sources.find((file) => file.locale === plan.locale);
+			if (source === undefined) continue;
+			const file = path.join(root, plan.path);
+			fs.mkdirSync(path.dirname(file), { recursive: true });
+			fs.writeFileSync(file, source.content);
+		}
+		fs.mkdirSync(path.join(root, "project.inlang"));
+		fs.writeFileSync(
+			path.join(root, "project.inlang/settings.json"),
+			JSON.stringify(settings, undefined, 2)
+		);
+		return {
+			root,
+			projectPath: path.join(root, "project.inlang"),
+			plans: firstPlans.filter((plan) =>
+				sources.some((file) => file.locale === plan.locale)
+			),
+		};
+	}
+
+	async function open(projectPath: string) {
+		servePlugins("current");
+		const project = await loadFromDirectory("current", {
+			path: projectPath,
+			fs,
+		});
+		expect(await project.errors.get()).toEqual([]);
+		return project;
+	}
+
+	async function deleteMessages(
+		project: Project,
+		where: (message: { bundle_id: string; locale: string }) => boolean
+	) {
+		const messages = (
+			await project.db.selectFrom("inlang_message").selectAll().execute()
+		).filter(where);
+		expect(messages.length).toBeGreaterThan(0);
+		const ids = messages.map((message: { id: string }) => message.id);
+		await project.db
+			.deleteFrom("inlang_variant")
+			.where("message_id", "in", ids)
+			.execute();
+		await project.db
+			.deleteFrom("inlang_message")
+			.where("id", "in", ids)
+			.execute();
+	}
+
+	test.each(fixtures)(
+		"$dir: the deleted messages of a locale don't come back",
+		async (fixture) => {
+			const { root, projectPath, plans } = await createDirectory(fixture);
+			const read = (file: string) =>
+				fs.readFileSync(path.join(root, file), "utf8");
+			const before = Object.fromEntries(
+				plans.map((plan) => [plan.path, read(plan.path)])
+			);
+			const project = await open(projectPath);
+			const rows = contentOf(await selectRows(project));
+			expect(rows.messages.some((m) => m.key.endsWith("/de"))).toBe(true);
+			await deleteMessages(project, (message) => message.locale === "de");
+			await saveToDirectory("current", { path: projectPath, fs, project });
+			await project.close();
+
+			const reopened = await open(projectPath);
+			expect(contentOf(await selectRows(reopened))).toEqual({
+				...rows,
+				messages: rows.messages.filter((m) => !m.key.endsWith("/de")),
+				variants: rows.variants.filter((v) => !v.message?.endsWith("/de")),
+			});
+			await reopened.close();
+			for (const plan of plans) {
+				if (plan.locale === "de") {
+					// kept as a file without messages
+					if (plan.path.endsWith(".json")) {
+						expect(JSON.parse(read(plan.path)), plan.path).toEqual({});
+					}
+				} else if (fixture.dir !== "apple-xcstrings") {
+					expect(read(plan.path), plan.path).toBe(before[plan.path]);
+				}
 			}
 		}
 	);
