@@ -837,6 +837,74 @@ describe("android: a real-world res/values/strings.xml", () => {
 		await project.close();
 	});
 
+	test("a project directory: saving without edits keeps the files, an edit changes only its element, in res/values and res/values-de", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "inlang-android-"));
+		try {
+			const projectPath = path.join(root, "project.inlang");
+			fs.mkdirSync(projectPath);
+			fs.writeFileSync(
+				path.join(projectPath, "settings.json"),
+				JSON.stringify({
+					baseLocale: "en",
+					locales: ["en", "de"],
+					modules: [plugins[fixture.key].url],
+					[fixture.key]: fixture.pluginSettings,
+				})
+			);
+			const files = {
+				en: path.join(root, "res/values/strings.xml"),
+				de: path.join(root, "res/values-de/strings.xml"),
+			};
+			for (const [locale, file] of Object.entries(files)) {
+				fs.mkdirSync(path.dirname(file), { recursive: true });
+				fs.writeFileSync(file, texts[locale]!);
+			}
+			const onDisk = () =>
+				Object.fromEntries(
+					Object.entries(files).map(([locale, file]) => [
+						locale,
+						fs.readFileSync(file, "utf8"),
+					])
+				);
+
+			servePlugins("current");
+			const project = await loadFromDirectory("current", {
+				path: projectPath,
+				fs,
+			});
+			expect(await project.errors.get()).toEqual([]);
+			await saveToDirectory("current", { path: projectPath, fs, project });
+			expect(onDisk()).toEqual(texts);
+
+			const t = tables(project.version);
+			const message = await project.db
+				.selectFrom(t.message)
+				.where(t.bundleId, "=", "settings_title")
+				.where("locale", "=", "de")
+				.select("id")
+				.executeTakeFirstOrThrow();
+			await project.db
+				.updateTable(t.variant)
+				.set({ pattern: [{ type: "text", value: "Optionen" }] })
+				.where(t.messageId, "=", message.id)
+				.execute();
+			await saveToDirectory("current", { path: projectPath, fs, project });
+			expect(onDisk()).toEqual({
+				en: texts.en,
+				de: texts.de!.replace(">Einstellungen<", '>"Optionen"<'),
+			});
+			// no files where `{locale}` is the locale instead of the qualifier
+			expect(fs.readdirSync(path.join(root, "res")).sort()).toEqual([
+				"values",
+				"values-de",
+			]);
+			await project.close();
+		} finally {
+			servePlugins("published");
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	test.each(upgrades)(
 		"a full export (no existing files, e.g. SDK $sdk with plugin $plugin) writes no non-translatable resource",
 		async ({ sdk, plugin }) => {

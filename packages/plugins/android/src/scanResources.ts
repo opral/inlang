@@ -3,11 +3,18 @@ import type { Comment, Entry } from "./mergeEntries.js";
 /**
  * A `<string>` or `<plurals>` element, or an `<item>` of a plural. The
  * `valueRange` of a `<string>` or `<item>` is its content, so that an edit
- * keeps the start tag with its attributes (e.g. `tools:ignore`).
+ * keeps the start tag with its attributes (e.g. `tools:ignore`). Of a
+ * self-closing element, it is the `/>`, which an edit replaces with
+ * `>value</string>`.
  */
-export type ScannedEntry = Entry & {
+export type ScannedEntry = Omit<Entry, "children"> & {
+  /** `string`, `plurals` or `item` */
+  element: string;
   /** `false` for `translatable="false"`, which the plugin doesn't import */
   translatable: boolean;
+  /** `true` for `formatted="false"` */
+  unformatted: boolean;
+  selfClosing: boolean;
   children?: ScannedEntry[];
 };
 
@@ -15,8 +22,13 @@ export type ScannedResources = {
   /** `<string>` and `<plurals>` elements, with the `<item>`s of plurals */
   entries: ScannedEntry[];
   comments: Comment[];
-  /** start of the `</resources>` tag */
+  /**
+   * start of the `</resources>` tag, or of the `/>` of a self-closing
+   * `<resources/>`
+   */
   closeTagStart: number;
+  /** whether the root is a self-closing `<resources/>` */
+  emptyRoot: boolean;
   /** the indentation of the elements and comments in `<resources>` */
   indent: string | undefined;
 };
@@ -34,12 +46,13 @@ export function scanResources(text: string): ScannedResources {
   const comments: Comment[] = [];
   let indent: string | undefined;
   let closeTagStart: number | undefined;
+  let emptyRoot = false;
   let pos = 0;
   type Open = {
     name: string;
     start: number;
     attributes: Map<string, string>;
-    /** offset after the start tag */
+    /** offset after the start tag, or of the `/>` of a self-closing tag */
     contentStart: number;
     children: ScannedEntry[];
   };
@@ -93,15 +106,18 @@ export function scanResources(text: string): ScannedResources {
       pos += name!.length;
       const attributes = new Map<string, string>();
       let selfClosing = false;
+      let contentStart: number;
       for (;;) {
         pos += /^\s*/.exec(text.slice(pos))![0].length;
         if (text.startsWith("/>", pos)) {
           selfClosing = true;
+          contentStart = pos;
           pos += 2;
           break;
         }
         if (text[pos] === ">") {
           pos++;
+          contentStart = pos;
           break;
         }
         const attribute = /^([^\s=/>]+)\s*=\s*(["'])/.exec(text.slice(pos));
@@ -114,7 +130,11 @@ export function scanResources(text: string): ScannedResources {
       if (stack.length === 0) {
         if (sawRoot || name !== "resources") fail("Expected one <resources>");
         sawRoot = true;
-        if (selfClosing) fail("Empty <resources/>");
+        if (selfClosing) {
+          // `<resources/>`: elements are inserted at its `/>`
+          emptyRoot = true;
+          closeTagStart = contentStart!;
+        }
       } else if (stack.length === 1 && indent === undefined) {
         indent = lineIndent(start);
       }
@@ -122,7 +142,7 @@ export function scanResources(text: string): ScannedResources {
         name: name!,
         start,
         attributes,
-        contentStart: pos,
+        contentStart: contentStart!,
         children: [],
       };
       if (selfClosing) {
@@ -146,11 +166,18 @@ export function scanResources(text: string): ScannedResources {
     // the element is a child of the element at the top of the stack
     const depth = stack.length;
     const key = open.attributes.get(depth === 1 ? "name" : "quantity");
-    const valueRange =
-      contentEnd === undefined
-        ? {}
-        : { valueRange: { start: open.contentStart, end: contentEnd } };
-    const translatable = open.attributes.get("translatable") !== "false";
+    const selfClosing = contentEnd === undefined;
+    const valueRange = {
+      start: open.contentStart,
+      // the `/>` of a self-closing element
+      end: contentEnd ?? open.contentStart + 2,
+    };
+    const flags = {
+      element: open.name,
+      translatable: !isFalse(open.attributes.get("translatable")),
+      unformatted: isFalse(open.attributes.get("formatted")),
+      selfClosing,
+    };
     if (
       depth === 1 &&
       (open.name === "string" || open.name === "plurals") &&
@@ -160,8 +187,10 @@ export function scanResources(text: string): ScannedResources {
         key,
         start: open.start,
         end,
-        translatable,
-        ...(open.name === "plurals" ? { children: open.children } : valueRange),
+        ...flags,
+        ...(open.name === "plurals"
+          ? { children: open.children }
+          : { valueRange }),
       });
     } else if (
       depth === 2 &&
@@ -173,13 +202,30 @@ export function scanResources(text: string): ScannedResources {
         key,
         start: open.start,
         end,
-        translatable,
-        ...valueRange,
+        ...flags,
+        valueRange,
       });
     }
   }
 
-  return { entries, comments, closeTagStart: closeTagStart!, indent };
+  return {
+    entries,
+    comments,
+    closeTagStart: closeTagStart!,
+    emptyRoot,
+    indent,
+  };
+}
+
+/**
+ * Whether an attribute is the boolean `false` as AAPT2 reads it: `false`,
+ * `FALSE` or `False`, with whitespace around it.
+ */
+export function isFalse(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    ["false", "FALSE", "False"].includes(value.trim())
+  );
 }
 
 function decodeEntities(value: string): string {

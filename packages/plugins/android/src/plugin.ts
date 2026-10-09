@@ -10,7 +10,7 @@ import type {
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
 import { mergeEntries, type Entry, type EntryText } from "./mergeEntries.js";
-import { scanResources } from "./scanResources.js";
+import { isFalse, scanResources, type ScannedEntry } from "./scanResources.js";
 
 export const PLUGIN_KEY = "plugin.inlang.android";
 type Config = { [PLUGIN_KEY]: PluginSettings };
@@ -20,7 +20,12 @@ type ImportArgs = Parameters<
 type ExportArgs = Parameters<
   NonNullable<InlangPlugin<Config>["exportFiles"]>
 >[0];
-type ExportFile = { locale: string; name: string; content: Uint8Array };
+type ExportFile = {
+  locale: string;
+  name: string;
+  content: Uint8Array;
+  metadata?: Record<string, unknown>;
+};
 const quantities = new Set(["zero", "one", "two", "few", "many", "other"]);
 
 export const plugin: InlangPlugin<Config> = {
@@ -36,9 +41,74 @@ export const plugin: InlangPlugin<Config> = {
       ),
     })),
   importFiles: ({ files }: ImportArgs) => importAndroidFiles(files),
-  exportFiles: (args: ExportArgs) =>
-    keepUnchangedEntries(exportAndroidFiles(args), args),
+  exportFiles: (args: ExportArgs) => {
+    const data = withoutExtraTranslations(args);
+    const files = keepUnchangedEntries(exportAndroidFiles(data), data);
+    // Hosts that pass the existing files (inlang SDK 4) write each file to
+    // `metadata.pathPattern`. Without it, `saveProjectToDirectory` replaces
+    // `{locale}` with the locale (`res/valuesde/…`) instead of the Android
+    // qualifier (`res/values-de/…`). The path is only given to hosts that
+    // pass the files, so that hosts without them (SDK 3), which would
+    // overwrite `values/strings.xml` with the full export (without
+    // non-translatable strings, `<string-array>`s, comments, …), keep
+    // writing where they always did. Apps that write `name` themselves get
+    // the right path either way.
+    if (!Array.isArray(args.files)) return files;
+    return files.map((file) => ({
+      ...file,
+      metadata: { ...file.metadata, pathPattern: file.name },
+    }));
+  },
 };
+
+/**
+ * The data without the messages of other locales than the base locale that
+ * have the name of a non-translatable resource of the existing base locale
+ * file, unless the file of their locale has them already. Android requires
+ * non-translatable resources to exist only in the default `values/` (lint
+ * "ExtraTranslation"), so e.g. a German message for `app_name` created in
+ * an editor is not written.
+ */
+function withoutExtraTranslations(args: ExportArgs): ExportArgs {
+  const baseLocale = args.settings.baseLocale;
+  const base = args.files?.find((file) => file.locale === baseLocale);
+  if (base === undefined) return args;
+  const names = (content: Uint8Array, translatable?: boolean) => {
+    try {
+      return new Set(
+        scanResources(decode(content))
+          .entries.filter(
+            (entry) =>
+              translatable === undefined || entry.translatable === translatable,
+          )
+          .map((entry) => `${entry.element}\0${entry.key}`),
+      );
+    } catch {
+      return new Set<string>();
+    }
+  };
+  const nonTranslatable = names(base.content, false);
+  if (nonTranslatable.size === 0) return args;
+  const existing = new Map<string, Set<string>>();
+  const messages = args.messages.filter((message) => {
+    if (message.locale === baseLocale) return true;
+    const name = `${message.selectors.length === 0 ? "string" : "plurals"}\0${message.bundleId}`;
+    if (!nonTranslatable.has(name)) return true;
+    if (!existing.has(message.locale)) {
+      const file = args.files!.find(
+        (candidate) => candidate.locale === message.locale,
+      );
+      existing.set(
+        message.locale,
+        file ? names(file.content) : new Set<string>(),
+      );
+    }
+    return existing.get(message.locale)!.has(name);
+  });
+  return messages.length === args.messages.length
+    ? args
+    : { ...args, messages };
+}
 
 function importAndroidFiles(files: ImportArgs["files"]): {
   bundles: Bundle[];
@@ -46,7 +116,10 @@ function importAndroidFiles(files: ImportArgs["files"]): {
   variants: VariantImport[];
 } {
   const bundles = new Map<string, Bundle>();
+  // names are unique per resource type (`<string>`, `<plurals>`)
   const seen = new Set<string>();
+  // messages are identified by name, across types
+  const imported = new Set<string>();
   const messages: MessageImport[] = [];
   const variants: VariantImport[] = [];
   const parser = new XMLParser({
@@ -72,10 +145,14 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       if (!item || typeof item !== "object" || !("@_name" in item))
         throw new Error("Every Android <string> must have a name attribute");
       const id = String(item["@_name"]);
-      assertUnique(seen, file.locale, id);
+      assertUnique(seen, file.locale, "string", id);
       if (!isTranslatable(item)) continue;
       assertNoProduct(item, id);
-      const parsed = parseAndroidPattern(textValue(item));
+      assertOneMessage(imported, file.locale, id);
+      // `formatted="false"`: `%` is text, e.g. "Save 50% on %s"
+      const parsed = isFalse(item["@_formatted"])
+        ? parseUnformatted(textValue(item))
+        : parseAndroidPattern(textValue(item));
       bundles.set(
         id,
         mergeBundle(bundles.get(id), id, parsed.variables, false),
@@ -92,9 +169,10 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       if (!plural || typeof plural !== "object" || !("@_name" in plural))
         throw new Error("Every Android <plurals> must have a name attribute");
       const id = String(plural["@_name"]);
-      assertUnique(seen, file.locale, id);
+      assertUnique(seen, file.locale, "plurals", id);
       if (!isTranslatable(plural)) continue;
       assertNoProduct(plural, id);
+      assertOneMessage(imported, file.locale, id);
       const parsedItems = array(plural.item).map((item) => {
         const quantity = String(
           item && typeof item === "object" ? item["@_quantity"] : undefined,
@@ -207,27 +285,73 @@ function keepUnchangedEntriesOfFile(args: {
   const newline = text.includes("\r\n") ? "\r\n" : "\n";
   const indent = scanned.indent ?? "  ";
   const next = entryTexts(exportedText);
-  // Non-translatable elements are not imported and kept like other text.
-  // If the new data has a message with the name of one, the message
-  // replaces it, so that the file doesn't define the name twice.
-  const entries = scanned.entries.flatMap(({ translatable, ...entry }) =>
-    translatable
-      ? [entry]
-      : next.has(entry.key)
-        ? [{ key: entry.key, start: entry.start, end: entry.end }]
-        : [],
+  const exportedEntries = new Map(
+    scanResources(exportedText).entries.map((entry) => [entry.key, entry]),
   );
+  /** Names of `<string>`s that the full export writes as only text. */
+  const textOnly = new Set(
+    rowsOf(
+      importAndroidFiles([{ locale: args.locale, content: args.exported }]),
+    )
+      .variants.filter((variant) =>
+        variant.pattern.every((part) => part.type === "text"),
+      )
+      .map((variant) => variant.messageId.split("\u0000")[0]!),
+  );
+  /** The element of the file in the merge, see `ScannedEntry`. */
+  const toEntry = (entry: ScannedEntry): Entry | undefined => {
+    const exported = exportedEntries.get(entry.key);
+    if (!entry.translatable) {
+      // Non-translatable elements are not imported and kept like other
+      // text. If the new data has a message with the name of one of the
+      // same type, the message replaces it, so that the file doesn't define
+      // the name twice.
+      return exported?.element === entry.element
+        ? { key: entry.key, start: entry.start, end: entry.end }
+        : undefined;
+    }
+    // Only the content of an edited `<string>` is written if it reads as
+    // the new text in the start tag of the file, i.e. with or without
+    // `formatted="false"` as needed. Otherwise the element is replaced.
+    const keepsStartTag =
+      entry.element !== "string" ||
+      exported === undefined ||
+      (entry.unformatted ? textOnly.has(entry.key) : !exported.unformatted);
+    return {
+      key: entry.key,
+      start: entry.start,
+      end: entry.end,
+      ...(keepsStartTag && entry.valueRange
+        ? { valueRange: entry.valueRange }
+        : {}),
+      ...(entry.children
+        ? { children: entry.children.flatMap((child) => toEntry(child) ?? []) }
+        : {}),
+    };
+  };
+  const entries = scanned.entries.flatMap((entry) => toEntry(entry) ?? []);
   const result = mergeEntries({
     text,
     entries,
     comments: scanned.comments,
     previous: entryTexts(canonical(text)),
-    next,
+    next: withSelfClosing(next, scanned.entries),
     indentUnit: "  ",
     fileIndentUnit: indent === "" ? "  " : indent,
     emptyIndent: indent,
     insertIntoEmpty: (elements) => {
       const at = scanned.closeTagStart;
+      if (scanned.emptyRoot)
+        // `<resources/>` becomes `<resources>…</resources>`
+        return {
+          start: at,
+          end: at + 2,
+          text:
+            ">" +
+            elements.map((element) => newline + indent + element).join("") +
+            newline +
+            "</resources>",
+        };
       const lineStart = text.lastIndexOf("\n", at - 1) + 1;
       // before the line of `</resources>`, or before the tag
       return /^[ \t]*$/.test(text.slice(lineStart, at))
@@ -295,6 +419,40 @@ function entryTexts(text: string): Map<string, EntryText> {
           }
         : {}),
     });
+  }
+  return result;
+}
+
+/**
+ * `next` with the content of the elements that are self-closing in the file
+ * as the text that replaces their `/>`: `>value</string>`.
+ */
+function withSelfClosing(
+  next: Map<string, EntryText>,
+  entries: ScannedEntry[],
+): Map<string, EntryText> {
+  const adapt = (
+    entry: ScannedEntry,
+    text: EntryText | undefined,
+  ): EntryText | undefined => {
+    if (text === undefined) return undefined;
+    if (entry.selfClosing && text.valueText !== undefined)
+      return {
+        ...text,
+        valueText: `>${text.valueText}</${entry.element}>`,
+      };
+    if (!entry.children?.some((child) => child.selfClosing)) return text;
+    const children = new Map(text.children);
+    for (const child of entry.children) {
+      const adapted = adapt(child, children.get(child.key));
+      if (adapted !== undefined) children.set(child.key, adapted);
+    }
+    return { ...text, children };
+  };
+  const result = new Map(next);
+  for (const entry of entries) {
+    const adapted = adapt(entry, result.get(entry.key));
+    if (adapted !== undefined) result.set(entry.key, adapted);
   }
   return result;
 }
@@ -373,8 +531,9 @@ function exportAndroidFiles({
         throw new Error(
           `Android string "${bundle.id}" must have exactly one unconditional variant`,
         );
+      const pattern = messageVariants[0]!.pattern;
       lines.push(
-        `  <string name="${escapeXmlAttribute(bundle.id)}">${serializePattern(messageVariants[0]!.pattern, bundle)}</string>`,
+        `  <string name="${escapeXmlAttribute(bundle.id)}"${needsUnformatted(pattern) ? ' formatted="false"' : ""}>${serializePattern(pattern, bundle)}</string>`,
       );
     } else {
       const selector = message.selectors[0];
@@ -527,6 +686,37 @@ function parseAndroidPattern(value: string) {
   return { pattern, variables };
 }
 
+/** The pattern of a `formatted="false"` string: only text. */
+function parseUnformatted(value: string) {
+  return {
+    pattern: [
+      { type: "text", value: unescapeAndroid(unquoteAndroid(value)) },
+    ] as Pattern,
+    variables: [] as string[],
+  };
+}
+
+/**
+ * Whether the text of a pattern without expressions must be written with
+ * `formatted="false"`, because it reads as printf, e.g. "Save 50% on %s".
+ */
+function needsUnformatted(pattern: Pattern) {
+  if (pattern.some((part) => part.type !== "text")) return false;
+  const text = pattern
+    .map((part) => (part as { value: string }).value)
+    .join("");
+  try {
+    const parsed = parseAndroidPattern(`"${escapeAndroid(text, false)}"`);
+    return !(
+      parsed.pattern.length === 1 &&
+      parsed.pattern[0]!.type === "text" &&
+      parsed.pattern[0]!.value === text
+    );
+  } catch {
+    return true;
+  }
+}
+
 function serializePattern(pattern: Pattern, bundle: Bundle) {
   const inputs = bundle.declarations.filter(
     (declaration) => declaration.type === "input-variable",
@@ -637,7 +827,7 @@ function textValue(value: unknown): string {
  * doesn't import (`<string-array>`, `<color>`, …).
  */
 function isTranslatable(element: Record<string, unknown>) {
-  return element["@_translatable"] !== "false";
+  return !isFalse(element["@_translatable"]);
 }
 function assertNoProduct(element: Record<string, unknown>, id: string) {
   // several elements with one name, one per product, can't be represented
@@ -705,13 +895,31 @@ function androidPath(pattern: string, locale: string, baseLocale: string) {
   return pattern.replace("{locale}", androidLocaleSuffix(locale, baseLocale));
 }
 
-function assertUnique(seen: Set<string>, locale: string, id: string) {
-  const key = `${locale}\0${id}`;
+function assertUnique(
+  seen: Set<string>,
+  locale: string,
+  type: string,
+  id: string,
+) {
+  const key = `${locale}\0${type}\0${id}`;
   if (seen.has(key))
     throw new Error(
-      `Duplicate Android resource "${id}" for locale "${locale}"`,
+      `Duplicate Android resource <${type} name="${id}"> for locale "${locale}"`,
     );
   seen.add(key);
+}
+
+/**
+ * A translatable `<string>` and `<plurals>` may share a name in Android,
+ * but would be the same message in inlang.
+ */
+function assertOneMessage(imported: Set<string>, locale: string, id: string) {
+  const key = `${locale}\0${id}`;
+  if (imported.has(key))
+    throw new Error(
+      `Android <string> and <plurals> "${id}" can't both be translated for locale "${locale}": inlang identifies messages by name. Rename one or mark it translatable="false".`,
+    );
+  imported.add(key);
 }
 
 function assertAndroidResourceName(id: string) {

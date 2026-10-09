@@ -224,11 +224,8 @@ describe("Android resources plugin", () => {
         { type: "text", value: "Hello " },
         expect.objectContaining({ type: "expression" }),
       ],
-      [
-        expect.objectContaining({ type: "expression" }),
-        { type: "text", value: " of " },
-        expect.objectContaining({ type: "expression" }),
-      ],
+      // formatted="false": text
+      [{ type: "text", value: "%d of %d" }],
       [
         expect.objectContaining({ type: "expression" }),
         { type: "text", value: " song" },

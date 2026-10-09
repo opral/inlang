@@ -351,7 +351,6 @@ describe("export with the existing file", () => {
     const [full] = plugin.exportFiles!({ settings, ...data }) as any[];
     for (const invalid of [
       "<resources><string name='a'>A</resources>",
-      "<resources/>",
       '<!DOCTYPE resources [<!ENTITY a "A">]><resources></resources>',
       // AAPT rejects a name defined twice
       '<resources><string name="a" translatable="false">A</string><string name="a">B</string></resources>',
@@ -445,7 +444,7 @@ describe('real-world files: translatable="false" and tools: attributes', () => {
     expect(
       reexport(realWorld, (data) => {
         setText(data, "welcome", "Hi, %1$s!");
-        setText(data, "progress", "%1$d of %2$d finished");
+        setText(data, "progress", "%d of %d finished");
         setText(data, "songs", "%1$d tracks", "other");
       }),
     ).toBe(
@@ -456,7 +455,7 @@ describe('real-world files: translatable="false" and tools: attributes', () => {
         )
         .replace(
           '<string name="progress" formatted="false">%d of %d done</string>',
-          '<string name="progress" formatted="false">"%1$d of %2$d finished"</string>',
+          '<string name="progress" formatted="false">"%d of %d finished"</string>',
         )
         .replace(
           '<item quantity="other" tools:ignore="ImpliedQuantity">%d songs</item>',
@@ -541,6 +540,268 @@ describe('real-world files: translatable="false" and tools: attributes', () => {
       ])
         expect(deFile).not.toContain(`name="${name}"`);
     }
+  });
+});
+
+describe("real-world files: edge cases", () => {
+  test("an edited self-closing element keeps its attributes", () => {
+    const file = `<resources xmlns:tools="http://schemas.android.com/tools">
+    <string name="empty" tools:ignore="UnusedResources"/>
+    <plurals name="songs">
+        <item quantity="one" tools:ignore="ImpliedQuantity" />
+        <item quantity="other">%d songs</item>
+    </plurals>
+</resources>
+`;
+    expect(reexport(file)).toBe(file);
+    expect(
+      reexport(file, (data) => {
+        setText(data, "empty", "now filled");
+        setText(data, "songs", "%1$d song", "one");
+      }),
+    ).toBe(
+      file
+        .replace(
+          '<string name="empty" tools:ignore="UnusedResources"/>',
+          '<string name="empty" tools:ignore="UnusedResources">"now filled"</string>',
+        )
+        .replace(
+          '<item quantity="one" tools:ignore="ImpliedQuantity" />',
+          '<item quantity="one" tools:ignore="ImpliedQuantity" >"%1$d song"</item>',
+        ),
+    );
+  });
+
+  test("messages are added to a self-closing <resources/>, which keeps its attributes", () => {
+    const file = `<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="de"/>
+`;
+    expect(importAndroid(file).messages).toEqual([]);
+    expect(
+      reexport(file, (data) => {
+        addMessage(data, "b", "B");
+        addMessage(data, "a", "A");
+      }),
+    ).toBe(`<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools" tools:locale="de">
+  <string name="a">"A"</string>
+  <string name="b">"B"</string>
+</resources>
+`);
+  });
+
+  test('formatted="false" strings are text, with raw %, and round-trip', () => {
+    const file = `<resources>
+    <string name="pct" formatted="false">Save 50% on %s</string>
+    <string name="done" formatted="false" tools:ignore="X">%d% complete</string>
+    <string name="plain">Plain</string>
+</resources>
+`;
+    const data = importAndroid(file);
+    expect(findVariant(data, "pct").pattern).toEqual([
+      { type: "text", value: "Save 50% on %s" },
+    ]);
+    expect(findVariant(data, "done").pattern).toEqual([
+      { type: "text", value: "%d% complete" },
+    ]);
+    expect(reexport(file)).toBe(file);
+    // an edit keeps the attributes and writes % as is
+    expect(
+      reexport(file, (data) => {
+        setText(data, "pct", "Save 60% on %s");
+        setText(data, "done", "Done");
+      }),
+    ).toBe(
+      file
+        .replace(">Save 50% on %s<", '>"Save 60% on %s"<')
+        .replace(">%d% complete<", '>"Done"<'),
+    );
+    // text that reads as printf gets formatted="false", an expression loses it
+    expect(
+      reexport(file, (data) => {
+        setText(data, "plain", "50% of %s");
+        setText(data, "pct", "Save %1$s");
+      }),
+    ).toBe(
+      file
+        .replace(
+          '<string name="plain">Plain</string>',
+          '<string name="plain" formatted="false">"50% of %s"</string>',
+        )
+        .replace(
+          '<string name="pct" formatted="false">Save 50% on %s</string>',
+          '<string name="pct">"Save %1$s"</string>',
+        ),
+    );
+    // the full export writes formatted="false" too and reads as the same text
+    const full = exportOf(data);
+    expect(full).toContain(
+      '<string name="pct" formatted="false">"Save 50% on %s"</string>',
+    );
+    expect(full).toContain(
+      '<string name="done" formatted="false">"%d% complete"</string>',
+    );
+    expect(full).toContain('<string name="plain">"Plain"</string>');
+    const byId = (a: any, b: any) => a.id.localeCompare(b.id);
+    expect(importAndroid(full).variants.sort(byId)).toEqual(
+      data.variants.sort(byId),
+    );
+  });
+
+  test("translatable and formatted are read like AAPT2 reads booleans", () => {
+    const file = `<resources>
+    <string name="a" translatable="FALSE">A</string>
+    <string name="b" translatable=" False ">B</string>
+    <plurals name="c" translatable="False"><item quantity="other">C</item></plurals>
+    <string name="d" translatable="TRUE">D</string>
+    <string name="e" formatted="FALSE">50% %s</string>
+</resources>
+`;
+    const data = importAndroid(file);
+    expect(data.bundles.map((bundle) => bundle.id)).toEqual(["d", "e"]);
+    expect(findVariant(data, "e").pattern).toEqual([
+      { type: "text", value: "50% %s" },
+    ]);
+    expect(reexport(file)).toBe(file);
+    expect(reexport(file, (data) => setText(data, "d", "Dee"))).toBe(
+      file.replace(">D<", '>"Dee"<'),
+    );
+  });
+
+  test("names are unique per resource type", () => {
+    const file = `<resources>
+    <plurals name="dbg" translatable="false">
+        <item quantity="other">%d entries</item>
+    </plurals>
+    <string name="x" translatable="false">X</string>
+    <plurals name="x">
+        <item quantity="other">%d x</item>
+    </plurals>
+</resources>
+`;
+    expect(importAndroid(file).bundles.map((bundle) => bundle.id)).toEqual([
+      "x",
+    ]);
+    expect(reexport(file)).toBe(file);
+    // a <string> "dbg" is another resource than the <plurals> "dbg"
+    expect(reexport(file, (data) => addMessage(data, "dbg", "Debug"))).toBe(
+      file.replace(
+        "</resources>",
+        '    <string name="dbg">"Debug"</string>\n</resources>',
+      ),
+    );
+    // a translatable <string> and <plurals> would be one message
+    expect(() =>
+      importAndroid(
+        '<resources><string name="x">X</string><plurals name="x"><item quantity="other">%d x</item></plurals></resources>',
+      ),
+    ).toThrow("can't both be translated");
+    // the same type twice is a duplicate
+    expect(() =>
+      importAndroid(
+        '<resources><plurals name="x" translatable="false"><item quantity="other">a</item></plurals><plurals name="x"><item quantity="other">b</item></plurals></resources>',
+      ),
+    ).toThrow('Duplicate Android resource <plurals name="x">');
+  });
+
+  test("a message of another locale with the name of a non-translatable resource of the base locale is not written", () => {
+    const en = `<resources>
+    <string name="app_name" translatable="false">Acme</string>
+    <plurals name="debug" translatable="false"><item quantity="other">%d</item></plurals>
+    <string name="title">Title</string>
+</resources>
+`;
+    const de = `<resources>
+    <string name="title">Titel</string>
+</resources>
+`;
+    const data = identifyRows(
+      plugin.importFiles!({
+        settings,
+        files: [
+          { locale: "en", content: encode(en) },
+          { locale: "de", content: encode(de) },
+        ],
+      }) as Data,
+    );
+    // e.g. created in an editor
+    for (const [id, text] of [
+      ["app_name", "Acme DE"],
+      ["debug", "Debug DE"],
+    ]) {
+      data.bundles.push({ id, declarations: [] });
+      data.messages.push({
+        id: `${id}-de`,
+        bundleId: id,
+        locale: "de",
+        selectors: [],
+      });
+      data.variants.push({
+        id: `${id}-de`,
+        messageId: `${id}-de`,
+        matches: [],
+        pattern: [{ type: "text", value: text }],
+      });
+    }
+    const exportDe = (files: any[] | undefined) =>
+      decode(
+        (plugin.exportFiles!({ settings, ...data, files }) as any[]).find(
+          (file) => file.locale === "de",
+        )!.content,
+      );
+    const files = [
+      { path, locale: "en", content: encode(en) },
+      {
+        path: "./res/values-de/strings.xml",
+        locale: "de",
+        content: encode(de),
+      },
+    ];
+    // app_name is not written, debug is a <string>, not the <plurals>
+    expect(exportDe(files)).toBe(
+      de.replace(
+        "    <string",
+        '    <string name="debug">"Debug DE"</string>\n    <string',
+      ),
+    );
+    // unless the file of the locale has it already
+    const deWithAppName = de.replace(
+      "</resources>",
+      '    <string name="app_name">Acme DE</string>\n</resources>',
+    );
+    expect(
+      exportDe([files[0], { ...files[1], content: encode(deWithAppName) }]),
+    ).toBe(
+      deWithAppName.replace(
+        "</resources>",
+        '    <string name="debug">"Debug DE"</string>\n</resources>',
+      ),
+    );
+  });
+
+  test("the files get their path as metadata.pathPattern only if the host passes the existing files", () => {
+    const data = importAndroid(previous);
+    const withoutFiles = plugin.exportFiles!({ settings, ...data }) as any[];
+    expect(withoutFiles).toEqual([
+      {
+        locale: "en",
+        name: "./res/values/strings.xml",
+        content: expect.any(Uint8Array),
+      },
+    ]);
+    for (const files of [
+      [],
+      [{ path, locale: "en", content: encode(previous) }],
+    ]) {
+      const [file] = plugin.exportFiles!({ settings, ...data, files }) as any[];
+      expect(file.name).toBe("./res/values/strings.xml");
+      expect(file.metadata).toEqual({
+        pathPattern: "./res/values/strings.xml",
+      });
+    }
+    data.messages[0].locale = "de";
+    const [de] = plugin.exportFiles!({ settings, ...data, files: [] }) as any[];
+    expect(de.metadata).toEqual({ pathPattern: "./res/values-de/strings.xml" });
   });
 });
 
