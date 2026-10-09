@@ -1,0 +1,498 @@
+import { describe, expect, test } from "vitest";
+import type { Bundle, Message, Variant } from "@inlang/sdk";
+import { importFiles } from "./importFiles.js";
+import { exportFiles } from "./exportFiles.js";
+
+/**
+ * Keys with dots are nested on export and flattened on import. The
+ * published plugin (4.4.5) nested them with `unflatten` of the `flat`
+ * package, which also made arrays of number segments (`steps.0` ->
+ * `"steps": ["…"]`) and split the keys of `match` at dots (`count=1.5` ->
+ * `"count=1": [null, …, "…"]`). It couldn't read either back.
+ */
+
+const encode = (text: string) => new TextEncoder().encode(text);
+const decode = (content: Uint8Array) => new TextDecoder().decode(content);
+
+type Imported = Awaited<ReturnType<typeof importFiles>>;
+type Texts = Record<string, string>;
+
+const toText = (json: unknown) =>
+	typeof json === "string" ? json : JSON.stringify(json, undefined, "\t");
+
+async function importTexts(texts: Record<string, unknown>) {
+	return importFiles({
+		settings: {} as any,
+		files: Object.entries(texts).map(([locale, text]) => ({
+			locale,
+			content: encode(toText(text)),
+		})),
+	});
+}
+
+/** Rows with ids, like the SDK stores an import. */
+function rowsOf(imported: Imported) {
+	const bundles = new Map<string, Bundle>();
+	for (const bundle of imported.bundles) {
+		bundles.set(bundle.id!, bundle as Bundle);
+	}
+	const messages = new Map<string, Message>();
+	for (const message of imported.messages) {
+		const id = `${message.bundleId}/${message.locale}`;
+		messages.set(id, { ...(message as Message), id });
+	}
+	const variants = imported.variants.map(
+		(variant, index) =>
+			({
+				id: `variant_${index}`,
+				messageId: `${variant.messageBundleId}/${variant.messageLocale}`,
+				matches: variant.matches ?? [],
+				pattern: variant.pattern ?? [],
+			}) as Variant
+	);
+	return {
+		bundles: [...bundles.values()],
+		messages: [...messages.values()],
+		variants,
+	};
+}
+
+/** The messages of an import without ids, to compare two imports. */
+function contentOf(imported: Imported) {
+	const sort = <T>(items: T[]) =>
+		items
+			.map((item) => JSON.stringify(item))
+			.sort()
+			.map((item) => JSON.parse(item));
+	return {
+		bundles: sort(imported.bundles.map((b) => [b.id, b.declarations])),
+		messages: sort(
+			imported.messages.map((m) => [m.bundleId, m.locale, m.selectors])
+		),
+		variants: sort(
+			imported.variants.map((v) => [
+				v.messageBundleId,
+				v.messageLocale,
+				v.matches,
+				v.pattern,
+			])
+		),
+	};
+}
+
+async function exportTexts(
+	rows: ReturnType<typeof rowsOf>,
+	options: { files?: Texts; settings?: Record<string, unknown> } = {}
+): Promise<Texts> {
+	const files = await exportFiles({
+		...rows,
+		settings: (options.settings ?? {}) as any,
+		files:
+			options.files &&
+			Object.entries(options.files).map(([locale, content]) => ({
+				path: `./messages/${locale}.json`,
+				locale,
+				content: encode(content),
+			})),
+	});
+	return Object.fromEntries(
+		files.map((file) => [file.locale, decode(file.content)])
+	);
+}
+
+/** The text of every variant of a message, by its matches. */
+function textsOf(imported: Imported, bundleId: string, locale = "en") {
+	return Object.fromEntries(
+		imported.variants
+			.filter(
+				(variant) =>
+					variant.messageBundleId === bundleId &&
+					variant.messageLocale === locale
+			)
+			.map((variant) => [
+				variant
+					.matches!.map((match) =>
+						match.type === "literal-match"
+							? `${match.key}=${match.value}`
+							: `${match.key}=*`
+					)
+					.join(", "),
+				variant
+					.pattern!.map((part) =>
+						part.type === "text"
+							? part.value
+							: part.type === "expression" &&
+								  part.arg.type === "variable-reference"
+								? `{${part.arg.name}}`
+								: "?"
+					)
+					.join(""),
+			])
+	);
+}
+
+/**
+ * What the published plugin (4.4.5) wrote for the messages `hello`,
+ * `onboarding.title`, `onboarding.steps.0`, `onboarding.steps.1`, `tip.0`
+ * and the variants `rating=4.5` and `channel=v1.beta`.
+ */
+const writtenByPublishedPlugin = `{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"hello": "Hello",
+	"onboarding": {
+		"title": "Welcome",
+		"steps": [
+			"Create an account",
+			"Verify your email"
+		]
+	},
+	"tip": [
+		"Only tip"
+	],
+	"rating": [
+		{
+			"declarations": [
+				"input rating"
+			],
+			"selectors": [
+				"rating"
+			],
+			"match": {
+				"rating=4": [
+					null,
+					null,
+					null,
+					null,
+					null,
+					"Great"
+				],
+				"rating=*": "{rating} stars"
+			}
+		}
+	],
+	"release": [
+		{
+			"declarations": [
+				"input channel"
+			],
+			"selectors": [
+				"channel"
+			],
+			"match": {
+				"channel=v1": {
+					"beta": "Beta release"
+				},
+				"channel=*": "Stable release"
+			}
+		}
+	]
+}`;
+
+describe("import of arrays and match objects the published plugin wrote", () => {
+	test("an array of strings is the messages of number keys", async () => {
+		const imported = await importTexts({ en: writtenByPublishedPlugin });
+		expect(imported.bundles.map((bundle) => bundle.id)).toEqual([
+			"hello",
+			"onboarding.title",
+			"onboarding.steps.0",
+			"onboarding.steps.1",
+			"tip.0",
+			"rating",
+			"release",
+		]);
+		expect(textsOf(imported, "onboarding.steps.0")).toEqual({
+			"": "Create an account",
+		});
+		expect(textsOf(imported, "onboarding.steps.1")).toEqual({
+			"": "Verify your email",
+		});
+		expect(textsOf(imported, "tip.0")).toEqual({ "": "Only tip" });
+	});
+
+	test("an array is read like an object with number keys: holes are no messages, objects and arrays in it are nested", async () => {
+		const imported = await importTexts({
+			en: {
+				sparse: [null, "Second"],
+				items: [{ title: "First title", body: "First body" }],
+				matrix: [["Zero zero"], [null, "One one"]],
+				mixed: [
+					"Plain",
+					[
+						{
+							declarations: [
+								"input count",
+								"local countPlural = count: plural",
+							],
+							selectors: ["countPlural"],
+							match: { "countPlural=one": "One", "countPlural=*": "Many" },
+						},
+					],
+				],
+			},
+		});
+		expect(imported.bundles.map((bundle) => bundle.id)).toEqual([
+			"sparse.1",
+			"items.0.title",
+			"items.0.body",
+			"matrix.0.0",
+			"matrix.1.1",
+			"mixed.0",
+			"mixed.1",
+		]);
+		expect(textsOf(imported, "items.0.body")).toEqual({ "": "First body" });
+		expect(textsOf(imported, "matrix.1.1")).toEqual({ "": "One one" });
+		expect(textsOf(imported, "mixed.1")).toEqual({
+			"countPlural=one": "One",
+			"countPlural=*": "Many",
+		});
+	});
+
+	test("a complex message, an array with one object, is one message as before", async () => {
+		const imported = await importTexts({
+			en: {
+				count: [
+					{
+						declarations: ["input count", "local countPlural = count: plural"],
+						selectors: ["countPlural"],
+						match: { "countPlural=one": "One", "countPlural=*": "Many" },
+					},
+				],
+				legacy: [{ selectors: [], match: ["Legacy text"] }],
+			},
+		});
+		expect(imported.bundles.map((bundle) => bundle.id)).toEqual([
+			"count",
+			"legacy",
+		]);
+		expect(textsOf(imported, "count")).toEqual({
+			"countPlural=one": "One",
+			"countPlural=*": "Many",
+		});
+		expect(textsOf(imported, "legacy")).toEqual({ "": "Legacy text" });
+	});
+
+	test("a variant that was split at a dot of its match is read with the dot", async () => {
+		const imported = await importTexts({ en: writtenByPublishedPlugin });
+		expect(textsOf(imported, "rating")).toEqual({
+			"rating=4.5": "Great",
+			"rating=*": "{rating} stars",
+		});
+		expect(textsOf(imported, "release")).toEqual({
+			"channel=v1.beta": "Beta release",
+			"channel=*": "Stable release",
+		});
+	});
+
+	test("the file stays byte-identical when it is exported with it", async () => {
+		const files = { en: writtenByPublishedPlugin };
+		const rows = rowsOf(await importTexts(files));
+		// the full export writes objects and the keys of the variants
+		const whole = await exportTexts(rows);
+		expect(whole.en).not.toBe(files.en);
+		expect(await exportTexts(rows, { files })).toEqual(files);
+	});
+
+	test("an edit rewrites only the edited entry", async () => {
+		const files = { en: writtenByPublishedPlugin };
+		const rows = rowsOf(await importTexts(files));
+		const variant = rows.variants.find(
+			(variant) => variant.messageId === "onboarding.steps.1/en"
+		)!;
+		variant.pattern = [{ type: "text", value: "Check your inbox" }];
+		const exported = await exportTexts(rows, { files });
+		expect(exported.en).toBe(
+			files.en.replace(
+				`"steps": [
+			"Create an account",
+			"Verify your email"
+		]`,
+				`"steps": {
+			"0": "Create an account",
+			"1": "Check your inbox"
+		}`
+			)
+		);
+	});
+
+	test("an edited variant rewrites its message with the dot in the key", async () => {
+		const files = { en: writtenByPublishedPlugin };
+		const rows = rowsOf(await importTexts(files));
+		const variant = rows.variants.find(
+			(variant) =>
+				variant.messageId === "rating/en" &&
+				variant.matches[0]?.type === "catchall-match"
+		)!;
+		variant.pattern = [{ type: "text", value: "Rated" }];
+		const exported = JSON.parse((await exportTexts(rows, { files })).en!);
+		expect(exported.rating[0].match).toEqual({
+			"rating=4.5": "Great",
+			"rating=*": "Rated",
+		});
+		expect(exported.onboarding.steps).toEqual([
+			"Create an account",
+			"Verify your email",
+		]);
+	});
+});
+
+describe("export of keys with dots", () => {
+	test("number segments are object keys, not arrays", async () => {
+		const imported = await importTexts({ en: writtenByPublishedPlugin });
+		const exported = JSON.parse((await exportTexts(rowsOf(imported))).en!);
+		expect(exported.onboarding).toEqual({
+			title: "Welcome",
+			steps: { "0": "Create an account", "1": "Verify your email" },
+		});
+		expect(exported.tip).toEqual({ "0": "Only tip" });
+	});
+
+	test("the keys of variants are not split at dots", async () => {
+		const imported = await importTexts({ en: writtenByPublishedPlugin });
+		const exported = JSON.parse((await exportTexts(rowsOf(imported))).en!);
+		expect(exported.rating[0].match).toEqual({
+			"rating=4.5": "Great",
+			"rating=*": "{rating} stars",
+		});
+		expect(exported.release[0].match).toEqual({
+			"channel=v1.beta": "Beta release",
+			"channel=*": "Stable release",
+		});
+	});
+
+	test("keys with dots are nested as before", async () => {
+		const imported = await importTexts({
+			en: { "nav.home": "Home", "nav.about.title": "About", plain: "Plain" },
+		});
+		expect(JSON.parse((await exportTexts(rowsOf(imported))).en!)).toEqual({
+			$schema: "https://inlang.com/schema/inlang-message-format",
+			nav: { home: "Home", about: { title: "About" } },
+			plain: "Plain",
+		});
+	});
+
+	test("a key whose path is another message is written flat, no message is lost", async () => {
+		const en = {
+			a: "A",
+			"a.b": "A B",
+			"x.y": "X Y",
+			x: "X",
+			nav: { home: "Home", "home.title": "Home title" },
+			"nav.home.title.short": "Short",
+		};
+		const imported = await importTexts({ en });
+		const exported = (await exportTexts(rowsOf(imported))).en!;
+		expect(JSON.parse(exported)).toEqual({
+			$schema: "https://inlang.com/schema/inlang-message-format",
+			a: "A",
+			"a.b": "A B",
+			"x.y": "X Y",
+			x: "X",
+			nav: {
+				home: "Home",
+				"home.title": "Home title",
+				"home.title.short": "Short",
+			},
+		});
+		expect(contentOf(await importTexts({ en: exported }))).toEqual(
+			contentOf(imported)
+		);
+	});
+
+	test("a file with flat keys keeps them, also for a key whose path is another message", async () => {
+		const files = {
+			en: `{
+	"nav.home": "Home",
+	"nav.home.title": "Home title",
+	"a": "A",
+	"a.b": "A B"
+}`,
+		};
+		const rows = rowsOf(await importTexts(files));
+		expect(await exportTexts(rows, { files })).toEqual(files);
+		rows.variants.find(
+			(variant) => variant.messageId === "nav.home.title/en"
+		)!.pattern = [{ type: "text", value: "Start" }];
+		rows.variants.find((variant) => variant.messageId === "a.b/en")!.pattern = [
+			{ type: "text", value: "B" },
+		];
+		expect(await exportTexts(rows, { files })).toEqual({
+			en: files.en.replace('"Home title"', '"Start"').replace('"A B"', '"B"'),
+		});
+	});
+
+	test.each([
+		["trailing dot", "a."],
+		["leading dot", ".a"],
+		["two dots", "a..b"],
+		["number segments", "list.10.2"],
+		["exponent", "list.1e3"],
+		["negative number", "list.-1"],
+		["__proto__", "__proto__"],
+		["__proto__ segment", "x.__proto__.y"],
+	])("a key with %s round-trips", async (_, key) => {
+		const rows = rowsOf(await importTexts({ en: { other: "Other" } }));
+		rows.bundles.push({ id: key, declarations: [] });
+		rows.messages.push({
+			id: `${key}/en`,
+			bundleId: key,
+			locale: "en",
+			selectors: [],
+		});
+		rows.variants.push({
+			id: "added",
+			messageId: `${key}/en`,
+			matches: [],
+			pattern: [{ type: "text", value: "Value" }],
+		});
+		const exported = await exportTexts(rows);
+		const reimported = await importTexts(exported);
+		expect(reimported.bundles.map((bundle) => bundle.id).sort()).toEqual(
+			["other", key].sort()
+		);
+		expect(textsOf(reimported, key)).toEqual({ "": "Value" });
+		expect(await exportTexts(rowsOf(reimported))).toEqual(exported);
+	});
+
+	test("import -> export -> import is identical, and exports are stable", async () => {
+		const en = {
+			hello: "Hello",
+			"nav.home": "Home",
+			"onboarding.steps.0": "Create an account",
+			"onboarding.steps.1": "Verify your email",
+			a: "A",
+			"a.b": "A B",
+			rating: [
+				{
+					declarations: ["input rating"],
+					selectors: ["rating"],
+					match: {
+						"rating=4.5": "Great",
+						"rating=1.05": "Bad",
+						"rating=*": "{rating} stars",
+					},
+				},
+			],
+			release: [
+				{
+					declarations: ["input channel", "input region"],
+					selectors: ["channel", "region"],
+					match: {
+						"channel=v1.beta, region=eu.west": "Beta in the west",
+						"channel=v1.beta, region=*": "Beta",
+						"channel=*, region=*": "Stable",
+					},
+				},
+			],
+		};
+		const imported = await importTexts({ en, de: en });
+		const first = await exportTexts(rowsOf(imported));
+		const reimported = await importTexts(first);
+		expect(contentOf(reimported)).toEqual(contentOf(imported));
+		const second = await exportTexts(rowsOf(reimported));
+		expect(second).toEqual(first);
+		// and exported with the files, nothing changes
+		expect(await exportTexts(rowsOf(reimported), { files: first })).toEqual(
+			first
+		);
+	});
+});

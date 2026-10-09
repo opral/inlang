@@ -13,7 +13,7 @@ import type {
 	Message,
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
-import { flatten } from "flat";
+import { flattenMessageKeys, matchEntries } from "../utils/messageKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
 import type {
 	ComplexMessage,
@@ -34,17 +34,20 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 
 	for (const file of files) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
-		const flattened = flatten(json, { safe: true }) as Record<string, string>;
+		const flattened = flattenMessageKeys(json);
 
-		for (const key in flattened) {
+		for (const [key, value] of flattened) {
 			if (key === "$schema") {
 				continue;
 			}
-			const result = parseBundle(key, file.locale, flattened[key]!);
+			const result = parseBundle(
+				key,
+				file.locale,
+				value as SimpleMessage | ComplexMessage
+			);
 			messages.push(result.message);
 			variants.push(...result.variants);
-			const inputs =
-				typeof flattened[key] === "string" ? plainInputs : declaredInputs;
+			const inputs = typeof value === "string" ? plainInputs : declaredInputs;
 			for (const declaration of result.bundle.declarations) {
 				if (declaration.type !== "input-variable") continue;
 				if (!inputs.has(key)) inputs.set(key, new Set());
@@ -215,8 +218,8 @@ function parseVariants(
 
 	const detectedSelectors = new Set<VariableReference>();
 
-	for (const [match, pattern] of Object.entries(complexMessage["match"])) {
-		const parsed = parsePattern(pattern);
+	for (const [match, pattern] of matchEntries(complexMessage["match"])) {
+		const parsed = parsePattern(pattern as string);
 		const parsedMatches = parseMatches(match);
 		for (const declaration of parsed.declarations) {
 			let isDuplicate = false;

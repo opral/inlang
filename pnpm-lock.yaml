@@ -734,9 +734,6 @@ importers:
       '@sinclair/typebox':
         specifier: ^0.31.17
         version: 0.31.28
-      flat:
-        specifier: ^6.0.1
-        version: 6.0.1
     devDependencies:
       '@inlang/plugin-icu1':
         specifier: workspace:*

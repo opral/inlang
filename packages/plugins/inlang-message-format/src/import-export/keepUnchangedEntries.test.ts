@@ -565,6 +565,50 @@ describe("edits", () => {
 			'{\n\t"a": "A",\n\t"b": "B",\n\t"c": "C"\n}\n'
 		);
 	});
+	test("with sort, an edited message keeps the order of its variants", async () => {
+		const en = `{
+\t"b": [
+\t\t{
+\t\t\t"declarations": ["input gender"],
+\t\t\t"selectors": ["gender"],
+\t\t\t"match": {
+\t\t\t\t"gender=male": "He",
+\t\t\t\t"gender=female": "She",
+\t\t\t\t"gender=*": "They"
+\t\t\t}
+\t\t}
+\t],
+\t"a": "A"
+}
+`;
+		for (const sort of ["asc", "desc"]) {
+			const project = await load({ en }, { sort });
+			await setText(project, "b", "en", "Someone", { gender: "*" });
+			const files = await exportWith(project, { en });
+			// the edited message is written in full, its variants as they were
+			expect(files.en, sort).toBe(
+				en
+					.replace(
+						`"declarations": ["input gender"],
+\t\t\t"selectors": ["gender"],`,
+						`"declarations": [
+\t\t\t\t"input gender"
+\t\t\t],
+\t\t\t"selectors": [
+\t\t\t\t"gender"
+\t\t\t],`
+					)
+					.replace('"They"', '"Someone"')
+			);
+			const whole = JSON.parse((await exportWhole(project)).en!);
+			expect(Object.keys(whole.b[0].match), sort).toEqual([
+				"gender=male",
+				"gender=female",
+				"gender=*",
+			]);
+			await project.close();
+		}
+	});
 });
 
 describe("without a usable previous file", () => {

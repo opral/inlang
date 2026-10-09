@@ -9,13 +9,9 @@ import type {
 	Variant,
 } from "@inlang/sdk";
 import type { plugin } from "../plugin.js";
-import type {
-	ComplexMessage,
-	FileSchema,
-	SimpleMessage,
-} from "../fileSchema.js";
-import { unflatten } from "flat";
+import type { ComplexMessage, SimpleMessage } from "../fileSchema.js";
 import { sortMessageKeys } from "../utils/sortKeys.js";
+import { messageKeyPath, nestMessageKeys } from "../utils/messageKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
 import { orderVariants } from "../utils/orderVariants.js";
 import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
@@ -28,14 +24,22 @@ import { importFiles } from "./importFiles.js";
  */
 export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 	args
-) =>
-	keepUnchangedJsonEntries({
+) => {
+	const bundleIds = new Set(args.messages.map((message) => message.bundleId));
+	return keepUnchangedJsonEntries({
 		exported: await exportWholeFiles(args),
 		files: args.files,
 		settings: args.settings,
 		importFiles,
 		exportFiles: exportWholeFiles,
+		// where a flat key of a previous file is in the export, e.g.
+		// `"a.b"` stays flat if `a` is a message
+		splitKey: (key) =>
+			bundleIds.has(key)
+				? messageKeyPath(key, (prefix) => bundleIds.has(prefix))
+				: key.split("."),
 	});
+};
 
 /**
  * Writes the files of all locales from scratch.
@@ -43,7 +47,8 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 export const exportWholeFiles: NonNullable<
 	(typeof plugin)["exportFiles"]
 > = async ({ bundles, messages, variants, settings }) => {
-	const files: Record<string, FileSchema> = {};
+	// the messages of each locale by key, in the order of `messages`
+	const files: Record<string, Map<string, SimpleMessage | ComplexMessage>> = {};
 
 	// one variant per matches, the last one wins
 	const variantsByMatches = new Map<string, Map<string, Variant>>();
@@ -77,9 +82,9 @@ export const exportWholeFiles: NonNullable<
 
 	for (const message of messages) {
 		const bundle = bundlesById.get(message.bundleId);
-		Object.assign(
-			(files[message.locale] ??= {}),
-			serializeMessage(
+		(files[message.locale] ??= new Map()).set(
+			message.bundleId,
+			serializeVariants(
 				bundle!,
 				message,
 				variantsByMessage.get(message.id)!,
@@ -93,10 +98,10 @@ export const exportWholeFiles: NonNullable<
 	for (const locale in files) {
 		const sortDirection =
 			settings?.["plugin.inlang.messageFormat"]?.sort ?? undefined;
-		const unflattened = unflatten(files[locale]) as Record<string, unknown>;
+		const nested = nestMessageKeys(files[locale]!);
 		const sortedMessages: Record<string, unknown> = sortDirection
-			? sortMessageKeys(unflattened, sortDirection)
-			: unflattened;
+			? sortMessageKeys(nested, sortDirection)
+			: nested;
 		result.push({
 			locale,
 			// beautify the json
@@ -128,22 +133,6 @@ function isPlainMessage(message: Message, variants: Variant[]): boolean {
 		variants.length === 1 &&
 		variants[0]!.matches.length === 0
 	);
-}
-
-function serializeMessage(
-	bundle: Bundle,
-	message: Message,
-	variants: Variant[],
-	bundleHasComplexMessage: boolean
-): Record<string, SimpleMessage | ComplexMessage> {
-	const key = message.bundleId;
-	const value = serializeVariants(
-		bundle,
-		message,
-		variants,
-		bundleHasComplexMessage
-	);
-	return { [key]: value };
 }
 
 function serializeVariants(
