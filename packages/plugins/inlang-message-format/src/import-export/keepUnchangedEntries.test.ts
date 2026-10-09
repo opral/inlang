@@ -241,6 +241,42 @@ describe("no edits", () => {
 	});
 });
 
+/**
+ * What a project reads from `texts`, without ids, to compare the result of
+ * an export with the files with the full export.
+ */
+async function contentOf(texts: Record<string, string>) {
+	const project = await load(texts);
+	const bundles = await project.db
+		.selectFrom("inlang_bundle")
+		.selectAll()
+		.execute();
+	const messages = await project.db
+		.selectFrom("inlang_message")
+		.selectAll()
+		.execute();
+	const variants = await project.db
+		.selectFrom("inlang_variant")
+		.selectAll()
+		.execute();
+	const messageKey = new Map(
+		messages.map((m) => [m.id, `${m.bundle_id}/${m.locale}`])
+	);
+	const sort = <T>(items: T[]) =>
+		items
+			.map((item) => JSON.stringify(item))
+			.sort()
+			.map((item) => JSON.parse(item));
+	await project.close();
+	return {
+		bundles: sort(bundles.map((b) => [b.id, b.declarations])),
+		messages: sort(messages.map((m) => [m.bundle_id, m.locale, m.selectors])),
+		variants: sort(
+			variants.map((v) => [messageKey.get(v.message_id), v.matches, v.pattern])
+		),
+	};
+}
+
 describe("edits", () => {
 	test("only the edited entry changes", async () => {
 		const project = await load(handWritten);
@@ -361,6 +397,71 @@ describe("edits", () => {
 		);
 	});
 
+	test("an edited declaration is not brought back by a legacy entry of another locale", async () => {
+		// The complex form that the published plugin wrote for a plain string
+		// next to a plural carries the bundle's declarations. It is written as
+		// the plain string, so it compares as unchanged, but its declarations
+		// would bring back the old ones when the files are read again.
+		const files = {
+			en: `{
+\t"invite": [
+\t\t{
+\t\t\t"declarations": ["input count", "input gender", "local countPlural = count: plural"],
+\t\t\t"selectors": ["countPlural", "gender"],
+\t\t\t"match": {
+\t\t\t\t"countPlural=one, gender=*": "One guest",
+\t\t\t\t"countPlural=*, gender=*": "{count} guests"
+\t\t\t}
+\t\t}
+\t],
+\t"other": "Other"
+}`,
+			ja: `{
+\t"invite": [{"declarations": ["input count", "input gender", "local countPlural = count: plural"], "selectors": [], "match": ["{count} 人のゲスト"]}],
+\t"other": "その他"
+}`,
+		};
+		const project = await load(files);
+		const bundle = await project.db
+			.selectFrom("inlang_bundle")
+			.where("id", "=", "invite")
+			.selectAll()
+			.executeTakeFirstOrThrow();
+		await project.db
+			.updateTable("inlang_bundle")
+			.set({
+				declarations: bundle.declarations.map((declaration) =>
+					declaration.type === "local-variable"
+						? {
+								...declaration,
+								value: {
+									...declaration.value,
+									annotation: {
+										type: "function-reference",
+										name: "plural",
+										options: [
+											{
+												name: "type",
+												value: { type: "literal", value: "ordinal" },
+											},
+										],
+									},
+								},
+							}
+						: declaration
+				) as typeof bundle.declarations,
+			})
+			.where("id", "=", "invite")
+			.execute();
+		const result = await exportWith(project, files);
+		expect(await contentOf(result as Record<string, string>)).toEqual(
+			await contentOf((await exportWhole(project)) as Record<string, string>)
+		);
+		expect(result.en).toContain(
+			"local countPlural = count: plural type=ordinal"
+		);
+	});
+
 	test("only whitespace inside a pattern changed", async () => {
 		const project = await load(handWritten);
 		await setText(project, "zebra", "en", "Zebra ");
@@ -464,6 +565,40 @@ describe("edits", () => {
 });
 
 describe("without a usable previous file", () => {
+	test("a pathPattern array keeps the formatting of each file as before", async () => {
+		const a = '{\n\t"greeting": "Hello"\n}';
+		const b = '{\n    "greeting": "Hello"\n}\n';
+		const volume = Volume.fromJSON({
+			"/repo/project.inlang/settings.json": JSON.stringify({
+				baseLocale: "en",
+				locales: ["en"],
+				modules: [],
+				[PLUGIN_KEY]: {
+					pathPattern: ["./a/{locale}.json", "./b/{locale}.json"],
+				},
+			}),
+			"/repo/a/en.json": a,
+			"/repo/b/en.json": b,
+		});
+		const project = await loadProjectFromDirectory({
+			path: "/repo/project.inlang",
+			fs: volume as any,
+			providePlugins: [plugin as InlangPlugin],
+		});
+		await saveProjectToDirectory({
+			path: "/repo/project.inlang",
+			fs: volume.promises as any,
+			project,
+		});
+		// the full export, indented like each file (not one file's bytes in both)
+		expect(volume.readFileSync("/repo/b/en.json", "utf-8")).toBe(
+			'{\n    "$schema": "https://inlang.com/schema/inlang-message-format",\n    "greeting": "Hello"\n}\n'
+		);
+		expect(volume.readFileSync("/repo/a/en.json", "utf-8")).toBe(
+			'{\n\t"$schema": "https://inlang.com/schema/inlang-message-format",\n\t"greeting": "Hello"\n}'
+		);
+	});
+
 	test("a new locale is written like the full export", async () => {
 		const project = await load(handWritten);
 		const files = await exportWith(project, { en: handWritten.en });

@@ -59,7 +59,11 @@ export const exportWholeFiles: NonNullable<
 	for (const [messageId, byMatches] of variantsByMatches) {
 		variantsByMessage.set(messageId, [...byMatches.values()]);
 	}
-	const bundlesById = new Map(bundles.map((bundle) => [bundle.id, bundle]));
+	// the first bundle of an id, like a search
+	const bundlesById = new Map<string, Bundle>();
+	for (const bundle of bundles) {
+		if (!bundlesById.has(bundle.id)) bundlesById.set(bundle.id, bundle);
+	}
 
 	// Bundles with a message that is written in the complex form. That message
 	// carries the bundle's declarations, so the other messages of the bundle
