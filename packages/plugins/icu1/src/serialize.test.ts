@@ -123,8 +123,7 @@ describe("serializeMessage", () => {
           variants: [{ ...variants[0]!, pattern: countPound }],
         }),
       ).toBe(
-        // the shared suffix moves out of the single case, which is equivalent
-        "{guests, plural, offset:2 other {{count, plural, offset:1 other {#}}}} others",
+        "{guests, plural, offset:2 other {{count, plural, offset:1 other {#}} others}}",
       );
     });
 
@@ -150,14 +149,12 @@ describe("serializeMessage", () => {
   });
 
   it("does not bind an offset-0 # to a nested plural with an offset", () => {
-    // the export moves the outer `#` into the nested plural's cases, where a
-    // bare `#` would display n - 1
-    const { bundle, message, variants } = buildMessage(
-      "{n, plural, other {# and {n, plural, offset:1 one {one} other {many}}}}",
-    );
-    expect(serializeMessage({ bundle, message, variants })).toBe(
-      "{n, plural, other {{n, plural, offset:1 one {{n, number} and one} other {{n, number} and many}}}}",
-    );
+    // the outer `#` stays out of the nested plural's cases, where a bare `#`
+    // would display n - 1
+    const source =
+      "{n, plural, other {# and {n, plural, offset:1 one {one} other {many}}}}";
+    const { bundle, message, variants } = buildMessage(source);
+    expect(serializeMessage({ bundle, message, variants })).toBe(source);
   });
 
   it("quotes runs of special characters as one segment", () => {
@@ -165,7 +162,7 @@ describe("serializeMessage", () => {
     for (const source of [
       "'{}' and it''s",
       "{n, plural, other {'##' and '#{'}}",
-      "{n, plural, other {{g, select, a {'##'} other {x}}}}",
+      "{n, plural, one {'##'} other {x'#{'}}",
     ]) {
       const { bundle, message, variants } = buildMessage(source);
       const exported = serializeMessage({ bundle, message, variants });
@@ -408,11 +405,21 @@ describe("serializeMessage", () => {
     });
   });
 
-  it("escapes a literal # inside a select nested in a plural", () => {
+  it("writes no # in a select nested in a plural", () => {
+    // ICU and intl-messageformat read `#` and `'#'` in a select nested in a
+    // plural as literal text, the import reads them as in the plural
     const source =
       "{count, plural, other {{gender, select, male {He has '#'#} other {# they have '#'}}}}";
     const { bundle, message, variants } = buildMessage(source);
-    expect(serializeMessage({ bundle, message, variants })).toBe(source);
+    const exported = serializeMessage({ bundle, message, variants });
+    expect(exported).toBe(
+      "{gender, select, male {He has #{count, number}} other {{count, number} they have #}}",
+    );
+    expect(serializeMessage(buildMessage(exported))).toBe(exported);
+    const format = (gender: string) =>
+      new IntlMessageFormat(exported, "en").format({ count: 5, gender });
+    expect(format("male")).toBe("He has #5");
+    expect(format("other")).toBe("5 they have #");
   });
 
   it("serializes selectordinal", () => {
@@ -480,5 +487,257 @@ describe("serializeMessage", () => {
     expect(() => serializeMessage({ bundle, message, variants })).toThrow(
       "Markup placeholders are not supported by ICU MessageFormat 1",
     );
+  });
+});
+
+/**
+ * Exports `source`, and expects the export to display what the source
+ * displays for every combination of `values`, and a second export to be
+ * byte-identical.
+ */
+function expectSameDisplay(
+  source: string,
+  values: Record<string, unknown[]>,
+): string {
+  const exported = serializeMessage(buildMessage(source));
+  expect(serializeMessage(buildMessage(exported)), exported).toBe(exported);
+  const sourceFormat = new IntlMessageFormat(source, "en");
+  const exportFormat = new IntlMessageFormat(exported, "en");
+  for (const combination of combinations(values)) {
+    expect(
+      exportFormat.format(combination),
+      `${exported} with ${JSON.stringify(combination)}`,
+    ).toBe(sourceFormat.format(combination));
+  }
+  return exported;
+}
+
+function combinations(
+  values: Record<string, unknown[]>,
+): Record<string, unknown>[] {
+  return Object.entries(values).reduce<Record<string, unknown>[]>(
+    (result, [name, options]) =>
+      result.flatMap((combination) =>
+        options.map((option) => ({ ...combination, [name]: option })),
+      ),
+    [{}],
+  );
+}
+
+const counts = [0, 1, 2, 5, 22];
+
+describe("# next to a select in a plural", () => {
+  it("keeps # out of a select that follows it", () => {
+    // the select can't take the shared `# item ` out of its cases, which
+    // would leave `other` empty
+    const source =
+      "{count, plural, one {# item} other {# items}} {gender, select, female {for her} other {}}";
+    const exported = expectSameDisplay(source, {
+      count: counts,
+      gender: ["female", "male"],
+    });
+    expect(exported).toBe(
+      "{count, plural, one {# item {gender, select, female {for her} other {}}} other {# items {gender, select, female {for her} other {}}}}",
+    );
+  });
+
+  it("writes # between two selects as the number", () => {
+    const source =
+      "{count, plural, other {{a, select, x {X} other {Y}} has # {b, select, x {cat} other {cats}}}}";
+    expectSameDisplay(source, {
+      count: counts,
+      a: ["x", "y"],
+      b: ["x", "y"],
+    });
+  });
+
+  it("writes # with an offset between two selects as the number", () => {
+    const source =
+      "{count, plural, offset:1 =0 {Nobody} other {{host, select, me {You} other {{host}}} and # {g, select, one {other} other {others}}}}";
+    expectSameDisplay(source, {
+      count: counts,
+      host: ["me", "Ann"],
+      g: ["one", "two"],
+    });
+  });
+
+  it("keeps a select with a literal # out of the plural", () => {
+    // `'#'` in a select nested in a plural is not a quoted "#" for ICU
+    const source =
+      "{count, plural, one {# issue} other {# issues}} in {channel, select, general {#general} other {#random}}";
+    const exported = expectSameDisplay(source, {
+      count: counts,
+      channel: ["general", "other"],
+    });
+    expect(exported).toBe(source);
+  });
+
+  it("keeps a select with a literal # out of a plural it is nested in", () => {
+    const source =
+      "{count, plural, one {{g, select, a {A} other {B}} '#'1} other {{g, select, a {A} other {B}} '#'{count}}}";
+    expectSameDisplay(source, { count: counts, g: ["a", "b"] });
+  });
+
+  it("escapes adjacent literal texts together", () => {
+    // escaped one by one, `#'#` and `#` would give '#''#' + '#', which reads
+    // as one quoted segment
+    expectSameDisplay(
+      "{n, plural, one {'#''#'} other {x}}{g, select, other {#}}",
+      { n: counts, g: ["a"] },
+    );
+  });
+});
+
+describe("plurals on the same argument", () => {
+  it("keeps the cases of sibling plurals apart", () => {
+    const source =
+      "{count, plural, one {# file} other {# files}} {count, plural, one {was} other {were}} deleted";
+    const exported = expectSameDisplay(source, { count: counts });
+    expect(exported).toBe(source);
+  });
+
+  it("keeps the cases of sibling plurals with exact matches apart", () => {
+    const source =
+      "{count, plural, =0 {no file} one {# file} other {# files}} {count, plural, =1 {was} other {were}} deleted";
+    const exported = expectSameDisplay(source, { count: counts });
+    expect(exported).toBe(source);
+  });
+
+  it("keeps the cases of a nested plural apart", () => {
+    const source =
+      "{n, plural, one {one} other {{n, plural, =2 {two} one {never} other {many}}}}";
+    const exported = expectSameDisplay(source, { n: counts });
+    expect(exported).toBe(source);
+  });
+
+  it("keeps the cases of nested plurals with an offset apart", () => {
+    expectSameDisplay(
+      "{n, plural, offset:1 =0 {nobody} =1 {you} other {{n, plural, offset:1 one {you and # other} other {you and # others}}}}",
+      { n: counts },
+    );
+  });
+
+  it("keeps a select nested in a nested plural after both plurals", () => {
+    // the select occurs in another case first: as a selector ahead of the
+    // nested plural it would decide first
+    expectSameDisplay(
+      "{n, plural, =0 {{h, select, other {x}}} =1 {{n, plural, =1 {y} other {{h, select, b {B} other {z}}}}} other {w}}",
+      { n: counts, h: ["b", "c"] },
+    );
+  });
+
+  it("keeps exact matches with the plural they belong to", () => {
+    // the exact selector of the inner plural is not the one of the outer
+    // plural with an offset
+    expectSameDisplay(
+      "{n, plural, offset:1 one {{n, plural, =1 {X} other {Y}}} other {Z}}",
+      { n: counts },
+    );
+  });
+});
+
+describe("selects on the same argument", () => {
+  it("merges sibling selects", () => {
+    const exported = expectSameDisplay(
+      "{g, select, female {She} other {They}} {g, select, female {is} other {are}} here",
+      { g: ["female", "male"] },
+    );
+    expect(exported).toBe("{g, select, female {She is} other {They are}} here");
+  });
+
+  it("merges nested selects", () => {
+    const exported = expectSameDisplay(
+      "{g, select, a {A} other {{g, select, a {never} b {B} other {O}}}}",
+      { g: ["a", "b", "c"] },
+    );
+    expect(exported).toBe("{g, select, a {A} b {B} other {O}}");
+  });
+
+  it("selects a key a nested select adds in other branches by other", () => {
+    expectSameDisplay(
+      "{h, select, other {-}}{g, select, a {{h, select, b {B} other {O}}} other {X}}",
+      { g: ["a", "c"], h: ["b", "c"] },
+    );
+  });
+});
+
+describe("display after export (seeded)", () => {
+  it("displays nested selects and plurals as in the source", () => {
+    // mulberry32
+    let seed = 4444;
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const pick = <T>(options: T[]): T =>
+      options[Math.floor(random() * options.length)]!;
+    // Selectors nest in one order, g, n, h, m: a select or plural only
+    // contains or precedes ones on the same or a later argument. Repeated
+    // arguments give plurals and selects on the same argument. In a select
+    // nested in a plural, ICU reads # and '#' as literal text, unlike the
+    // import, so they are not generated there.
+    const args = ["g", "n", "h", "m"];
+    type Place = "outside" | "plural" | "select in plural";
+    const generate = (depth: number, place: Place, from: number): string => {
+      // texts sit between expressions: the import reads adjacent texts as
+      // one, which the export moves differently than two
+      const expression = () =>
+        place === "plural" && random() < 0.5
+          ? "#"
+          : pick(["{x}", "{n, number}"]);
+      let result = expression();
+      for (let part = Math.floor(random() * 3); part > 0; part--) {
+        if (depth === 0 || random() < 0.4) {
+          const hash = { outside: "#", plural: "'#'", "select in plural": "c" };
+          result += pick(["a", " b ", hash[place]]) + expression();
+          continue;
+        }
+        const index = from + Math.floor(random() * (args.length - from));
+        const arg = args[index]!;
+        from = index;
+        if (arg === "g" || arg === "h") {
+          const keys = ["a", "b"].filter(() => random() < 0.6);
+          const inCase: Place =
+            place === "outside" ? "outside" : "select in plural";
+          result += `{${arg}, select, ${[...keys, "other"]
+            .map((key) => `${key} {${generate(depth - 1, inCase, index)}}`)
+            .join(" ")}}`;
+        } else {
+          const offset = arg === "m" ? " offset:1" : "";
+          const keys = ["=0", "=1", "one"].filter(() => random() < 0.4);
+          result += `{${arg}, plural,${offset} ${[...keys, "other"]
+            .map((key) => `${key} {${generate(depth - 1, "plural", index)}}`)
+            .join(" ")}}`;
+        }
+      }
+      return result;
+    };
+    const values = combinations({
+      n: counts,
+      m: [1, 5],
+      g: ["a", "b", "c"],
+      h: ["a", "c"],
+      x: ["X"],
+    });
+    for (let i = 0; i < 300; i++) {
+      const source = generate(2, "outside", 0);
+      const exported = serializeMessage(buildMessage(source));
+      const again = serializeMessage(buildMessage(exported));
+      const sourceFormat = new IntlMessageFormat(source, "en");
+      const exportFormat = new IntlMessageFormat(exported, "en");
+      const againFormat = new IntlMessageFormat(again, "en");
+      for (const combination of values) {
+        const expected = sourceFormat.format(combination);
+        expect(
+          exportFormat.format(combination),
+          `${source} -> ${exported}`,
+        ).toBe(expected);
+        expect(againFormat.format(combination), `${exported} -> ${again}`).toBe(
+          expected,
+        );
+      }
+    }
   });
 });

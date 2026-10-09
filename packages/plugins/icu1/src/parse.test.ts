@@ -354,4 +354,98 @@ describe("parseMessage", () => {
       { type: "variable-reference", name: "day" },
     ]);
   });
+
+  it("gives plurals nested on the same argument separate selectors", () => {
+    // a shared selector would merge the cases of both plurals
+    const parsed = parseMessage({
+      ...baseArgs,
+      messageSource:
+        "{n, plural, one {a} other {{n, plural, one {b} other {c}}}}",
+    });
+
+    expect(parsed.selectors.map((selector) => selector.name)).toEqual([
+      "nPlural",
+      "nPlural1",
+    ]);
+    expect(
+      parsed.variants.map((variant) => [variant.matches, variant.pattern]),
+    ).toEqual([
+      [
+        [{ type: "literal-match", key: "nPlural", value: "one" }],
+        [{ type: "text", value: "a" }],
+      ],
+      [
+        [
+          { type: "catchall-match", key: "nPlural" },
+          { type: "literal-match", key: "nPlural1", value: "one" },
+        ],
+        [{ type: "text", value: "b" }],
+      ],
+      [
+        [
+          { type: "catchall-match", key: "nPlural" },
+          { type: "catchall-match", key: "nPlural1" },
+        ],
+        [{ type: "text", value: "c" }],
+      ],
+    ]);
+  });
+
+  it("merges selects on the same argument", () => {
+    const parsed = parseMessage({
+      ...baseArgs,
+      messageSource:
+        "{g, select, a {A} other {O}} {g, select, a {A2} b {B2} other {O2}}",
+    });
+
+    expect(parsed.selectors.map((selector) => selector.name)).toEqual(["g"]);
+    expect(
+      parsed.variants.map((variant) => [
+        variant.matches,
+        variant.pattern
+          ?.map((part) => (part.type === "text" ? part.value : ""))
+          .join(""),
+      ]),
+    ).toEqual([
+      [[{ type: "literal-match", key: "g", value: "a" }], "A A2"],
+      [[{ type: "literal-match", key: "g", value: "b" }], "O B2"],
+      [[{ type: "catchall-match", key: "g" }], "O O2"],
+    ]);
+  });
+
+  it("orders a selector after the selectors it is nested in", () => {
+    // `h` occurs first, but is nested in `nPlural1` in another case
+    const parsed = parseMessage({
+      ...baseArgs,
+      messageSource:
+        "{n, plural, =0 {{h, select, other {x}}} =1 {{n, plural, =1 {y} other {{h, select, b {B} other {z}}}}} other {w}}",
+    });
+
+    expect(parsed.selectors.map((selector) => selector.name)).toEqual([
+      "nPluralExact",
+      "nPlural",
+      "nPlural1Exact",
+      "nPlural1",
+      "h",
+    ]);
+  });
+
+  it("parses a plural that only applies an offset as #", () => {
+    // the export writes a # with an offset outside of its plural so
+    const parsed = parseMessage({
+      ...baseArgs,
+      messageSource: "You and {n, plural, offset:1 other {#}} others",
+    });
+
+    expect(parsed.selectors).toEqual([]);
+    expect(parsed.variants[0]?.pattern?.[1]).toEqual({
+      type: "expression",
+      arg: { type: "variable-reference", name: "n" },
+      annotation: {
+        type: "function-reference",
+        name: "icu:pound",
+        options: [{ name: "offset", value: { type: "literal", value: "1" } }],
+      },
+    });
+  });
 });
