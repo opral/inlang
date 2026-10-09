@@ -247,6 +247,27 @@ export function isSingleNumberCategory(
 }
 
 /**
+ * True when a variant can never be selected in a locale: it matches a plural
+ * category the locale's rules never choose. i18next's `_zero` form
+ * (`countPlural=zero`, imported next to the exact `count=0`) is unreachable
+ * in German, English or French, whose rules select `other` for 0; Latvian
+ * `zero` (0, 10–20, 30…) is reachable. False when the plural rules are
+ * unknown, see {@link pluralRules}.
+ */
+export function isUnreachableVariant(
+	variant: WithMatches,
+	declarations: readonly Declaration[] | undefined,
+	locale: string
+): boolean {
+	return variant.matches.some((match) => {
+		if (match.type !== "literal-match" || !PLURAL_ORDER.includes(match.value))
+			return false;
+		const rules = pluralRules(match.key, declarations, locale);
+		return rules !== undefined && !rules.categories.includes(match.value);
+	});
+}
+
+/**
  * The selectors of a message, grouped by what a translator sees as one choice.
  *
  * Usually a group is one selector. The exception is an exact number next to a

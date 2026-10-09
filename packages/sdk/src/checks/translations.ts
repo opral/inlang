@@ -8,6 +8,7 @@ import {
 	isNumericKey,
 	isPluralSelector,
 	isSingleNumberCategory,
+	isUnreachableVariant,
 	matchValue,
 	missingVariants,
 	pluralRules,
@@ -131,6 +132,10 @@ export function closestName(
  * order of the variants they appear in, then missing selectors and variants.
  *
  * - `missing-translation`: no message, no variants, or every pattern is empty.
+ * - Variants for a plural category the target locale never selects, such as
+ *   i18next's `_zero` (`countPlural=zero`) in German, are skipped by the
+ *   variant checks below (`empty-variant`, `missing-variable`,
+ *   `unknown-variable`, `missing-markup`), see {@link isUnreachableVariant}.
  * - `empty-variant`: one variant's pattern is empty while another variant of
  *   the message has text, e.g. an ICU `=0 {}`. Checked without a reference too.
  * - `missing-variable`: a variable of the reference form with the same matches
@@ -230,6 +235,9 @@ export function checkTranslation(args: {
 		return forms;
 	};
 	for (const variant of target.variants) {
+		// A form for a plural category the locale never selects (i18next's `_zero` in German)
+		// is never shown: its text can't be wrong. Latvian `zero` (10–20) is checked as usual.
+		if (isUnreachableVariant(variant, declarations, target.locale)) continue;
 		if (isEmptyPattern(variant.pattern)) {
 			issues.push({
 				type: "empty-variant",

@@ -4,6 +4,7 @@ import type { Match } from "../database/schema.js";
 import { checkTranslation } from "./translations.js";
 import {
 	isPluralSelector,
+	isUnreachableVariant,
 	missingVariants,
 	pluralRules,
 	requiredVariants,
@@ -520,9 +521,211 @@ test("every fixture reference checked against itself is clean", () => {
 			"countPlural=one": [t("One item in "), v("folder")],
 			"countPlural=*": [v("count"), t(" items")],
 		}),
+		// i18next `_zero`: an exact `count=0` and the `zero` category English never selects
+		i18next("en", {
+			zero: [t("Your cart is empty")],
+			one: [v("count"), t(" item")],
+			other: [v("count"), t(" items")],
+		}),
 	];
 	for (const reference of references)
 		expect(
 			checkTranslation({ reference, target: reference, declarations: plural })
 		).toEqual([]);
+});
+
+/** The i18next plugin's import of `_zero`, `_one`, `_other`: `_zero` is two forms. */
+const i18next = (
+	locale: string,
+	forms: { zero: Pattern; one?: Pattern; other: Pattern; extra?: string[] }
+) =>
+	message(locale, ["count", "countPlural"], {
+		"count=0,countPlural=*": forms.zero,
+		"count=*,countPlural=zero": forms.zero,
+		...(forms.one ? { "count=*,countPlural=one": forms.one } : {}),
+		...Object.fromEntries(
+			(forms.extra ?? []).map((category) => [
+				`count=*,countPlural=${category}`,
+				forms.other,
+			])
+		),
+		"count=*,countPlural=other": forms.other,
+	});
+
+test("a plural category the locale never selects is not checked: i18next `_zero` in German and French", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	for (const locale of ["de", "fr"]) {
+		const target = i18next(locale, {
+			zero: [t("Leer")],
+			one: [v("count"), t(" Artikel")],
+			other: [v("count"), t(" Artikel")],
+		});
+		expect(
+			checkTranslation({ reference, target, declarations: plural })
+		).toEqual([]);
+	}
+	// nothing is reported for the unreachable form: not empty, unknown variables or markup
+	const de = message("de", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Leer")],
+		"count=*,countPlural=zero": [],
+		"count=*,countPlural=one": [v("count"), t(" Artikel")],
+		"count=*,countPlural=other": [v("count"), t(" Artikel")],
+	});
+	expect(
+		checkTranslation({ reference, target: de, declarations: plural })
+	).toEqual([]);
+	const markup = message("en", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Empty")],
+		"count=*,countPlural=zero": [
+			{ type: "markup-start", name: "b", options: [], attributes: [] },
+			t("Empty"),
+		],
+		"count=*,countPlural=one": [v("count"), t(" item")],
+		"count=*,countPlural=other": [v("count"), t(" items")],
+	} as never);
+	const typo = message("de", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Leer")],
+		"count=*,countPlural=zero": [v("cuont"), t(" Leer")],
+		"count=*,countPlural=one": [v("count"), t(" Artikel")],
+		"count=*,countPlural=other": [v("count"), t(" Artikel")],
+	});
+	expect(
+		checkTranslation({ reference: markup, target: typo, declarations: plural })
+	).toEqual([]);
+	// the exact number keeps its rule: it may spell the number out, other variables stay needed
+	const folder = i18next("en", {
+		zero: [t("Nothing in "), v("folder")],
+		other: [v("count"), t(" in "), v("folder")],
+	});
+	expect(
+		checkTranslation({
+			reference: folder,
+			target: i18next("de", {
+				zero: [t("Nichts")],
+				one: [v("count"), t(" in "), v("folder")],
+				other: [v("count"), t(" in "), v("folder")],
+			}),
+			declarations: plural,
+		})
+	).toEqual([
+		{
+			type: "missing-variable",
+			name: "folder",
+			variantId: "de:count=0,countPlural=*",
+		},
+	]);
+});
+
+test("a plural category the locale selects keeps every check: Latvian `zero` is 10–20", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	const latvian = message("lv", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Grozs ir tukšs")],
+		"count=*,countPlural=zero": [t("Grozs ir tukšs")],
+		"count=*,countPlural=one": [v("count"), t(" prece")],
+		"count=*,countPlural=other": [v("count"), t(" preces")],
+	});
+	expect(
+		checkTranslation({ reference, target: latvian, declarations: plural })
+	).toEqual([
+		{
+			type: "missing-variable",
+			name: "count",
+			variantId: "lv:count=*,countPlural=zero",
+		},
+	]);
+	const empty = message("lv", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("Grozs ir tukšs")],
+		"count=*,countPlural=zero": [],
+		"count=*,countPlural=one": [v("count"), t(" prece")],
+		"count=*,countPlural=other": [v("count"), t(" preces")],
+	});
+	expect(
+		types(checkTranslation({ reference, target: empty, declarations: plural }))
+	).toEqual(["empty-variant"]);
+});
+
+test("isUnreachableVariant: categories outside the locale's rules", () => {
+	const zero = { matches: [match("countPlural", "zero")] };
+	expect(isUnreachableVariant(zero, plural, "de")).toBe(true);
+	expect(isUnreachableVariant(zero, plural, "en")).toBe(true);
+	expect(isUnreachableVariant(zero, plural, "fr")).toBe(true);
+	expect(isUnreachableVariant(zero, plural, "lv")).toBe(false);
+	expect(isUnreachableVariant(zero, plural, "ar")).toBe(false);
+	// French `many` (millions) is rare, not unreachable
+	const many = { matches: [match("countPlural", "many")] };
+	expect(isUnreachableVariant(many, plural, "fr")).toBe(false);
+	expect(isUnreachableVariant(many, plural, "de")).toBe(true);
+	// numbers, the catch-all, other, non-plural selectors and unknown rules are reachable
+	expect(
+		isUnreachableVariant({ matches: [match("count", "0")] }, plural, "de")
+	).toBe(false);
+	expect(
+		isUnreachableVariant({ matches: [match("countPlural", "*")] }, plural, "de")
+	).toBe(false);
+	expect(
+		isUnreachableVariant(
+			{ matches: [match("countPlural", "other")] },
+			plural,
+			"de"
+		)
+	).toBe(false);
+	expect(
+		isUnreachableVariant({ matches: [match("gender", "zero")] }, plural, "de")
+	).toBe(false);
+	expect(isUnreachableVariant(zero, plural, "xx-invalid-")).toBe(false);
+});
+
+test("required and missing variants never demand i18next's `zero` where the locale never selects it", () => {
+	const reference = i18next("en", {
+		zero: [t("Your cart is empty")],
+		one: [v("count"), t(" item")],
+		other: [v("count"), t(" items")],
+	});
+	const keys = (forms: Match[][]) =>
+		forms.map((matches) =>
+			matches
+				.map((m) => `${m.key}=${m.type === "literal-match" ? m.value : "*"}`)
+				.join(",")
+		);
+	const options = { referenceVariants: reference.variants };
+	for (const locale of ["de", "fr", "en"]) {
+		const target = i18next(locale, {
+			zero: [t("0")],
+			one: [v("count")],
+			other: [v("count")],
+		});
+		const required = keys(requiredVariants(target, plural, options));
+		expect(required).not.toContainEqual(expect.stringContaining("zero"));
+		expect(required).toContain("count=0,countPlural=*");
+		expect(missingVariants(target, plural, options)).toEqual([]);
+		// a translation without the unreachable `zero` form is complete as well
+		const withoutZero = {
+			...target,
+			variants: target.variants.filter(
+				(variant) => !isUnreachableVariant(variant, plural, locale)
+			),
+		};
+		expect(withoutZero.variants).toHaveLength(3);
+		expect(missingVariants(withoutZero, plural, options)).toEqual([]);
+		expect(
+			checkTranslation({ reference, target: withoutZero, declarations: plural })
+		).toEqual([]);
+	}
+	// Latvian selects `zero` (0, 10–20, 30…): it is needed
+	const latvian = message("lv", ["count", "countPlural"], {
+		"count=0,countPlural=*": [t("0")],
+		"count=*,countPlural=one": [v("count")],
+		"count=*,countPlural=other": [v("count")],
+	});
+	expect(keys(missingVariants(latvian, plural, options))).toEqual([
+		"count=*,countPlural=zero",
+	]);
 });

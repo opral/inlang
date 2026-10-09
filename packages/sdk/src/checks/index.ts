@@ -22,6 +22,7 @@ export {
 	pluralRules,
 	pluralCategories,
 	isSingleNumberCategory,
+	isUnreachableVariant,
 	isPluralSelector,
 	isNumericKey,
 	matchValue,
