@@ -111,7 +111,7 @@ export async function loadProject(args: {
 				db,
 			});
 		},
-		exportFiles: async ({ pluginKey }) => {
+		exportFiles: async ({ pluginKey, files }) => {
 			const settingsFile = await readLixFile(args.lix, "/settings.json");
 
 			const settings = JSON.parse(
@@ -125,6 +125,7 @@ export async function loadProject(args: {
 					settings,
 					// TODO don't use global state, might be stale
 					plugins,
+					files,
 				})
 			).map((output) => ({ ...output, pluginKey }));
 		},

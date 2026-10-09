@@ -1,14 +1,17 @@
 import type nodeFs from "node:fs";
 import type fs from "node:fs/promises";
-import type { InlangProject } from "./api.js";
+import type { ExistingFile, InlangProject } from "./api.js";
 import path from "node:path";
 import { toMessageV1 } from "../json-schema/old-v1-message/toMessageV1.js";
 import { absolutePathFromProject, withAbsolutePaths } from "./path-helpers.js";
 import { detectJsonFormatting } from "../utilities/detectJsonFormatting.js";
+import { guessJsonIndent } from "../utilities/guessJsonIndent.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import { README_CONTENT } from "./README_CONTENT.js";
 import { selectPluginRows } from "../import-export/pluginRows.js";
 import { ENV_VARIABLES } from "../services/env-variables/index.js";
+import type { InlangPlugin } from "../plugin/schema.js";
+import type { ProjectSettings } from "../json-schema/settings.js";
 import { compareSemver, pickHighestVersion, readProjectMeta } from "./meta.js";
 
 async function fileExists(fsModule: typeof fs, filePath: string) {
@@ -57,6 +60,59 @@ async function assertTranslationDataCanBeExported(project: InlangProject) {
 			"saveProjectToDirectory cannot write bundles, messages, or variants without an import/export plugin. Add a plugin to settings.modules/providePlugins, or save the canonical .inlang file with project.toBlob()."
 		);
 	}
+}
+
+/**
+ * Reads the files that `plugin.toBeImportedFiles` lists, i.e. the files that
+ * the plugin's export overwrites, if they exist.
+ */
+async function readExistingFiles(args: {
+	fs: typeof fs;
+	projectPath: string;
+	plugin: InlangPlugin;
+	settings: ProjectSettings;
+}): Promise<ExistingFile[] | undefined> {
+	if (!args.plugin.toBeImportedFiles) {
+		return undefined;
+	}
+	let toBeImportedFiles: Awaited<
+		ReturnType<NonNullable<InlangPlugin["toBeImportedFiles"]>>
+	>;
+	try {
+		toBeImportedFiles = await args.plugin.toBeImportedFiles({
+			settings: args.settings,
+		});
+	} catch {
+		// without the list, the plugin writes whole files as before
+		return undefined;
+	}
+	const result: ExistingFile[] = [];
+	for (const file of toBeImportedFiles) {
+		try {
+			const content = await args.fs.readFile(
+				absolutePathFromProject(args.projectPath, file.path)
+			);
+			result.push({
+				path: file.path,
+				locale: file.locale,
+				content: new Uint8Array(content),
+				metadata: file.metadata,
+			});
+		} catch {
+			// the file doesn't exist (yet) or can't be read
+		}
+	}
+	return result;
+}
+
+/**
+ * Whether `exported` has the indentation and final newline of `existing`.
+ */
+function hasSameJsonFormatting(existing: string, exported: string): boolean {
+	return (
+		guessJsonIndent(existing) === guessJsonIndent(exported) &&
+		existing.endsWith("\n") === exported.endsWith("\n")
+	);
 }
 
 /**
@@ -185,6 +241,14 @@ export async function saveProjectToDirectory(args: {
 				messages,
 				variants,
 				settings,
+				// the files as they are on disk, so that the plugin can keep the
+				// text of unchanged entries
+				files: await readExistingFiles({
+					fs: fsModule,
+					projectPath: args.path,
+					plugin,
+					settings,
+				}),
 			});
 			for (const file of files) {
 				const pathPattern = settings[plugin.key]?.pathPattern;
@@ -226,13 +290,14 @@ export async function saveProjectToDirectory(args: {
 					if (p.endsWith(".json")) {
 						try {
 							const existing = await fsModule.readFile(p, "utf-8");
-							const stringify = detectJsonFormatting(existing);
-							await fsModule.writeFile(
-								p,
-								new TextEncoder().encode(
-									stringify(JSON.parse(new TextDecoder().decode(file.content)))
-								)
-							);
+							const exported = new TextDecoder().decode(file.content);
+							// A plugin that kept the formatting of the existing file
+							// (see `files` of `exportFiles`) is written as is. Other
+							// plugins' output is indented like the existing file.
+							const content = hasSameJsonFormatting(existing, exported)
+								? exported
+								: detectJsonFormatting(existing)(JSON.parse(exported));
+							await fsModule.writeFile(p, new TextEncoder().encode(content));
 						} catch {
 							// write the file to disk (json doesn't exist yet)
 							// yeah ugly duplication of write file but it works.

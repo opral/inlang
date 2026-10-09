@@ -31,6 +31,15 @@ export type InlangProject = {
 	}) => Promise<void>;
 	exportFiles: (args: {
 		pluginKey: InlangPlugin["key"];
+		/**
+		 * The current content of the files the plugin writes, if they exist.
+		 *
+		 * Plugins that support it keep the text of every entry that didn't
+		 * change, so that an export only changes the bytes of edited messages.
+		 * Pass the files the plugin lists in `toBeImportedFiles`. See
+		 * `ExistingFile`.
+		 */
+		files?: ExistingFile[];
 	}) => Promise<ExportFile[]>;
 	close: () => Promise<void>;
 	toBlob: () => Promise<Blob>;
@@ -48,6 +57,25 @@ export type ImportFile = {
 	 * https://github.com/opral/inlang/issues/218
 	 */
 	toBeImportedFilesMetadata?: Record<string, any>;
+};
+
+/**
+ * A translation file as it is before an export overwrites it, e.g. on disk
+ * or in a git repository.
+ *
+ * `path`, `locale` and `metadata` are the ones the plugin returns from
+ * `toBeImportedFiles`, so that a plugin can match an exported file with the
+ * file it replaces.
+ */
+export type ExistingFile = {
+	/** The path as returned by `toBeImportedFiles`. */
+	path: string;
+	/** The locale of the file. */
+	locale: string;
+	/** The binary content of the file. */
+	content: Uint8Array;
+	/** The metadata as returned by `toBeImportedFiles`. */
+	metadata?: Record<string, any>;
 };
 
 export type ExportFile = {

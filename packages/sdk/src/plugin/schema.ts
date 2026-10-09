@@ -10,7 +10,7 @@ import type {
 	NewVariant,
 	Variant,
 } from "../database/schema.js";
-import type { ExportFile, ImportFile } from "../project/api.js";
+import type { ExistingFile, ExportFile, ImportFile } from "../project/api.js";
 
 export type InlangPlugin<
 	ExternalSettings extends Record<string, any> | unknown = unknown,
@@ -62,11 +62,23 @@ export type InlangPlugin<
 		messages: MessageImport[];
 		variants: VariantImport[];
 	}>;
+	/**
+	 * Files that should be written by the inlang SDK.
+	 *
+	 * - `files` are the current contents of the files that the export
+	 *   overwrites, as listed by `toBeImportedFiles`. Only files that exist are
+	 *   passed. A plugin should keep the text of every entry whose message
+	 *   didn't change, and the formatting of the file, so that an export only
+	 *   changes the bytes of edited messages. `files` is optional: older hosts
+	 *   (SDK 3) don't pass it, and a new file has no previous content. Without
+	 *   a previous file, plugins write the whole file.
+	 */
 	exportFiles?: (args: {
 		bundles: Bundle[];
 		messages: Message[];
 		variants: Variant[];
 		settings: ProjectSettings & ExternalSettings;
+		files?: ExistingFile[];
 	}) => MaybePromise<Array<ExportFile>>;
 	/**
 	 * @deprecated Use the `meta` field instead.

@@ -727,6 +727,148 @@ test("it should preserve the formatting of existing json resource files", async 
 	expect(fileAfterSave).toBe(mockJson);
 });
 
+test("passes the existing files of toBeImportedFiles to exportFiles", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => []
+	);
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		toBeImportedFiles: async ({ settings }) =>
+			settings.locales.flatMap((locale) => [
+				{
+					path: `./${locale}/common.json`,
+					locale,
+					metadata: { namespace: "common" },
+				},
+				{
+					path: `./${locale}/app.json`,
+					locale,
+					metadata: { namespace: "app" },
+				},
+			]),
+		exportFiles,
+	};
+	const volume = Volume.fromJSON({
+		"/foo/en/common.json": '{ "hello": "Hello" }',
+		"/foo/de/app.json": '{ "title": "Meine App" }',
+	});
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: { baseLocale: "en", locales: ["en", "de"], modules: [] },
+		}),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		fs: volume.promises as any,
+		project,
+		path: "/foo/project.inlang",
+	});
+
+	expect(exportFiles).toHaveBeenCalledTimes(1);
+	const files = exportFiles.mock.calls[0]![0].files!;
+	// files that don't exist are left out
+	expect(
+		files.map((file) => ({
+			...file,
+			content: new TextDecoder().decode(file.content),
+		}))
+	).toEqual([
+		{
+			path: "./en/common.json",
+			locale: "en",
+			content: '{ "hello": "Hello" }',
+			metadata: { namespace: "common" },
+		},
+		{
+			path: "./de/app.json",
+			locale: "de",
+			content: '{ "title": "Meine App" }',
+			metadata: { namespace: "app" },
+		},
+	]);
+});
+
+test("passes no files to exportFiles if the plugin has no toBeImportedFiles", async () => {
+	const exportFiles = vi.fn<NonNullable<InlangPlugin["exportFiles"]>>(
+		async () => []
+	);
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [{ key: "mock", exportFiles }],
+	});
+
+	await saveProjectToDirectory({
+		fs: Volume.fromJSON({}).promises as any,
+		project,
+		path: "/foo/project.inlang",
+	});
+
+	expect(exportFiles.mock.calls[0]![0].files).toBeUndefined();
+});
+
+test("writes json as exported if it has the indentation and final newline of the existing file", async () => {
+	// e.g. a plugin that kept unchanged entries of the existing file as they were
+	const existing = '{\n  "a": ["x",  "y"],\n  "b": "\\u00e9"\n}\n';
+	const exported = '{\n  "a": ["x",  "y"],\n  "b": "changed"\n}\n';
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		exportFiles: async () => [
+			{
+				name: "en.json",
+				locale: "en",
+				content: new TextEncoder().encode(exported),
+			},
+		],
+	};
+	const volume = Volume.fromJSON({ "/foo/en.json": existing });
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		path: "/foo/project.inlang",
+		fs: volume.promises as any,
+		project,
+	});
+
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe(
+		exported
+	);
+});
+
+test("indents exported json like the existing file if the indentation differs", async () => {
+	const existing = '{\n  "a": "x"\n}\n';
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		exportFiles: async () => [
+			{
+				name: "en.json",
+				locale: "en",
+				content: new TextEncoder().encode(
+					JSON.stringify({ a: "y", b: ["z"] }, undefined, "\t")
+				),
+			},
+		],
+	};
+	const volume = Volume.fromJSON({ "/foo/en.json": existing });
+	const project = await loadProjectInMemory({
+		blob: await newProject(),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		path: "/foo/project.inlang",
+		fs: volume.promises as any,
+		project,
+	});
+
+	expect(await volume.promises.readFile("/foo/en.json", "utf-8")).toBe(
+		JSON.stringify({ a: "y", b: ["z"] }, undefined, 2) + "\n"
+	);
+});
+
 test("adds a gitignore file if it doesn't exist", async () => {
 	const fs = Volume.fromJSON({});
 

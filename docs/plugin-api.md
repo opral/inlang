@@ -162,6 +162,9 @@ exportFiles: async ({ bundles, messages, variants, settings }) => {
 - `messages` — All messages
 - `variants` — All variants
 - `settings` — Project settings
+- `files` _(optional)_ — The current content of the files the export overwrites: `{ path, locale, content, metadata? }`, where `path`, `locale` and `metadata` are the ones `toBeImportedFiles` returned. Only files that exist are passed. Hosts that don't support it (SDK 3) and exports of new files pass none.
+
+**Keep unchanged entries.** An export should only change the bytes of the messages that changed, so that saving a project doesn't rewrite translation files in git. If `files` has the file that an exported file replaces, keep the text of every entry whose message didn't change, the key order of the file and its formatting (indentation, final newline, line endings), and only write the entries that changed, were added or were removed. Compare messages by what they import to, not by their text: a file can use another representation than the plugin writes, e.g. a legacy shape or other escaping. Without a previous file, write the whole file.
 
 **Returns:** Array of files to write:
 

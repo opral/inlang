@@ -20,7 +20,7 @@ export * from "./plugin/errors.js";
 export { humanId } from "./human-id/human-id.js";
 export type { InlangDatabaseSchema } from "./database/schema.js";
 export { executeLixBatch } from "./database/lixBatch.js";
-export type { ImportFile, ExportFile } from "./project/api.js";
+export type { ImportFile, ExportFile, ExistingFile } from "./project/api.js";
 export type {
 	InlangPlugin,
 	BundleImport,
