@@ -60,7 +60,7 @@ describe("export with the existing file", () => {
       setText(data, "cancel", "Abbrechen");
     });
     expect(output).toBe(
-      previous.replace('"cancel"="Cancel" ;', '"cancel" = "Abbrechen";'),
+      previous.replace('"cancel"="Cancel" ;', '"cancel"="Abbrechen" ;'),
     );
   });
 
@@ -127,7 +127,8 @@ describe("export with the existing file", () => {
       previous.replace('"cancel"="Cancel" ;\t// trailing comment\n', ""),
     );
     expect(reexport(previous, (data) => removeMessage(data, "done"))).toBe(
-      previous.replace('// the button\n"done";\n', ""),
+      // the comment is followed by another entry: a heading, kept
+      previous.replace('"done";\n', ""),
     );
     expect(reexport(previous, (data) => removeMessage(data, "z.last"))).toBe(
       previous.replace('"z.last" = "Zed";\n', ""),
@@ -145,6 +146,55 @@ describe("export with the existing file", () => {
     expect(reexport(oneLine, (data) => removeMessage(data, "c"))).toBe(
       '"a" = "A"; "b" = "B";\n',
     );
+  });
+
+  test("a heading or license comment above the first entry of a group is kept", () => {
+    const grouped = `/* Copyright 2026 Example */
+"a" = "A";
+"b" = "B";
+
+/* Login */
+"login" = "Log in";
+"logout" = "Log out";
+`;
+    expect(reexport(grouped, (data) => removeMessage(data, "a"))).toBe(
+      grouped.replace('"a" = "A";\n', ""),
+    );
+    expect(reexport(grouped, (data) => removeMessage(data, "login"))).toBe(
+      grouped.replace('"login" = "Log in";\n', ""),
+    );
+    // the last entry of a group takes its comment along
+    expect(
+      reexport(grouped, (data) => {
+        removeMessage(data, "login");
+        removeMessage(data, "logout");
+      }),
+    ).toBe(
+      grouped.replace(
+        '\n/* Login */\n"login" = "Log in";\n"logout" = "Log out";\n',
+        "",
+      ),
+    );
+    // a new first entry is inserted below the heading
+    expect(reexport(grouped, (data) => addMessage(data, "0", "Zero"))).toBe(
+      grouped.replace('"a" = "A";', '"0" = "Zero";\n"a" = "A";'),
+    );
+  });
+
+  test("an edit keeps a comment inside the entry and the spacing around the value", () => {
+    const inline = '"b" /* inline */ = "B" ;\n';
+    expect(reexport(inline, (data) => setText(data, "b", "Bee"))).toBe(
+      '"b" /* inline */ = "Bee" ;\n',
+    );
+  });
+
+  test("removing the last entry and adding one keeps a missing final line break", () => {
+    expect(
+      reexport('"a" = "A";\n"b" = "B";', (data) => {
+        removeMessage(data, "b");
+        addMessage(data, "c", "C");
+      }),
+    ).toBe('"a" = "A";\n"c" = "C";');
   });
 
   test("blocks separated by empty lines stay separated by one empty line", () => {
@@ -217,7 +267,12 @@ describe("export with the existing file", () => {
         addMessage(data, "b", "B");
         addMessage(data, "a", "A");
       }),
-    ).toBe('/* no strings yet */\n"a" = "A";\n"b" = "B";\n');
+    ).toBe('/* no strings yet */\n"a" = "A";\n"b" = "B";');
+    expect(
+      reexport("/* no strings yet */\n", (data) => {
+        addMessage(data, "a", "A");
+      }),
+    ).toBe('/* no strings yet */\n"a" = "A";\n');
   });
 
   test("no existing file writes the full export as before", () => {

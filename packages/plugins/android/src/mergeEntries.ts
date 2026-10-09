@@ -10,10 +10,14 @@
  *
  * - An entry whose text in `previous` equals the one in `next` keeps its
  *   original text.
- * - A changed entry is replaced by its text in `next`. Entries with children
+ * - A changed entry is replaced by its text in `next`, or only its value if
+ *   the plugin provides the position of the value. Entries with children
  *   (e.g. the items of Android plurals) are merged child by child.
- * - Removed entries are removed with the comment directly above them and their
- *   line.
+ * - Removed entries are removed with their line, and with the comment
+ *   directly above them if it belongs to the entry alone, i.e. if the entry
+ *   is the last of its group (followed by an empty line, a comment, the end
+ *   of the block or of the file). Otherwise the comment is a heading of the
+ *   entries below it and is kept.
  * - New entries are inserted after the entry that precedes them in `next`.
  * - Everything else (whitespace, comments, text that is not an entry) is kept.
  */
@@ -24,6 +28,8 @@ export type Entry = {
   start: number;
   /** offset after the last character of the entry */
   end: number;
+  /** The position of the value, if only the value is written on a change. */
+  valueRange?: { start: number; end: number };
   children?: Entry[];
 };
 
@@ -36,6 +42,8 @@ export type EntryText = {
    * the first line.
    */
   text: string;
+  /** The text of the value, see `Entry.valueRange`. */
+  valueText?: string;
   /** The text of the entry without its children, if it has children. */
   shell?: string;
   children?: Map<string, EntryText>;
@@ -64,7 +72,11 @@ export function mergeEntries(args: {
   const newline = args.text.includes("\r\n") ? "\r\n" : "\n";
   const edits = mergeLevel({ ...args, newline });
   if (edits === undefined) return undefined;
-  return applyEdits(args.text, edits);
+  const result = applyEdits(args.text, edits);
+  // a file without a final line break, e.g. after its last entry was removed
+  return args.text !== "" && !args.text.endsWith("\n")
+    ? result.replace(/\r?\n$/, "")
+    : result;
 }
 
 function mergeLevel(args: {
@@ -89,12 +101,25 @@ function mergeLevel(args: {
       newline: args.newline,
     });
 
+  // removed entries, in runs of entries that directly follow each other
+  const removed = entries.filter((entry) => !next.has(entry.key));
+  const runs: Entry[][] = [];
+  for (const entry of removed) {
+    const run = runs[runs.length - 1];
+    const last = run?.[run.length - 1];
+    if (
+      last !== undefined &&
+      nextToken(text, last, args.comments) === entry.start
+    )
+      run!.push(entry);
+    else runs.push([entry]);
+  }
+  for (const run of runs)
+    edits.push(removal(text, run, args.comments, removed));
+
   for (const entry of entries) {
     const nextEntry = next.get(entry.key);
-    if (nextEntry === undefined) {
-      edits.push(removal(text, entry, args.comments));
-      continue;
-    }
+    if (nextEntry === undefined) continue;
     const previousEntry = previous.get(entry.key);
     if (previousEntry?.text === nextEntry.text) {
       continue;
@@ -117,6 +142,10 @@ function mergeLevel(args: {
         edits.push(...childEdits);
         continue;
       }
+    }
+    if (entry.valueRange !== undefined && nextEntry.valueText !== undefined) {
+      edits.push({ ...entry.valueRange, text: nextEntry.valueText });
+      continue;
     }
     edits.push({
       start: entry.start,
@@ -201,10 +230,18 @@ function entrySeparator(
   return newline + (entries[0] ? lineIndent(text, entries[0].start) : "");
 }
 
-/** The edit that removes an entry, the comment directly above it and its line. */
-function removal(text: string, entry: Entry, comments: Comment[]): Edit {
-  let start = blockStart(text, entry, comments);
-  let end = blockEnd(text, entry, comments);
+/**
+ * The edit that removes entries that directly follow each other, the comment
+ * directly above them if it belongs to them and their lines.
+ */
+function removal(
+  text: string,
+  run: Entry[],
+  comments: Comment[],
+  removed: Entry[],
+): Edit {
+  let start = blockStart(text, run[0]!, comments, removed);
+  let end = blockEnd(text, run[run.length - 1]!, comments);
   const lineStart = text.lastIndexOf("\n", start - 1) + 1;
   const afterEnd = /^[ \t]*(\r?\n|$)/.exec(text.slice(end));
   if (/^[ \t]*$/.test(text.slice(lineStart, start)) && afterEnd !== null) {
@@ -214,16 +251,16 @@ function removal(text: string, entry: Entry, comments: Comment[]): Edit {
     const blankBefore =
       start === 0 || /\n[ \t]*\r?\n$/.test(text.slice(0, start));
     const blankAfter = /^[ \t]*\r?\n/.exec(text.slice(end));
+    const blankLineBefore = /\n[ \t]*\r?\n$/.exec(text.slice(0, start));
     if (blankBefore && blankAfter !== null) {
       // the entry was a block between empty lines
       end += blankAfter[0].length;
     } else if (
-      blankAfter === null &&
-      end === text.length &&
-      /\n[ \t]*\r?\n$/.test(text.slice(0, start))
+      blankLineBefore !== null &&
+      (end === text.length || /^[ \t]*<\//.test(text.slice(end)))
     ) {
-      // the last block of the file: remove the empty line before it
-      start -= text.slice(0, start).endsWith("\r\n") ? 2 : 1;
+      // the last block of the file or element: remove the empty line before
+      start -= blankLineBefore[0].length - 1;
     }
     return { start, end, text: "" };
   }
@@ -236,6 +273,15 @@ function removal(text: string, entry: Entry, comments: Comment[]): Edit {
   }
   const before = /[ \t]*$/.exec(text.slice(0, start))![0];
   return { start: start - before.length, end, text: "" };
+}
+
+/**
+ * The offset of what follows an entry on the same or the next line, after
+ * whitespace.
+ */
+function nextToken(text: string, entry: Entry, comments: Comment[]): number {
+  const end = blockEnd(text, entry, comments);
+  return end + /^[ \t]*(\r?\n)?[ \t]*/.exec(text.slice(end))![0].length;
 }
 
 /** The end of an entry, including a comment after it on the same line. */
@@ -251,8 +297,17 @@ function blockEnd(text: string, entry: Entry, comments: Comment[]): number {
     : entry.end;
 }
 
-/** The start of an entry, including the comment directly above it. */
-function blockStart(text: string, entry: Entry, comments: Comment[]): number {
+/**
+ * The start of an entry, including the comment directly above it if the
+ * comment belongs to the entry alone, or to the entry and the entries below
+ * it that are `removed` too.
+ */
+function blockStart(
+  text: string,
+  entry: Entry,
+  comments: Comment[],
+  removed: Entry[] = [],
+): number {
   const comment = comments.find(
     (candidate) =>
       candidate.end <= entry.start &&
@@ -261,9 +316,25 @@ function blockStart(text: string, entry: Entry, comments: Comment[]): number {
   if (comment === undefined) return entry.start;
   // only a comment that starts its line
   const lineStart = text.lastIndexOf("\n", comment.start - 1) + 1;
-  return /^[ \t]*$/.test(text.slice(lineStart, comment.start))
-    ? comment.start
-    : entry.start;
+  if (!/^[ \t]*$/.test(text.slice(lineStart, comment.start)))
+    return entry.start;
+  // Only if the entry is the last of its group. If the next line is another
+  // entry (or other text), the comment is a heading of the group.
+  let last = entry;
+  for (;;) {
+    const next = nextToken(text, last, comments);
+    if (
+      next === text.length ||
+      /^\r?\n/.test(text.slice(next)) ||
+      text.startsWith("</", next) ||
+      comments.some((candidate) => candidate.start === next)
+    )
+      return comment.start;
+    // the entries below are removed too
+    const below = removed.find((candidate) => candidate.start === next);
+    if (below === undefined) return entry.start;
+    last = below;
+  }
 }
 
 /** The indentation of the line that contains `offset`. */

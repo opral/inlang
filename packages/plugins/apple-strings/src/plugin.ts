@@ -153,7 +153,12 @@ function entryTexts(text: string): Map<string, EntryText> {
   return new Map(
     scanStringsFile(text).entries.map((entry) => [
       entry.key,
-      { text: text.slice(entry.start, entry.end) },
+      {
+        text: text.slice(entry.start, entry.end),
+        valueText:
+          entry.valueRange &&
+          text.slice(entry.valueRange.start, entry.valueRange.end),
+      },
     ]),
   );
 }
@@ -284,12 +289,14 @@ function scanStringsFile(source: string) {
     }
     if (source[cursor++] !== "=") throw new Error(`Expected = after "${key}"`);
     whitespaceAndComments();
+    const valueStart = cursor;
     const value = unescapeString(quoted());
+    const valueRange = { start: valueStart, end: cursor };
     whitespaceAndComments();
     if (source[cursor++] !== ";") throw new Error(`Expected ; after "${key}"`);
     if (entries.some((entry) => entry.key === key))
       throw new Error(`Duplicate Apple .strings key "${key}"`);
-    entries.push({ key, value, start, end: cursor });
+    entries.push({ key, value, start, end: cursor, valueRange });
     whitespaceAndComments();
   }
   return { entries, comments };

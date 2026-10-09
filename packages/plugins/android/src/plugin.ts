@@ -226,7 +226,13 @@ function keepUnchangedEntriesOfFile(args: {
   });
   if (result === undefined) return undefined;
   // Only use the result if it imports to what the full export imports to.
-  if (canonical(result) !== canonical(exportedText)) return undefined;
+  if (
+    !sameEntries(
+      entryTexts(canonical(result)),
+      entryTexts(canonical(exportedText)),
+    )
+  )
+    return undefined;
   return encode(result);
 }
 
@@ -264,6 +270,34 @@ function entryTexts(text: string): Map<string, EntryText> {
     });
   }
   return result;
+}
+
+/**
+ * Whether two files the plugin writes have the same elements, regardless of
+ * the order of elements and plural items.
+ */
+function sameEntries(
+  a: Map<string, EntryText>,
+  b: Map<string, EntryText>,
+): boolean {
+  if (a.size !== b.size) return false;
+  for (const [key, entry] of a) {
+    const other = b.get(key);
+    if (other === undefined) return false;
+    if (entry.children === undefined || other.children === undefined) {
+      if (entry.text !== other.text) return false;
+      continue;
+    }
+    if (
+      entry.shell !== other.shell ||
+      entry.children.size !== other.children.size ||
+      [...entry.children].some(
+        ([quantity, item]) => other.children!.get(quantity)?.text !== item.text,
+      )
+    )
+      return false;
+  }
+  return true;
 }
 
 /** Bundles, messages and variants with ids from the result of an import. */

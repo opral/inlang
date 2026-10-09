@@ -194,10 +194,12 @@ describe("export with the existing file", () => {
     );
   });
 
-  test("removed messages are removed with their comment and line", () => {
+  test("removed messages are removed with their line", () => {
+    // the comment is followed by another element after the removed one, so
+    // it may be a heading of a group: kept
     expect(reexport(previous, (data) => removeMessage(data, "welcome"))).toBe(
       previous.replace(
-        '    <!-- Shown on the home screen -->\n    <string name="welcome">Hello %1$s, it\\\'s &lt;great&gt; &amp; fun&#8230;</string>\n',
+        '    <string name="welcome">Hello %1$s, it\\\'s &lt;great&gt; &amp; fun&#8230;</string>\n',
         "",
       ),
     );
@@ -213,6 +215,75 @@ describe("export with the existing file", () => {
     expect(reexport(previous, (data) => removeMessage(data, "about"))).toBe(
       previous.replace('    <string name="about">"About   us"</string>\n', ""),
     );
+  });
+
+  test("a comment goes with a removed element only if it belongs to it alone", () => {
+    const grouped = `<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Copyright 2026 Example -->
+    <string name="a">A</string>
+    <string name="b">B</string>
+
+    <!-- Login -->
+    <string name="login">Log in</string>
+    <string name="logout">Log out</string>
+
+    <!-- The title -->
+    <string name="title">Title</string>
+
+    <!-- The footer -->
+    <string name="z">Z</string>
+</resources>
+`;
+    // headings of groups are kept
+    expect(reexport(grouped, (data) => removeMessage(data, "a"))).toBe(
+      grouped.replace('    <string name="a">A</string>\n', ""),
+    );
+    expect(reexport(grouped, (data) => removeMessage(data, "login"))).toBe(
+      grouped.replace('    <string name="login">Log in</string>\n', ""),
+    );
+    // a comment of one element, followed by an empty line or the end of
+    // <resources>, goes with it, as does the heading of a removed group
+    expect(reexport(grouped, (data) => removeMessage(data, "title"))).toBe(
+      grouped.replace(
+        '    <!-- The title -->\n    <string name="title">Title</string>\n\n',
+        "",
+      ),
+    );
+    expect(reexport(grouped, (data) => removeMessage(data, "z"))).toBe(
+      grouped.replace(
+        '\n    <!-- The footer -->\n    <string name="z">Z</string>\n',
+        "",
+      ),
+    );
+    expect(
+      reexport(grouped, (data) => {
+        removeMessage(data, "login");
+        removeMessage(data, "logout");
+      }),
+    ).toBe(
+      grouped.replace(
+        '    <!-- Login -->\n    <string name="login">Log in</string>\n    <string name="logout">Log out</string>\n\n',
+        "",
+      ),
+    );
+  });
+
+  test("the order of plural items doesn't matter for the check", () => {
+    const reversed = `<resources>
+    <plurals name="items">
+        <item quantity="other">%d items</item>
+        <item quantity="one">%d item</item>
+    </plurals>
+    <string name="s">S</string>
+</resources>`;
+    expect(
+      reexport(reversed, (data) => {
+        setText(data, "s", "Ess");
+        // the new data lists the variants in another order than the file
+        data.variants.reverse();
+      }),
+    ).toBe(reversed.replace(">S<", '>"Ess"<'));
   });
 
   test("messages added to a file without messages are inserted before </resources>", () => {
@@ -340,10 +411,12 @@ function reexport(text: string, edit?: (data: Data) => void): string {
     files: [{ path, locale: "en", content: encode(text) }],
   }) as Array<{ content: Uint8Array }>;
   const output = decode(file!.content);
-  // the plugin reads the result as the full export
+  // the plugin reads the result as the full export (in any order)
   const [full] = plugin.exportFiles!({ settings, ...data }) as (typeof file)[];
-  expect(exportOf(importAndroid(output))).toBe(
-    exportOf(importAndroid(decode(full!.content))),
+  expect(exportOf(importAndroid(output)).split("\n").sort()).toEqual(
+    exportOf(importAndroid(decode(full!.content)))
+      .split("\n")
+      .sort(),
   );
   return output;
 }
