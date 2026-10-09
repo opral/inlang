@@ -30,13 +30,13 @@ Run commands from the repo root. Replace \`./project.inlang\` with the path to t
 | Check translations: missing or empty translations, placeholder and plural mismatches, unused messages | \`npx @inlang/cli check --project ./project.inlang\`. Exits 1 on findings, so it works as a CI step. Formerly \`validate\` / \`lint\`. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#check) |
 | Fail CI only on missing translations, for some locales | \`npx @inlang/cli check --project ./project.inlang --missing-translations --locales de\` |
 | Find unused messages | \`npx @inlang/cli check --project ./project.inlang --unused-messages\`. It scans the source code for Paraglide \`m.*\` calls via the \`m-function-matcher\` plugin. |
-| Machine translate missing messages | \`npx @inlang/cli machine translate --project ./project.inlang\` (optionally \`--targetLocales de\`). Uses Google or DeepL if \`INLANG_GOOGLE_TRANSLATE_API_KEY\` or \`INLANG_DEEPL_API_KEY\` is set, otherwise a free third-party service ([BYOK](https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok) for your own key). Review the output before shipping. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#machine-translate) |
+| Machine translate missing messages | \`npx @inlang/cli machine translate --project ./project.inlang\` (optionally \`--targetLocales de\`). Uses Google or DeepL if \`INLANG_GOOGLE_TRANSLATE_API_KEY\` or \`INLANG_DEEPL_API_KEY\` is set, otherwise a free third-party service ([bring your own key](https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok)). Review the output before shipping. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#machine-translate) |
 | Add a locale | Add it to \`locales\` in \`settings.json\`, then create its translation file or machine translate it. |
 | Switch the file format (JSON, i18next, ICU MessageFormat, XLIFF, ...) | Replace the format plugin in \`modules\` and its settings key ([plugins](https://inlang.com/c/plugins)). Existing files are not converted automatically. |
 | Let translators edit without touching JSON | [Fink](https://inlang.com/m/tdozzpar/app-inlang-finkLocalizationEditor), a translation editor that works on this project |
 | Use translations in Figma | [Parrot](https://inlang.com/m/gkrpgoir/app-parrot-figmaPlugin), a Figma plugin |
 | See translations inline and extract strings in VS Code | [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension), a VS Code extension |
-| Hosted sync between designers, translators and developers; AI translation in your tone of voice | \`npx @inlang/cli cloud\` lists the hosted services. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#cloud) |
+| Optional hosted services: sync between designers, translators and developers; AI translation in your tone of voice | \`npx @inlang/cli cloud\` lists them. Git stays the source of truth. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#cloud) |
 
 See \`npx @inlang/cli check --help\` for all checks and \`--format json\`. Add \`@inlang/cli\` as a dev dependency to pin the version in CI. If a command is missing, use \`npx @inlang/cli@latest\`. More tools: [inlang.com/c/tools](https://inlang.com/c/tools).
 
