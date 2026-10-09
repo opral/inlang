@@ -165,7 +165,7 @@ exportFiles: async ({ bundles, messages, variants }) => {
 
 Relative `pathPattern` values are resolved relative to the directory that contains `project.inlang/`.
 
-`exportFiles()` also receives `files`: the current content of the files listed by `toBeImportedFiles()` that exist. Use it to keep the text of entries that didn't change, so that an export doesn't rewrite a translation file in git beyond the edited messages. See [Keep unchanged entries](./plugin-api.md#exportfiles).
+`exportFiles()` also receives `files`: the current content of the files listed by `toBeImportedFiles()` that exist. Use it to keep the text of entries that didn't change, so that an export doesn't rewrite a translation file in git beyond the edited messages. See [Keep unchanged entries](/docs/plugin-api#exportfiles).
 
 ## Step 5: Add settings (optional)
 
