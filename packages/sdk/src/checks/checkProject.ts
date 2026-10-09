@@ -1,7 +1,7 @@
 import type { Kysely } from "kysely";
 import type { InlangDatabaseSchema } from "../database/schema.js";
 import type { CheckId, CheckProjectArgs, CheckResult } from "./types.js";
-import { projectUsage } from "./usage.js";
+import { copyIssue, projectUsage } from "./usage.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import type { BundleNested } from "../database/schema.js";
 import { checkBundle } from "./checkBundle.js";
@@ -45,7 +45,7 @@ export async function checkProject(
 				? {
 						...usage.check,
 						...(usage.check.issues
-							? { issues: usage.check.issues.map((issue) => ({ ...issue })) }
+							? { issues: usage.check.issues.map(copyIssue) }
 							: {}),
 					}
 				: { id, status: "complete" as const }

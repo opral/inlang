@@ -5,6 +5,7 @@ import type {
 	CheckStatus,
 	SourceFile,
 	UsageAnalysis,
+	UsageIssue,
 	UsageReference,
 } from "./types.js";
 
@@ -92,7 +93,7 @@ export async function projectUsage(
 	const result = (async (): Promise<Usage> => {
 		const used = new Set<string>();
 		const references: UsageReference[] = [];
-		const issues: { path?: string; reason: string }[] = [];
+		const issues: UsageIssue[] = [];
 		if (errors.length)
 			issues.push({ reason: "Project plugin loading reported errors." });
 		for (const plugin of unsupportedMatchers)
@@ -112,10 +113,7 @@ export async function projectUsage(
 				if (analysis.status !== "complete" || analysis.issues?.length) {
 					issues.push(
 						...(analysis.issues?.length
-							? analysis.issues.map((issue) => ({
-									reason: issue.reason,
-									...(issue.path !== undefined ? { path: issue.path } : {}),
-								}))
+							? analysis.issues.map(copyIssue)
 							: [{ reason: "The analyzer could not resolve all usages." }])
 					);
 				}
@@ -150,6 +148,16 @@ export async function projectUsage(
 	const resolved = await result;
 	if (failed && cache.get(project)?.result === result) cache.delete(project);
 	return resolved;
+}
+
+/** A public copy of an issue: callers can't alter the cached analysis. */
+export function copyIssue(issue: UsageIssue): UsageIssue {
+	return {
+		reason: issue.reason,
+		...(issue.path !== undefined ? { path: issue.path } : {}),
+		...(issue.start ? { start: { ...issue.start } } : {}),
+		...(issue.end ? { end: { ...issue.end } } : {}),
+	};
 }
 
 /** Freeze an isolated JSON settings copy so plugins cannot alter another check's input. */
@@ -206,19 +214,26 @@ function normalizeAnalysis(value: UsageAnalysis): UsageAnalysis {
 		if (typeof id !== "string") return invalid();
 		usedBundleIds.push(id);
 	}
-	const issues: { reason: string; path?: string }[] = [];
+	const issues: UsageIssue[] = [];
 	if (rawIssues)
 		for (let i = 0; i < rawIssues.length; i++) {
 			const issue = rawIssues[i];
 			if (!issue || typeof issue !== "object") return invalid();
 			const reason = issue.reason,
-				path = issue.path;
+				path = issue.path,
+				start = issue.start,
+				end = issue.end;
 			if (
 				typeof reason !== "string" ||
 				(path !== undefined && typeof path !== "string")
 			)
 				return invalid();
-			issues.push({ reason, ...(path !== undefined ? { path } : {}) });
+			issues.push({
+				reason,
+				...(path !== undefined ? { path } : {}),
+				...(start !== undefined ? { start: position(start) } : {}),
+				...(end !== undefined ? { end: position(end) } : {}),
+			});
 		}
 	return { status, usedBundleIds, issues, references };
 }

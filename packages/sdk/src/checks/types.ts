@@ -13,11 +13,21 @@ export type UsageReference = {
 	end: { line: number; column: number };
 };
 
+/**
+ * Why usage analysis is incomplete. `start` and `end` locate the construct in
+ * `path` (1-based lines, 0-based columns, end exclusive), e.g. a dynamic key.
+ */
+export type UsageIssue = {
+	path?: string;
+	reason: string;
+	start?: { line: number; column: number };
+	end?: { line: number; column: number };
+};
 /** Plugins must report uncertainty rather than silently omit possible usages. */
 export type UsageAnalysis = {
 	usedBundleIds: readonly string[];
 	status: "complete" | "incomplete";
-	issues?: readonly { path?: string; reason: string }[];
+	issues?: readonly UsageIssue[];
 	/** Optional source locations of the usages, e.g. for "find references" and code previews. */
 	references?: readonly UsageReference[];
 };
@@ -40,7 +50,7 @@ export type CheckStatus = {
 	id: CheckId;
 	status: "complete" | "incomplete" | "unavailable";
 	reason?: string;
-	issues?: readonly { path?: string; reason: string }[];
+	issues?: readonly UsageIssue[];
 };
 
 /** Serializable action metadata. Implementations remain owned by the SDK. */
@@ -131,7 +141,7 @@ export type FindUsagesArgs = {
 export type FindUsagesResult = {
 	status: CheckStatus["status"];
 	reason?: string;
-	issues?: readonly { path?: string; reason: string }[];
+	issues?: readonly UsageIssue[];
 	references: UsageReference[];
 };
 export type ApplyFixArgs = {

@@ -1,5 +1,5 @@
 import type { FindUsagesArgs, FindUsagesResult } from "./types.js";
-import { projectUsage } from "./usage.js";
+import { copyIssue, projectUsage } from "./usage.js";
 
 /**
  * Where messages are used in a source snapshot, from the plugins' `analyzeUsage`
@@ -17,7 +17,7 @@ export async function findUsages(
 		status: usage.check.status,
 		...(usage.check.reason ? { reason: usage.check.reason } : {}),
 		...(usage.check.issues
-			? { issues: usage.check.issues.map((issue) => ({ ...issue })) }
+			? { issues: usage.check.issues.map(copyIssue) }
 			: {}),
 		references: usage.references
 			.filter((reference) => !wanted || wanted.has(reference.bundleId))

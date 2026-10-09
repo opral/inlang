@@ -109,3 +109,20 @@ test("retains dotted directive references", async () => {
 		new Set(["action", "transition", "animate"])
 	);
 });
+test("locates unresolved constructs in scripts and templates", async () => {
+	const content = `<script>
+	import { m } from './messages';
+	let { key } = $props();
+</script>
+<p>{m[key]()}</p>`;
+	const result = await analyze(content);
+	expect(result.status).toBe("incomplete");
+	expect(result.issues).toEqual([
+		{
+			path: "src/Component.svelte",
+			reason: "Dynamic message access cannot be resolved.",
+			start: { line: 5, column: 4 },
+			end: { line: 5, column: 10 },
+		},
+	]);
+});
