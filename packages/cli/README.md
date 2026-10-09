@@ -165,12 +165,11 @@ Commands:
                      messages, and source code for unused messages.
   machine [command]  Commands for automating translations.
   plugin [command]   Commands for inlang plugins.
-  cloud [options]    Hosted AI translation and handoff between design,
-                     translation and code are coming. Show what's planned and
-                     tell us what you need.
+  cloud [options]    See what's coming in inlang Cloud and tell us what you
+                     need.
   help [command]     display help for command
 
-Hosted AI translation and handoff between design, translation and code are coming: run `inlang cloud`.
+Coming soon: hosted AI translation and handoff between design, translation and code. Run `inlang cloud`.
 ```
 
 The following commands are available with the inlang CLI:
@@ -373,16 +372,6 @@ A message is only reported as unused when every usage in the analyzed source cou
 - `diagnostics`: findings, identified by `checkId`, `bundleId`, `locale` and, for a form, `matches`; the other fields depend on the check (`name` of a variable or markup, `suggestion`, `values`).
 - `summary`: the number of findings, project errors and findings per check.
 
-## Deprecated commands
-
-### `validate`
-
-`inlang validate --project ./project.inlang` is deprecated: use [`inlang check`](#check). It still works, is hidden from `--help`, prints a deprecation warning and, as before, only reports the project's settings and plugin errors, exiting with 1 if there are any.
-
-### `lint`
-
-`inlang lint` is deprecated: use [`inlang check`](#check). It is hidden from `--help`, prints a deprecation warning and runs `check`, mapping `--languageTags de,fr` to `--locales de,fr` and accepting `--no-fail`. Like v1's `lint`, it exits with 1 on findings unless `--no-fail` is passed.
-
 ## `cloud`
 
 inlang Cloud is coming: hosted services on top of your inlang project, as Parrot and Fink show them.
@@ -402,8 +391,18 @@ npx @inlang/cli cloud
 ### Cloud options
 
 - `--project <path>`: Path to the inlang project, used to tell which product you use (default `./project.inlang`).
-- `--no-open`: Print the form's URL instead of opening the browser. The browser is never opened in CI or when the output is piped.
+- `--no-open`: Print the form's URL instead of opening the browser. The browser is never opened in CI, when the output is piped, or on Linux without a display.
 - `--json`: Print the features and the form's URL as JSON.
+
+## Deprecated commands
+
+### `validate`
+
+`inlang validate --project ./project.inlang` is deprecated: use [`inlang check`](#check). It still works, is hidden from `--help`, prints a deprecation warning and, as before, only reports the project's settings and plugin errors, exiting with 1 if there are any.
+
+### `lint`
+
+`inlang lint` is deprecated: use [`inlang check`](#check). It is hidden from `--help`, prints a deprecation warning and runs `check`, mapping `--languageTags de,fr` to `--locales de,fr` and accepting `--no-fail`. Like v1's `lint`, it exits with 1 on findings unless `--no-fail` is passed.
 
 ## `plugin`
 

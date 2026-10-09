@@ -1,5 +1,6 @@
 /**
- * End-to-end: builds the CLI and runs `inlang check` against a Paraglide-style
+ * End-to-end tests of the built CLI (`check`, `cloud`, `--help` and the
+ * deprecated commands). Builds the CLI and runs it against a Paraglide-style
  * fixture (`test/fixtures/check-app`) with the workspace's message-format and
  * m-function-matcher plugins as local modules.
  */
@@ -329,7 +330,7 @@ describe("deprecated commands", { timeout: 60_000 }, () => {
     const { stdout } = await run(app(), ["--help"]);
     expect(stdout).toMatch(/^\s+check \[options\]/m);
     expect(stdout).toMatch(/^\s+cloud \[options\]/m);
-    expect(stdout).toContain("run `inlang cloud`");
+    expect(stdout).toContain("Run `inlang cloud`.");
     expect(stdout).not.toMatch(/^\s+validate/m);
     expect(stdout).not.toMatch(/^\s+lint/m);
   });

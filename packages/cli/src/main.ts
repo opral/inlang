@@ -34,7 +34,7 @@ export const cli = new Command()
   .addCommand(cloud)
   .addHelpText(
     "after",
-    "\nHosted AI translation and handoff between design, translation and code are coming: run `inlang cloud`.",
+    "\nComing soon: hosted AI translation and handoff between design, translation and code. Run `inlang cloud`.",
   )
   // Deprecated, hidden from --help: use `check`.
   .addCommand(validate, { hidden: true })

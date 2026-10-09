@@ -9,7 +9,7 @@ import { ENV_VARIABLES } from "../env-variables/index.js";
 const events = [
   "CLI command executed",
   "CLI started",
-  "CLI cloud interest",
+  "CLI cloud viewed",
 ] as const;
 
 /**
@@ -30,6 +30,8 @@ export const capture = async (args: {
   try {
     await fetch("https://eu.posthog.com/capture/", {
       method: "POST",
+      // never hold up the command's exit on a slow network
+      signal: AbortSignal.timeout(1500),
       body: JSON.stringify({
         // @ts-expect-error - env variable is set in build step
         api_key: ENV_DEFINED_IN_BUILD_STEP.PUBLIC_POSTHOG_TOKEN,

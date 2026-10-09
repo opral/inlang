@@ -6,6 +6,8 @@ import {
   CLOUD_FEATURES,
   cloudCommandAction,
   cloudFormUrl,
+  isInteractive,
+  openInBrowser,
   usesParaglide,
 } from "./index.js";
 
@@ -77,6 +79,14 @@ test("pre-selects Paraglide JS for Paraglide projects, nothing otherwise", () =>
   expect(
     usesParaglide({ cwd: directory({ "package.json": "not json" }) }),
   ).toBe(false);
+  // adapters, peer dependencies and the nearest package.json of a subdirectory
+  const app = directory({
+    "package.json": JSON.stringify({
+      peerDependencies: { "@inlang/paraglide-sveltekit": "*" },
+    }),
+    "src/lib/.keep": "",
+  });
+  expect(usesParaglide({ cwd: nodePath.join(app, "src/lib") })).toBe(true);
 });
 
 test("lists the features, prints the form and opens it at a terminal", async () => {
@@ -96,12 +106,17 @@ test("lists the features, prints the form and opens it at a terminal", async () 
   }
   expect(output).toContain("Smart message keys");
   expect(output).toContain(`  ${FORM}\n`);
-  expect(output).toContain("Opened the form in your browser.");
+  expect(output).toContain("Opening the form in your browser…");
   expect(output).not.toMatch(/\$|€|price/i);
   expect(open).toHaveBeenCalledWith(FORM);
   expect(capture).toHaveBeenCalledWith({
-    event: "CLI cloud interest",
-    properties: { opened_form: true, product: "unknown" },
+    event: "CLI cloud viewed",
+    properties: {
+      opened_form: true,
+      interactive: true,
+      json: false,
+      product: "unknown",
+    },
   });
 });
 
@@ -116,10 +131,15 @@ test("doesn't open the browser with --no-open, in CI or when piped", async () =>
     });
     expect(open).not.toHaveBeenCalled();
     expect(output).toContain(FORM);
-    expect(output).not.toContain("Opened");
+    expect(output).not.toContain("Opening");
     expect(capture).toHaveBeenCalledWith({
-      event: "CLI cloud interest",
-      properties: { opened_form: false, product: "unknown" },
+      event: "CLI cloud viewed",
+      properties: {
+        opened_form: false,
+        interactive,
+        json: false,
+        product: "unknown",
+      },
     });
   }
 });
@@ -133,7 +153,7 @@ test("prints the URL without claiming success when the browser can't open", asyn
     },
   );
   expect(output).toContain(FORM);
-  expect(output).not.toContain("Opened");
+  expect(output).not.toContain("Opening");
 });
 
 test("--json prints the features and the form's URL", async () => {
@@ -149,3 +169,50 @@ test("--json prints the features and the form's URL", async () => {
   });
   expect(open).not.toHaveBeenCalled();
 });
+
+test("opens a browser only for a user at a terminal with a display", () => {
+  const tty = { isTTY: true, env: {} };
+  expect(isInteractive({ ...tty, platform: "darwin" })).toBe(true);
+  expect(isInteractive({ ...tty, platform: "win32" })).toBe(true);
+  expect(isInteractive({ ...tty, env: { CI: "1" }, platform: "darwin" })).toBe(
+    false,
+  );
+  expect(isInteractive({ isTTY: false, env: {}, platform: "darwin" })).toBe(
+    false,
+  );
+  // Linux over SSH or in a container has no display to open a browser on
+  expect(isInteractive({ ...tty, platform: "linux" })).toBe(false);
+  expect(
+    isInteractive({ ...tty, env: { DISPLAY: ":0" }, platform: "linux" }),
+  ).toBe(true);
+  expect(
+    isInteractive({
+      ...tty,
+      env: { WAYLAND_DISPLAY: "wayland-0" },
+      platform: "linux",
+    }),
+  ).toBe(true);
+});
+
+test.runIf(process.platform !== "win32")(
+  "openInBrowser hands the URL to the opener without waiting for it, and reports a missing opener",
+  async () => {
+    const bin = directory();
+    const log = nodePath.join(bin, "log");
+    const opener = process.platform === "darwin" ? "open" : "xdg-open";
+    fs.writeFileSync(
+      nodePath.join(bin, opener),
+      `#!/bin/sh\nprintf '%s' "$1" > "${log}"\n/bin/sleep 5\n`,
+      { mode: 0o755 },
+    );
+    const url = `${FORM}?usp=pp_url&entry.14901479=Paraglide+JS`;
+    vi.stubEnv("PATH", bin);
+    const started = Date.now();
+    expect(await openInBrowser(url)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2_000);
+    await vi.waitFor(() => expect(fs.readFileSync(log, "utf8")).toBe(url));
+    vi.stubEnv("PATH", directory());
+    expect(await openInBrowser(url)).toBe(false);
+    vi.unstubAllEnvs();
+  },
+);

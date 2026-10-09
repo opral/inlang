@@ -66,9 +66,9 @@ export function cloudFormUrl(product: "Paraglide JS" | undefined): string {
 }
 
 /**
- * Whether the project in `cwd` uses Paraglide JS: a `@inlang/paraglide-js`
- * dependency in its package.json, or the m-function matcher Paraglide installs
- * in the inlang project's settings.
+ * Whether the project in `cwd` uses Paraglide JS: an `@inlang/paraglide*`
+ * dependency (including adapters) in the nearest package.json, or the
+ * m-function matcher Paraglide installs in the inlang project's settings.
  */
 export function usesParaglide(args: {
   cwd: string;
@@ -81,14 +81,24 @@ export function usesParaglide(args: {
       return undefined;
     }
   };
-  const packageJson = read("package.json");
+  let directory = nodePath.resolve(args.cwd);
+  let packageJson = read(nodePath.join(directory, "package.json"));
+  while (
+    packageJson === undefined &&
+    nodePath.dirname(directory) !== directory
+  ) {
+    directory = nodePath.dirname(directory);
+    packageJson = read(nodePath.join(directory, "package.json"));
+  }
   if (packageJson) {
     try {
-      const { dependencies, devDependencies } = JSON.parse(packageJson);
-      if (
-        dependencies?.["@inlang/paraglide-js"] ||
-        devDependencies?.["@inlang/paraglide-js"]
-      )
+      const manifest = JSON.parse(packageJson);
+      const dependencies = [
+        "dependencies",
+        "devDependencies",
+        "peerDependencies",
+      ].flatMap((field) => Object.keys(manifest?.[field] ?? {}));
+      if (dependencies.some((name) => name.startsWith("@inlang/paraglide")))
         return true;
     } catch {
       // not JSON: no answer from package.json
@@ -108,9 +118,7 @@ export type CloudOptions = {
 
 export const cloud = new Command()
   .command("cloud")
-  .description(
-    "Hosted AI translation and handoff between design, translation and code are coming. Show what's planned and tell us what you need.",
-  )
+  .description("See what's coming in inlang Cloud and tell us what you need.")
   .option(
     "--project <path>",
     "Path to the inlang project, to tell us which product you use.",
@@ -120,13 +128,35 @@ export const cloud = new Command()
   .action(async (options: CloudOptions) => {
     await cloudCommandAction(options, {
       cwd: process.cwd(),
-      interactive: Boolean(process.stdout.isTTY) && !process.env.CI,
+      interactive: isInteractive({
+        isTTY: Boolean(process.stdout.isTTY),
+        env: process.env,
+      }),
       color: Boolean(process.stdout.isTTY) && !process.env.NO_COLOR,
       write: (text) => process.stdout.write(text),
       open: openInBrowser,
       capture,
     });
   });
+
+/**
+ * A user at a terminal who can see a browser: not CI, not piped, and on Linux
+ * not a session without a display (SSH, containers).
+ */
+export function isInteractive(args: {
+  isTTY: boolean;
+  env: Record<string, string | undefined>;
+  platform?: NodeJS.Platform;
+}): boolean {
+  const platform = args.platform ?? process.platform;
+  return (
+    args.isTTY &&
+    !args.env.CI &&
+    (platform === "darwin" ||
+      platform === "win32" ||
+      Boolean(args.env.DISPLAY || args.env.WAYLAND_DISPLAY))
+  );
+}
 
 export async function cloudCommandAction(
   options: CloudOptions,
@@ -164,7 +194,7 @@ export async function cloudCommandAction(
       lines.push("");
     }
     lines.push(
-      "Tell us what your team needs, it takes a minute:",
+      "Tell us what your team needs (it takes a minute):",
       `  ${url}`,
       "",
     );
@@ -174,11 +204,13 @@ export async function cloudCommandAction(
     options.open && !options.json && env.interactive
       ? await env.open(url)
       : false;
-  if (opened) env.write("Opened the form in your browser.\n");
+  if (opened) env.write("Opening the form in your browser…\n");
   await env.capture({
-    event: "CLI cloud interest",
+    event: "CLI cloud viewed",
     properties: {
       opened_form: opened,
+      interactive: env.interactive,
+      json: Boolean(options.json),
       product: paraglide ? "Paraglide JS" : "unknown",
     },
   });
