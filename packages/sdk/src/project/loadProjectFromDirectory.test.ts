@@ -407,7 +407,7 @@ describe("it should keep files between the inlang directory and lix in sync", as
 			typeof metaRaw === "string" ? metaRaw : metaRaw.toString()
 		);
 
-		expect(readme).toContain("## What is this folder?");
+		expect(readme).toContain("# inlang project");
 		expect(gitignore).toContain("*");
 		expect(gitignore).toContain("!settings.json");
 		expect(meta.highestSdkVersion).toBe("99.0.0");
