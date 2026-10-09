@@ -152,7 +152,8 @@ function serializeVariants(
 	for (const variant of orderVariants(
 		variants,
 		selectors,
-		bundle.declarations
+		bundle.declarations,
+		message.locale
 	)) {
 		const matches = [...variant.matches];
 		if (matches.length === 0) {

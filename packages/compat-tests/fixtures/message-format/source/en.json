@@ -38,6 +38,21 @@
 			}
 		}
 	],
+	"shared": [
+		{
+			"declarations": [
+				"input count",
+				"input gender",
+				"local countPlural = count: plural"
+			],
+			"selectors": ["countPlural", "gender"],
+			"match": {
+				"countPlural=*, gender=female": "She shared {count} files",
+				"countPlural=one, gender=*": "They shared one file",
+				"countPlural=*, gender=*": "They shared {count} files"
+			}
+		}
+	],
 	"rank": [
 		{
 			"declarations": [

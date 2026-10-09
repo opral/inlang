@@ -35,9 +35,10 @@ const variant = (keys: string) => ({
 function order(
 	keys: string[],
 	selectors: string[],
-	declarations: Declaration[]
+	declarations: Declaration[],
+	locale = "en"
 ): string[] {
-	return orderVariants(keys.map(variant), selectors, declarations).map(
+	return orderVariants(keys.map(variant), selectors, declarations, locale).map(
 		(v) => v.keys
 	);
 }
@@ -129,21 +130,22 @@ describe("sorts the variants by preference if a variant shadows a preferred one"
 	});
 
 	test("an =0 form after a plural category that selects 0 in French", () => {
+		const keys = [
+			"countPlural=one, countPluralExact=*",
+			"countPlural=*, countPluralExact=0",
+			"countPlural=*, countPluralExact=*",
+		];
 		expect(
-			order(
-				[
-					"countPlural=one, countPluralExact=*",
-					"countPlural=*, countPluralExact=0",
-					"countPlural=*, countPluralExact=*",
-				],
-				["countPluralExact", "countPlural"],
-				exactPlural
-			)
+			order(keys, ["countPluralExact", "countPlural"], exactPlural, "fr")
 		).toStrictEqual([
 			"countPlural=*, countPluralExact=0",
 			"countPlural=one, countPluralExact=*",
 			"countPlural=*, countPluralExact=*",
 		]);
+		// English "one" doesn't select 0: every form is selected already
+		expect(
+			order(keys, ["countPluralExact", "countPlural"], exactPlural, "en")
+		).toStrictEqual(keys);
 	});
 
 	test("the catch-all first", () => {
@@ -166,22 +168,65 @@ describe("sorts the variants by preference if a variant shadows a preferred one"
 		).toStrictEqual(["countPlural=1", "countPlural=one", "countPlural=*"]);
 	});
 
-	test("a partial catch-all before a variant the selector order prefers", () => {
+	test("an ordinal form after the catch-all", () => {
 		expect(
 			order(
+				["placeOrdinal=*", "placeOrdinal=one"],
+				["placeOrdinal"],
 				[
-					"countPlural=one, gender=*",
-					"countPlural=*, gender=female",
-					"countPlural=*, gender=*",
-				],
-				["gender", "countPlural"],
-				[...countPlural, input("gender")]
+					input("place"),
+					{
+						...(plural("placeOrdinal", "place") as any),
+						value: {
+							type: "expression",
+							arg: { type: "variable-reference", name: "place" },
+							annotation: {
+								type: "function-reference",
+								name: "plural",
+								options: [
+									{
+										name: "type",
+										value: { type: "literal", value: "ordinal" },
+									},
+								],
+							},
+						},
+					},
+				]
 			)
-		).toStrictEqual([
+		).toStrictEqual(["placeOrdinal=one", "placeOrdinal=*"]);
+	});
+});
+
+describe("keeps an order that MessageFormat 2 would prefer differently if every variant is selected", () => {
+	test("partial catch-alls in the order the translator wrote them", () => {
+		// first-match shows "She invited 1" for (1, female); the preference
+		// order of the alphabetical selectors would show "They invited one"
+		const keys = [
 			"countPlural=*, gender=female",
 			"countPlural=one, gender=*",
 			"countPlural=*, gender=*",
-		]);
+		];
+		expect(
+			order(keys, ["countPlural", "gender"], [...countPlural, input("gender")])
+		).toStrictEqual(keys);
+	});
+
+	test("a plural category the locale doesn't have", () => {
+		const keys = ["countPlural=one", "countPlural=*", "countPlural=many"];
+		expect(order(keys, ["countPlural"], countPlural, "en")).toStrictEqual(keys);
+	});
+
+	test("an exact number and a category on the same input in either order, if both are selected", () => {
+		// English 21 is "other": `countPlural=one` and `=21` don't overlap
+		const keys = [
+			"countPlural=one, countPluralExact=*",
+			"countPlural=*, countPluralExact=21",
+			"countPlural=*, countPluralExact=*",
+		];
+		expect(
+			order(keys, ["countPluralExact", "countPlural"], exactPlural)
+		).toStrictEqual(keys);
 	});
 });
 
