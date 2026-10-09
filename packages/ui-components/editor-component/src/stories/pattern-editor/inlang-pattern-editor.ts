@@ -39,6 +39,7 @@ import {
 	$setPattern,
 	$syncMarkupFormats,
 	registerVariableText,
+	$editsTokensOnly,
 	PatternTokenNode,
 	tokenTitle,
 } from "./patternNodes.js";
@@ -398,6 +399,7 @@ export default class InlangPatternEditor extends LitElement {
 	insertExpression(name: string) {
 		this.editor.update(
 			() => {
+				$editsTokensOnly();
 				let selection = $getSelection();
 				let atEnd = false;
 				if (!$isRangeSelection(selection)) {
@@ -446,6 +448,7 @@ export default class InlangPatternEditor extends LitElement {
 		const pair = [...this._activePairs].reverse().find((value) => value.name === name);
 		if (!pair) return false;
 		this.editor.update(() => {
+			$editsTokensOnly();
 			$getNodeByKey(pair.start)?.remove();
 			$getNodeByKey(pair.end)?.remove();
 		}, { discrete: true });
@@ -458,6 +461,7 @@ export default class InlangPatternEditor extends LitElement {
 	insertMarkup(part: MarkupStandalone) {
 		this.editor.update(
 			() => {
+				$editsTokensOnly();
 				let selection = $getSelection();
 				if (!$isRangeSelection(selection)) {
 					$getRoot().selectEnd();

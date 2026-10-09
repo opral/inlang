@@ -284,6 +284,18 @@ const VARIABLE_PATTERN = /\{\s*([A-Za-z_$][\w$.:-]*)\s*\}/g;
  */
 const SET_PATTERN_UPDATE = "inlang-pattern-set";
 
+/** Update tag of edits that insert or remove tokens and type no text (a variable, bold, a link). */
+const TOKENS_UPDATE = "inlang-pattern-tokens";
+
+/**
+ * Marks the current update as inserting or removing tokens only: `{name}` text in it
+ * is not typed, also when the edit moves the caret over stored text (bold around
+ * "{lit} world"). Call it inside `update`.
+ */
+export function $editsTokensOnly() {
+	$addUpdateTag(TOKENS_UPDATE);
+}
+
 /** A `{name}` written as text (not a token), with its offsets in the whole pattern. */
 type Occurrence = { key: NodeKey; start: number; end: number; at: number; text: string };
 
@@ -398,7 +410,7 @@ export function registerVariableText(editor: LexicalEditor): () => void {
  */
 export function $transformVariableText(node: TextNode) {
 	if ($isPatternTokenNode(node) || !node.isSimpleText()) return;
-	if ($hasUpdateTag(SET_PATTERN_UPDATE)) return;
+	if ($hasUpdateTag(SET_PATTERN_UPDATE) || $hasUpdateTag(TOKENS_UPDATE)) return;
 	const key = node.getKey();
 	const all = $textVariables();
 	if (!all.some((occurrence) => occurrence.key === key)) return;
@@ -611,6 +623,7 @@ export function $removeOrphanMarkup(keys?: ReadonlySet<string>) {
  * Returns false when nothing was wrapped.
  */
 export function $wrapSelection(start: MarkupStart, placeholder?: string): boolean {
+	$editsTokensOnly();
 	const selection = $getSelection();
 	if ($isRangeSelection(selection) && selection.isCollapsed() && placeholder) {
 		// Nothing selected: insert the markup around placeholder text and select it for typing.
@@ -660,6 +673,7 @@ export function $caretQuery(): { key: string; from: number; to: number; query: s
 
 /** Replaces `{query` with an expression token. Must run inside `editor.update`. */
 export function $insertVariableAt(target: { key: string; from: number; to: number }, name: string) {
+	$editsTokensOnly();
 	const range = $createRangeSelection();
 	range.anchor.set(target.key, target.from, "text");
 	range.focus.set(target.key, target.to, "text");

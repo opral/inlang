@@ -200,6 +200,20 @@ it("keeps stored braces as text when Lexical splits or merges their text", () =>
 		{ type: "markup-end", name: "b" },
 		text(" {lit}"),
 	]);
+	// bold around stored braces (the caret moves over them)
+	update(editor, () => $setPattern([text("Hello {lit} world")]));
+	update(editor, () => caretAt(0, 6));
+	update(editor, () => {
+		const selection = caretAt(0, 17);
+		selection.anchor.offset = 6;
+		$wrapSelection({ type: "markup-start", name: "b" });
+	});
+	expect(read(editor, $readPattern)).toEqual([
+		text("Hello "),
+		{ type: "markup-start", name: "b" },
+		text("{lit} world"),
+		{ type: "markup-end", name: "b" },
+	]);
 	// a removed token merges the stored texts around it
 	update(editor, () => $setPattern([text("{a} "), variable("n"), text(" {b}")]));
 	update(editor, () => children().find($isPatternTokenNode)!.remove());
@@ -240,6 +254,10 @@ it("tells typed braces from stored ones by their text, not by their node", () =>
 		selection.removeText();
 	});
 	expect(read(editor, $readPattern)).toEqual([text("It's {litera}")]);
+	// a deletion never makes a variable, also when it joins "{na" and "me}"
+	update(editor, () => $setPattern([text("{na-me}")]));
+	typeOver(editor, 0, [3, 4], "");
+	expect(read(editor, $readPattern)).toEqual([text("{name}")]);
 });
 
 /**
