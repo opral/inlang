@@ -6,11 +6,7 @@
  * or `node:path`.
  */
 export { openProject, type OpenProjectArgs } from "./project/openProject.js";
-export type {
-	InlangProject,
-	ImportFile,
-	ExportFile,
-} from "./project/api.js";
+export type { InlangProject, ImportFile, ExportFile } from "./project/api.js";
 export * from "./json-schema/settings.js";
 export * from "./json-schema/pattern.js";
 export * from "./query-utilities/index.js";

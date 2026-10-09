@@ -12,7 +12,10 @@ const pluginAsText = nodeFs.readFileSync(
 	"utf8"
 );
 const messageData = Object.fromEntries(
-	Array.from({ length: 1000 }, (_, i) => [`message_${i}`, `Hello {username} #${i}`])
+	Array.from({ length: 1000 }, (_, i) => [
+		`message_${i}`,
+		`Hello {username} #${i}`,
+	])
 );
 const localeNames = Array.from({ length: 10 }, (_, i) => `locale_${i}`);
 const fs = memfs({
@@ -24,11 +27,21 @@ const fs = memfs({
 		"plugin.inlang.messageFormat": { pathPattern: "/{locale}.json" },
 	}),
 	...Object.fromEntries(
-		localeNames.map((locale) => [`/${locale}.json`, JSON.stringify(messageData)])
+		localeNames.map((locale) => [
+			`/${locale}.json`,
+			JSON.stringify(messageData),
+		])
 	),
 }).fs as unknown as typeof import("node:fs");
 
-bench("load project from directory", async () => {
-	const project = await loadProjectFromDirectory({ path: "/project.inlang", fs });
-	await project.close();
-}, { iterations: 1, time: 100 });
+bench(
+	"load project from directory",
+	async () => {
+		const project = await loadProjectFromDirectory({
+			path: "/project.inlang",
+			fs,
+		});
+		await project.close();
+	},
+	{ iterations: 1, time: 100 }
+);

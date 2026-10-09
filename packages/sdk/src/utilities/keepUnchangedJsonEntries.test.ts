@@ -707,6 +707,136 @@ describe("keepUnchangedJsonEntries", () => {
 		expect(file).toBe(exported[0]);
 	});
 
+	describe("a previous file whose messages were deleted", () => {
+		/** exports `next` with `files` as the previous files */
+		async function exportWith(
+			next: Record<string, Record<string, string>>,
+			files: Array<{
+				path: string;
+				locale: string;
+				text: string;
+				metadata?: Record<string, any>;
+			}>
+		) {
+			const exported = await exportFiles({
+				...rowsFromImport(
+					await importFiles({
+						files: Object.entries(next).map(([locale, json]) => ({
+							locale,
+							content: encode(JSON.stringify(json)),
+						})),
+					})
+				),
+				settings: {} as any,
+			});
+			return keepUnchangedJsonEntries({
+				exported,
+				files: files.map(({ text, ...file }) => ({
+					...file,
+					content: encode(text),
+				})),
+				settings: {} as any,
+				importFiles,
+				exportFiles,
+			});
+		}
+
+		test("is written without them, with its formatting and `$schema`", async () => {
+			const en = '{\n\t"$schema": "schema",\n\t"a": "A"\n}\n';
+			const de =
+				'{\n  "$schema": "schema",\n  "a": "A-de",\n  "b": "B-de"\n}\n';
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./messages/en.json", locale: "en", text: en },
+				{ path: "./messages/de.json", locale: "de", text: de },
+			]);
+			expect(
+				files.map((file) => ({ ...file, content: decode(file.content) }))
+			).toEqual([
+				{
+					locale: "en",
+					name: "en.json",
+					content: en,
+					verbatim: true,
+				},
+				{
+					locale: "de",
+					name: "de.json",
+					// the host writes it to exactly this file
+					metadata: { pathPattern: "./messages/de.json" },
+					content: '{\n  "$schema": "schema"\n}\n',
+					verbatim: true,
+				},
+			]);
+		});
+
+		test("without `$schema` it becomes an empty object", async () => {
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{ path: "./de.json", locale: "de", text: '{\n\t"a": "A-de"\n}' },
+			]);
+			expect(decode(files[1]!.content)).toBe("{}");
+		});
+
+		test("files of a `pathPattern` array are each written without them", async () => {
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{ path: "./a/de.json", locale: "de", text: '{"a": "A-de"}\n' },
+				{
+					path: "./b/de.json",
+					locale: "de",
+					text: '{\n\t"$schema": "schema",\n\t"b": "B-de"\n}',
+				},
+			]);
+			expect(
+				files
+					.slice(1)
+					.map((file) => [file.metadata?.["pathPattern"], decode(file.content)])
+			).toEqual([
+				["./a/de.json", "{}\n"],
+				["./b/de.json", '{\n\t"$schema": "schema"\n}'],
+			]);
+		});
+
+		test("is not written if the project still has all its messages", async () => {
+			// e.g. an i18next namespace whose messages another file overrides,
+			// a file without messages
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{
+					path: "./en-old.json",
+					locale: "en",
+					metadata: { namespace: "old" },
+					text: '{"a": "A"}',
+				},
+				{ path: "./de.json", locale: "de", text: '{"$schema": "schema"}' },
+			]);
+			expect(files.map((file) => file.metadata?.["pathPattern"])).toEqual([
+				undefined,
+			]);
+		});
+
+		test("loses the deleted messages, also if it has messages the project still has", async () => {
+			const files = await exportWith({ en: { a: "A" } }, [
+				{ path: "./en.json", locale: "en", text: '{"a": "A"}' },
+				{
+					path: "./en-old.json",
+					locale: "en",
+					metadata: { namespace: "old" },
+					text: '{"a": "A", "deleted": "D"}',
+				},
+			]);
+			expect(
+				files.map((file) => [
+					file.metadata?.["pathPattern"],
+					decode(file.content),
+				])
+			).toEqual([
+				[undefined, '{"a": "A"}'],
+				["./en-old.json", "{}"],
+			]);
+		});
+	});
+
 	test("files without a previous file or without any previous files are returned as is", async () => {
 		const exported: ExportFile[] = [
 			{ locale: "en", name: "en.json", content: encode("{}") },

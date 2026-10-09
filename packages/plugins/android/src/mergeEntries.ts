@@ -114,8 +114,12 @@ function mergeLevel(args: {
       run!.push(entry);
     else runs.push([entry]);
   }
-  for (const run of runs)
-    edits.push(removal(text, run, args.comments, removed));
+  edits.push(
+    ...mergeRemovals(
+      text,
+      runs.map((run) => removal(text, run, args.comments, removed)),
+    ),
+  );
 
   for (const entry of entries) {
     const nextEntry = next.get(entry.key);
@@ -273,6 +277,37 @@ function removal(
   }
   const before = /[ \t]*$/.exec(text.slice(0, start))![0];
   return { start: start - before.length, end, text: "" };
+}
+
+/**
+ * Joins removals that overlap: a block between empty lines takes the empty
+ * line after it, and the last block of the file the empty line before it, so
+ * removing both would remove that line twice. If the joined removal ends the
+ * file or element, the empty line before it goes too, like for one removal.
+ */
+function mergeRemovals(text: string, removals: Edit[]): Edit[] {
+  const result: Edit[] = [];
+  for (const edit of [...removals].sort((a, b) => a.start - b.start)) {
+    result.push({ ...edit });
+    // join the last removal with the ones before it that it overlaps
+    while (result.length > 1) {
+      const last = result[result.length - 1]!;
+      const before = result[result.length - 2]!;
+      if (last.start >= before.end) break;
+      before.end = Math.max(before.end, last.end);
+      result.pop();
+      const blankLineBefore = /\n[ \t]*\r?\n$/.exec(
+        text.slice(0, before.start),
+      );
+      if (
+        blankLineBefore !== null &&
+        (before.end === text.length ||
+          /^[ \t]*<\//.test(text.slice(before.end)))
+      )
+        before.start -= blankLineBefore[0].length - 1;
+    }
+  }
+  return result;
 }
 
 /**

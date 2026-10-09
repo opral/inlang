@@ -13,6 +13,7 @@ import type { MessageV1 } from "../json-schema/old-v1-message/schemaV1.js";
 import { ENV_VARIABLES } from "../services/env-variables/index.js";
 import * as nodeFs from "node:fs/promises";
 import { execFileSync } from "node:child_process";
+import { keepUnchangedJsonEntries } from "../utilities/keepUnchangedJsonEntries.js";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -1359,4 +1360,121 @@ test("uses saveMessages when exportFiles is not defined", async () => {
 		project,
 	});
 	expect(saveMessagesSpy).toHaveBeenCalled();
+});
+
+test("deleting every message of a locale empties its files, also of a pathPattern array", async () => {
+	// a JSON plugin `{ "key": "text" }` that keeps unchanged entries
+	const pathPattern = ["./a/{locale}.json", "./b/{locale}.json"];
+	const importJson: NonNullable<InlangPlugin["importFiles"]> = async ({
+		files,
+	}) => {
+		const result = { bundles: [], messages: [], variants: [] } as any;
+		for (const file of files) {
+			const json = JSON.parse(new TextDecoder().decode(file.content));
+			for (const [key, value] of Object.entries(json)) {
+				if (key === "$schema") continue;
+				result.bundles.push({ id: key, declarations: [] });
+				result.messages.push({ bundleId: key, locale: file.locale });
+				result.variants.push({
+					messageBundleId: key,
+					messageLocale: file.locale,
+					matches: [],
+					pattern: [{ type: "text", value }],
+				});
+			}
+		}
+		return result;
+	};
+	const exportWhole = async ({ messages, variants }: any) => {
+		const files: Record<string, Record<string, string>> = {};
+		for (const message of messages) {
+			const variant = variants.find((v: any) => v.messageId === message.id);
+			files[message.locale] ??= {};
+			files[message.locale]![message.bundleId] = variant.pattern[0].value;
+		}
+		return Object.entries(files).map(([locale, json]) => ({
+			locale,
+			name: `${locale}.json`,
+			content: new TextEncoder().encode(JSON.stringify(json, undefined, 2)),
+		}));
+	};
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		toBeImportedFiles: ({ settings }) =>
+			settings.locales.flatMap((locale) =>
+				pathPattern.map((pattern) => ({
+					locale,
+					path: pattern.replace("{locale}", locale),
+				}))
+			),
+		importFiles: importJson,
+		exportFiles: async (args) =>
+			keepUnchangedJsonEntries({
+				exported: await exportWhole(args),
+				files: args.files,
+				settings: args.settings,
+				importFiles: importJson,
+				exportFiles: exportWhole,
+			}),
+	};
+	const files = {
+		"/repo/a/en.json": '{\n  "hello": "Hello"\n}',
+		"/repo/b/en.json": '{\n  "bye": "Bye"\n}',
+		"/repo/a/de.json": '{\n\t"$schema": "schema",\n\t"hello": "Hallo"\n}\n',
+		"/repo/b/de.json": '{"bye": "Tschuess"}',
+	};
+	const volume = Volume.fromJSON({
+		...files,
+		"/repo/project.inlang/settings.json": JSON.stringify({
+			baseLocale: "en",
+			locales: ["en", "de"],
+			modules: [],
+			mock: { pathPattern },
+		}),
+	});
+	const load = () =>
+		loadProjectFromDirectory({
+			fs: volume as any,
+			path: "/repo/project.inlang",
+			providePlugins: [mockPlugin],
+		});
+	const project = await load();
+	const deMessages = await project.db
+		.selectFrom("inlang_message")
+		.where("locale", "=", "de")
+		.select("id")
+		.execute();
+	expect(deMessages).toHaveLength(2);
+	const ids = deMessages.map((message) => message.id);
+	await project.db
+		.deleteFrom("inlang_variant")
+		.where("message_id", "in", ids)
+		.execute();
+	await project.db
+		.deleteFrom("inlang_message")
+		.where("id", "in", ids)
+		.execute();
+
+	await saveProjectToDirectory({
+		fs: volume as any,
+		project,
+		path: "/repo/project.inlang",
+	});
+
+	const read = (path: string) => String(volume.readFileSync(path, "utf-8"));
+	expect(read("/repo/a/de.json")).toBe('{\n\t"$schema": "schema"\n}\n');
+	expect(read("/repo/b/de.json")).toBe("{}");
+	// en is written to every path of the array, as before
+	expect(JSON.parse(read("/repo/b/en.json"))).toEqual({
+		hello: "Hello",
+		bye: "Bye",
+	});
+	const reloaded = await load();
+	expect(
+		await reloaded.db
+			.selectFrom("inlang_message")
+			.where("locale", "=", "de")
+			.select("id")
+			.execute()
+	).toEqual([]);
 });

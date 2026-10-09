@@ -85,6 +85,54 @@ function keepUnchangedEntries(
   args: ExportArgs,
 ): ExportFile[] {
   if (!args.files?.length) return exported;
+  return [
+    ...keepUnchangedEntriesOfExported(exported, args),
+    ...emptiedFiles(exported, args),
+  ];
+}
+
+/**
+ * The existing files of locales that have no messages anymore, e.g. every
+ * message of the locale was deleted, without their entries. The export
+ * writes no file for such a locale, so without this the file would stay as
+ * it is and the deleted messages would come back on the next load. Comments
+ * that are not directly above an entry stay, and the file is not deleted.
+ * Files that hold no message (e.g. only comments) are not returned.
+ */
+function emptiedFiles(exported: ExportFile[], args: ExportArgs): ExportFile[] {
+  const result: ExportFile[] = [];
+  for (const existing of args.files ?? []) {
+    if (exported.some((file) => file.locale === existing.locale)) continue;
+    try {
+      const imported = importAppleStrings([
+        { locale: existing.locale, content: existing.content },
+      ]);
+      if (imported.messages.length === 0) continue;
+      const empty = new Uint8Array();
+      let content: Uint8Array = empty;
+      try {
+        content =
+          keepUnchangedEntriesOfFile({
+            previous: existing.content,
+            exported: empty,
+            locale: existing.locale,
+            settings: args.settings,
+          }) ?? empty;
+      } catch {
+        // an empty file, like the full export of a locale without messages
+      }
+      result.push({ locale: existing.locale, name: existing.path, content });
+    } catch {
+      // a file that can't be read stays as it is
+    }
+  }
+  return result;
+}
+
+function keepUnchangedEntriesOfExported(
+  exported: ExportFile[],
+  args: ExportArgs,
+): ExportFile[] {
   return exported.map((file) => {
     const previous = args.files!.find(
       (candidate) => candidate.locale === file.locale,

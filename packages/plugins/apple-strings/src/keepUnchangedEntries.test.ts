@@ -302,6 +302,54 @@ describe("export with the existing file", () => {
     expect(decode(file!.content)).toBe(expected);
   });
 
+  test("removing a block between empty lines and the last block of the file", () => {
+    const text =
+      '"a"  =  "A";\n\n/* B */\n"b" = "B";\n\n// the button\n"c" = "C";\n';
+    expect(
+      reexport(text, (data) => {
+        for (const key of ["b", "c"]) {
+          data.messages = data.messages.filter((m) => m.bundleId !== key);
+          data.variants = data.variants.filter((v) => v.messageId !== key);
+        }
+      }),
+    ).toBe('"a"  =  "A";\n');
+  });
+
+  test("the file of a locale whose messages were all deleted is written without them", () => {
+    const data = importStrings(previous);
+    const dePath = "./Localizations/de.lproj/Localizable.strings";
+    const files = plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [
+        { path, locale: "en", content: encode(previous) },
+        { path: dePath, locale: "de", content: encode(previous) },
+      ],
+    }) as any[];
+    expect(files.map((file) => [file.locale, file.name])).toEqual([
+      ["en", expect.any(String)],
+      ["de", dePath],
+    ]);
+    expect(decode(files[0]!.content)).toBe(previous);
+    const de = decode(files[1]!.content);
+    // the header stays, the entries and their comments are gone
+    expect(de).toBe("/*\n  Localizable.strings\n  Header comment\n*/\n");
+    expect(importStrings(de).messages).toEqual([]);
+  });
+
+  test("an existing file without messages of a locale without messages is not written", () => {
+    const data = importStrings(previous);
+    const files = plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [
+        { path, locale: "en", content: encode(previous) },
+        { path: "./de.strings", locale: "de", content: encode("/* none */\n") },
+      ],
+    }) as any[];
+    expect(files.map((file) => file.locale)).toEqual(["en"]);
+  });
+
   test("an invalid existing file writes the full export", () => {
     const data = importStrings(previous);
     const [full] = plugin.exportFiles!({ settings, ...data }) as any[];
