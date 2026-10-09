@@ -63,6 +63,12 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 		}
 	}
 
+	// Only a project with namespaces (`pathPattern` is a record) prefixes
+	// bundle ids with `namespace:`. In a project with one file per locale, a
+	// key like `err:notFound` is a key of that file, as importFiles reads it.
+	const namespaced =
+		typeof settings?.["plugin.inlang.i18next"]?.pathPattern !== "string";
+
 	for (const message of messages) {
 		const serializedMessages = serializeMessage(
 			bundlesById.get(message.bundleId)!,
@@ -72,8 +78,10 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 		);
 
 		for (const message of serializedMessages) {
+			// `namespace:key`, see importFiles. The key itself may contain `:`.
+			const separator = namespaced ? message.key.indexOf(":") : -1;
 			// no namespace
-			if (message.key.includes(":") === false) {
+			if (separator === -1) {
 				if (result[message.locale] === undefined) {
 					result[message.locale] = {};
 				}
@@ -81,7 +89,8 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 			}
 			// namespaces
 			else {
-				const [namespace, key] = message.key.split(":");
+				const namespace = message.key.slice(0, separator);
+				const key = message.key.slice(separator + 1);
 				if (resultNamespaces[namespace!] === undefined) {
 					resultNamespaces[namespace!] = {};
 				}

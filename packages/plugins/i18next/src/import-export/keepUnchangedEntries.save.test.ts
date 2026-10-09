@@ -20,7 +20,8 @@ const files: Record<string, string> = {
   "item_zero": "No items",
   "item_other": "{{count}} items",
   "menu": {"open": "Open",   "close": "Close"},
-  "caf\\u00e9": "Caf\\u00e9"
+  "caf\\u00e9": "Caf\\u00e9",
+  "err:notFound": "Not found"
 }
 `,
 	"locales/en/app.json":
@@ -33,11 +34,35 @@ const files: Record<string, string> = {
 `,
 };
 
-async function setup() {
+const pathPattern = {
+	common: "./locales/{locale}/common.json",
+	app: "./locales/{locale}/app.json",
+};
+
+// one file per locale: `:` in a key is not a namespace separator
+const singleFiles: Record<string, string> = {
+	"en.json": `{
+  "err:notFound": "Not found",
+  "title": "Title",
+  "item_one": "One item",
+  "item_other": "{{count}} items",
+  "nested": { "a:b": "A:B" }
+}
+`,
+	"de.json":
+		'{\r\n\t"title": "Titel",\r\n\t"err:notFound": "Nicht gefunden"\r\n}',
+};
+
+async function setup(
+	args: {
+		files: Record<string, string>;
+		pathPattern: string | Record<string, string>;
+	} = { files, pathPattern }
+) {
 	const dir = nodeFs.mkdtempSync(
 		nodePath.join(nodeOs.tmpdir(), "i18next-keep-unchanged-entries-")
 	);
-	for (const [path, text] of Object.entries(files)) {
+	for (const [path, text] of Object.entries(args.files)) {
 		nodeFs.mkdirSync(nodePath.dirname(nodePath.join(dir, path)), {
 			recursive: true,
 		});
@@ -49,12 +74,7 @@ async function setup() {
 		JSON.stringify({
 			baseLocale: "en",
 			locales: ["en", "de"],
-			"plugin.inlang.i18next": {
-				pathPattern: {
-					common: "./locales/{locale}/common.json",
-					app: "./locales/{locale}/app.json",
-				},
-			},
+			"plugin.inlang.i18next": { pathPattern: args.pathPattern },
 		})
 	);
 	const project = await loadProjectFromDirectory({
@@ -62,20 +82,42 @@ async function setup() {
 		fs: nodeFs,
 		providePlugins: [plugin as unknown as InlangPlugin],
 	});
+	// all files of the project except the .inlang directory
 	const read = () =>
 		Object.fromEntries(
-			Object.keys(files).map((path) => [
-				path,
-				nodeFs.readFileSync(nodePath.join(dir, path), "utf-8"),
-			])
+			(nodeFs.readdirSync(dir, { recursive: true }) as string[])
+				.filter(
+					(path) =>
+						!path.startsWith("project.inlang") &&
+						nodeFs.statSync(nodePath.join(dir, path)).isFile()
+				)
+				.sort()
+				.map((path) => [
+					path,
+					nodeFs.readFileSync(nodePath.join(dir, path), "utf-8"),
+				])
 		);
+	const edit = async (bundleId: string, locale: string, text: string) => {
+		const message = await project.db
+			.selectFrom("inlang_message")
+			.selectAll()
+			.where("bundle_id", "=", bundleId)
+			.where("locale", "=", locale)
+			.executeTakeFirstOrThrow();
+		const result = await project.db
+			.updateTable("inlang_variant")
+			.set({ pattern: [{ type: "text", value: text }] })
+			.where("message_id", "=", message.id)
+			.executeTakeFirstOrThrow();
+		expect(result.numUpdatedRows).toBe(1n);
+	};
 	const save = () =>
 		saveProjectToDirectory({
 			project,
 			path: nodePath.join(dir, "project.inlang"),
 			fs: nodeFs,
 		});
-	return { dir, project, read, save };
+	return { dir, project, read, save, edit };
 }
 
 test("saving a project without edits leaves the translation files as they are", async () => {
@@ -89,25 +131,49 @@ test("saving a project without edits leaves the translation files as they are", 
 });
 
 test("saving a project after an edit changes only the edited entry", async () => {
-	const { project, read, save } = await setup();
+	const { project, read, save, edit } = await setup();
 	try {
-		const message = await project.db
-			.selectFrom("inlang_message")
-			.selectAll()
-			.where("bundle_id", "=", "common:menu.close")
-			.where("locale", "=", "en")
-			.executeTakeFirstOrThrow();
-		await project.db
-			.updateTable("inlang_variant")
-			.set({ pattern: [{ type: "text", value: "Shut" }] })
-			.where("message_id", "=", message.id)
-			.execute();
+		await edit("common:menu.close", "en", "Shut");
+		await edit("common:err:notFound", "en", "Not there");
 		await save();
 		expect(read()).toStrictEqual({
 			...files,
 			"locales/en/common.json": files["locales/en/common.json"]!.replace(
 				'"close": "Close"',
 				'"close": "Shut"'
+			).replace('"err:notFound": "Not found"', '"err:notFound": "Not there"'),
+		});
+	} finally {
+		await project.close();
+	}
+});
+
+test("saving a project with one file per locale and keys with `:` without edits", async () => {
+	const { project, read, save } = await setup({
+		files: singleFiles,
+		pathPattern: "./{locale}.json",
+	});
+	try {
+		await save();
+		expect(read()).toStrictEqual(singleFiles);
+	} finally {
+		await project.close();
+	}
+});
+
+test("saving a project with one file per locale and keys with `:` after an edit", async () => {
+	const { project, read, save, edit } = await setup({
+		files: singleFiles,
+		pathPattern: "./{locale}.json",
+	});
+	try {
+		await edit("err:notFound", "de", "Nicht da");
+		await save();
+		expect(read()).toStrictEqual({
+			...singleFiles,
+			"de.json": singleFiles["de.json"]!.replace(
+				'"err:notFound": "Nicht gefunden"',
+				'"err:notFound": "Nicht da"'
 			),
 		});
 	} finally {

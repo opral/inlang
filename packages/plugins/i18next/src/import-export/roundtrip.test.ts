@@ -1107,6 +1107,69 @@ test("markup conflicts with angle bracket variable reference pattern", async () 
 });
 
 // convenience wrapper for less testing code
+// `:` separates the namespace from the key only in projects with namespaces
+// (`pathPattern` is a record). In a project with one file per locale, a key
+// with `:` is a key of that file and must not become a file of its own, which
+// the SDK would write over the file of the locale.
+test("a key with `:` in a project without namespaces stays in its file", async () => {
+	const settings = {
+		baseLocale: "en",
+		locales: ["en"],
+		"plugin.inlang.i18next": { pathPattern: "./{locale}.json" },
+	};
+	const json = {
+		"err:notFound": "Not found",
+		nested: { "a:b": "A:B" },
+		plain: "Plain",
+	};
+	const imported = await runImportFiles(json, settings);
+	expect(imported.bundles.map((bundle) => bundle.id)).toStrictEqual([
+		"err:notFound",
+		"nested.a:b",
+		"plain",
+	]);
+	const exported = await runExportFiles(imported, settings);
+	expect(exported.map((file) => [file.name, file.metadata])).toStrictEqual([
+		["en.json", undefined],
+	]);
+	expect(
+		JSON.parse(new TextDecoder().decode(exported[0]!.content))
+	).toStrictEqual(json);
+});
+
+test("a key with `:` in a namespace keeps everything after the first `:`", async () => {
+	const settings = {
+		baseLocale: "en",
+		locales: ["en"],
+		"plugin.inlang.i18next": {
+			pathPattern: { common: "./{locale}/common.json" },
+		},
+	};
+	const json = { "err:notFound": "Not found", "a:b:c": "ABC", plain: "Plain" };
+	const imported = await importFiles({
+		settings,
+		files: [
+			{
+				locale: "en",
+				content: new TextEncoder().encode(JSON.stringify(json)),
+				toBeImportedFilesMetadata: { namespace: "common" },
+			},
+		],
+	});
+	expect(imported.bundles.map((bundle) => bundle.id)).toStrictEqual([
+		"common:err:notFound",
+		"common:a:b:c",
+		"common:plain",
+	]);
+	const exported = await runExportFiles(imported, settings);
+	expect(exported.map((file) => [file.name, file.metadata])).toStrictEqual([
+		["common-en.json", { namespace: "common" }],
+	]);
+	expect(
+		JSON.parse(new TextDecoder().decode(exported[0]!.content))
+	).toStrictEqual(json);
+});
+
 function runImportFiles(json: Record<string, any>, settings?: any) {
 	return importFiles({
 		settings: settings ?? {},
