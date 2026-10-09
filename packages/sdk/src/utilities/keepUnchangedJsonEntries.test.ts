@@ -70,9 +70,82 @@ describe("stringifyJsonKeepingEntries", () => {
 		expect(keep(previous, {}, { a: "A", b: "B", c: "C" })).toBe("{}\n");
 	});
 
-	test("drops keys that the plugin doesn't write", () => {
-		const previous = '{\n  "$comment": "x",\n  "a": "A"\n}\n';
-		expect(keep(previous, { a: "A2" }, { a: "A" })).toBe('{\n  "a": "A2"\n}\n');
+	test("keeps keys that the plugin neither imports nor writes, and drops removed ones", () => {
+		const previous =
+			'{\n  "$comment": "keep me",\n  "a": "A",\n  "b": "B"\n}\n';
+		expect(keep(previous, { a: "A2" }, { a: "A", b: "B" })).toBe(
+			'{\n  "$comment": "keep me",\n  "a": "A2"\n}\n'
+		);
+		// without the canonical value, unknown keys can't be told apart from
+		// removed messages and are dropped
+		expect(keep(previous, { a: "A2" })).toBe('{\n  "a": "A2"\n}\n');
+	});
+
+	test("flat keys of a plugin that writes them nested", () => {
+		const previous =
+			'{\n\t"nav.home": "Home",\n\t"nav": {\n\t\t"about": "About"\n\t},\n\t"x.y": "X"\n}\n';
+		const canonical = {
+			nav: { home: "Home", about: "About" },
+			x: { y: "X" },
+		};
+		const splitKey = (key: string) => key.split(".");
+		const run = (next: unknown) =>
+			stringifyJsonKeepingEntries({
+				previous,
+				previousCanonical: canonical,
+				next,
+				splitKey,
+			});
+		expect(run(canonical)).toBe(previous);
+		expect(
+			run({
+				nav: { home: "Start", about: "About", contact: "Contact" },
+				x: { y: "X" },
+			})
+		).toBe(
+			'{\n\t"nav.home": "Start",\n\t"nav": {\n\t\t"about": "About",\n\t\t"contact": "Contact"\n\t},\n\t"x.y": "X"\n}\n'
+		);
+		// removed
+		expect(run({ nav: { about: "About" } })).toBe(
+			'{\n\t"nav": {\n\t\t"about": "About"\n\t}\n}\n'
+		);
+		// another separator
+		expect(
+			stringifyJsonKeepingEntries({
+				previous: '{\n\t"nav:home": "Home"\n}',
+				previousCanonical: { nav: { home: "Home" } },
+				next: { nav: { home: "Start" } },
+				splitKey: (key) => key.split(":"),
+			})
+		).toBe('{\n\t"nav:home": "Start"\n}');
+	});
+
+	test("the order of objects in arrays is part of the value", () => {
+		const previous =
+			'{\n\t"a": [{ "match": { "x=1": "one", "x=*": "other" } }]\n}';
+		// a reordered variant is a change
+		expect(
+			keep(previous, { a: [{ match: { "x=*": "other", "x=1": "one" } }] })
+		).toBe(
+			'{\n\t"a": [\n\t\t{\n\t\t\t"match": {\n\t\t\t\t"x=*": "other",\n\t\t\t\t"x=1": "one"\n\t\t\t}\n\t\t}\n\t]\n}'
+		);
+		expect(
+			keep(previous, { a: [{ match: { "x=1": "one", "x=*": "other" } }] })
+		).toBe(previous);
+	});
+
+	test("a new key after a removed key goes to the removed key's place", () => {
+		const previous = '{\n  "a": "A",\n  "b": "B",\n  "c": "C"\n}';
+		expect(
+			keep(previous, { a: "A", b2: "B2", c: "C" }, { a: "A", b: "B", c: "C" })
+		).toBe('{\n  "a": "A",\n  "b2": "B2",\n  "c": "C"\n}');
+	});
+
+	test("the indentation of new complex values comes from the first member on its own line", () => {
+		const previous = '{ "a": "x",\n  "b": "y"\n}';
+		expect(keep(previous, { a: "x", b: "y", c: ["z"] })).toBe(
+			'{ "a": "x",\n  "b": "y",\n  "c": [\n    "z"\n  ]\n}'
+		);
 	});
 
 	test("keeps a legacy shape if the plugin writes the same value for it", () => {
@@ -343,10 +416,8 @@ describe("keepUnchangedJsonEntries", () => {
 		expect(result.en).toBe('{\n\t"$schema": "schema",\n\t"a": "A"\n}');
 	});
 
-	test("writes the full export if the result doesn't import to the new messages", async () => {
-		// A plugin that imports nested keys as dotted ids and writes them
-		// nested. The dotted key of the previous file has no counterpart in the
-		// export, so the result would lose the message.
+	test("a flat key that the plugin writes nested is kept, and an edit is written in its place", async () => {
+		// A plugin that imports nested keys as dotted ids and writes them nested.
 		const importNested: typeof importFiles = async ({ files }) =>
 			importFiles({
 				files: files.map((file) => ({
@@ -376,15 +447,85 @@ describe("keepUnchangedJsonEntries", () => {
 			),
 			settings: {} as any,
 		});
-		const [file] = await keepUnchangedJsonEntries({
+		const [kept] = await keepUnchangedJsonEntries({
 			exported,
 			files: [{ path: "./en.json", locale: "en", content: encode(previous) }],
 			settings: {} as any,
 			importFiles: importNested,
 			exportFiles: exportNested,
 		});
+		expect(decode(kept!.content)).toBe(previous);
+		expect(kept!.verbatim).toBe(true);
+		const edited = await exportNested({
+			...rowsFromImport(
+				await importNested({
+					files: [{ locale: "en", content: encode('{"b.c": "y"}') }],
+				})
+			),
+			settings: {} as any,
+		});
+		const [file] = await keepUnchangedJsonEntries({
+			exported: edited,
+			files: [{ path: "./en.json", locale: "en", content: encode(previous) }],
+			settings: {} as any,
+			importFiles: importNested,
+			exportFiles: exportNested,
+		});
 		expect(decode(file!.content)).toBe(
-			'{\n\t"$schema": "schema",\n\t"b": {\n\t\t"c": "x"\n\t}\n}'
+			'{\n\t"$schema": "schema",\n\t"b.c": "y"\n}'
+		);
+	});
+
+	test("writes the full export if the result doesn't import to the new messages", async () => {
+		// A plugin that reads keys case-insensitively, the last one wins. `"A"`
+		// is unknown to the entry-by-entry comparison and is kept, but it
+		// overrides the edited `"a"` when the file is imported.
+		const importLowercase: typeof importFiles = async ({ files }) =>
+			importFiles({
+				files: files.map((file) => ({
+					...file,
+					content: encode(
+						JSON.stringify(
+							Object.fromEntries(
+								Object.entries(JSON.parse(decode(file.content))).map(
+									([key, value]) => [key.toLowerCase(), value]
+								)
+							)
+						)
+					),
+				})),
+			});
+		const previous = '{\n\t"a": "1",\n\t"A": "2"\n}';
+		const exportOf = async (json: string) =>
+			exportFiles({
+				...rowsFromImport(
+					await importLowercase({
+						files: [{ locale: "en", content: encode(json) }],
+					})
+				),
+				settings: {} as any,
+			});
+		const run = async (exported: ExportFile[]) =>
+			(
+				await keepUnchangedJsonEntries({
+					exported,
+					files: [
+						{ path: "./en.json", locale: "en", content: encode(previous) },
+					],
+					settings: {} as any,
+					importFiles: importLowercase,
+					exportFiles,
+				})
+			)[0]!;
+		// unchanged: kept as it is
+		const unchanged = await run(await exportOf(previous));
+		expect(decode(unchanged.content)).toBe(previous);
+		// edited: the kept "A" would win over the edit, so the full export is
+		// written
+		const edited = await run(await exportOf('{"a": "3"}'));
+		expect(edited.verbatim).toBeUndefined();
+		expect(decode(edited.content)).toBe(
+			'{\n\t"$schema": "schema",\n\t"a": "3"\n}'
 		);
 	});
 

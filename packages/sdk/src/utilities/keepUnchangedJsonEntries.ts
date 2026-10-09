@@ -22,32 +22,36 @@ import type { ExistingFile, ExportFile } from "../project/api.js";
  * change:
  *
  * - An entry is unchanged if the plugin writes the same JSON value for it as
- *   for what the previous entry imports to (the previous file is imported and
- *   exported with the plugin's own `importFiles` and `exportFiles`), or if the
- *   previous entry already is that value.
+ *   for what the previous entry imports to (the previous files are imported
+ *   together, like a project is loaded, and exported with the plugin's own
+ *   `importFiles` and `exportFiles`), or if the previous entry already is that
+ *   value.
  * - Existing keys keep their order. New keys are inserted after the key that
  *   precedes them in the full export (e.g. sorted, if the plugin sorts).
- *   Removed keys and keys that the plugin doesn't write are dropped, as
- *   without a previous file.
- * - The formatting of the file (indentation, line endings, final newline) is
- *   kept. Changed and new entries are indented like their neighbors.
+ *   Removed keys are dropped. Keys that the plugin neither imports nor writes
+ *   are kept.
+ * - The formatting of the file (indentation, line endings, final newline,
+ *   byte order mark) is kept. Changed and new entries are indented like their
+ *   neighbors.
  *
- * The result is only used if it imports to what the full export imports to,
- * i.e. if the plugin writes the same JSON for it as for the full export.
- * Otherwise, and if the previous file is not valid JSON, the full export is
- * returned.
+ * The result is only used if the plugin reads it as the full export, i.e. if
+ * importing the resulting files together and exporting them gives the full
+ * export. Otherwise, and if a previous file is not valid JSON, the full export
+ * of that file is returned. Files that keep the previous text are marked as
+ * `verbatim`, so that hosts write them byte for byte.
+ *
+ * Objects are compared without their key order, except inside arrays: the
+ * order of e.g. the variants of a message-format `match` is meaningful.
  *
  * @example
- *   exportFiles: async (args) => {
- *     const exported = await exportFullFiles(args);
- *     return keepUnchangedJsonEntries({
- *       exported,
+ *   exportFiles: async (args) =>
+ *     keepUnchangedJsonEntries({
+ *       exported: await exportWholeFiles(args),
  *       files: args.files,
  *       settings: args.settings,
  *       importFiles,
- *       exportFiles: exportFullFiles,
- *     });
- *   }
+ *       exportFiles: exportWholeFiles,
+ *     })
  */
 export async function keepUnchangedJsonEntries<Settings>(args: {
 	/** The files of the full export, i.e. without the previous files. */
@@ -76,6 +80,13 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	 * the same `metadata.namespace`.
 	 */
 	isSameFile?: (exported: ExportFile, existing: ExistingFile) => boolean;
+	/**
+	 * The path that a flat key of a previous file can stand for, for plugins
+	 * that write nested objects, e.g. `"nav.home"` → `["nav", "home"]` (the
+	 * default). Lets a previous file keep flat keys. Only used for keys that
+	 * the full export doesn't have.
+	 */
+	splitKey?: (key: string) => string[];
 	/** Indentation of new entries if the previous file has none. Defaults to a tab. */
 	indent?: string;
 }): Promise<ExportFile[]> {
@@ -83,32 +94,137 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 		return args.exported;
 	}
 	const isSameFile = args.isSameFile ?? isSameLocaleAndNamespace;
-	const result: ExportFile[] = [];
-	for (const file of args.exported) {
-		const existing = args.files.find((candidate) =>
+	const existingFiles = args.files;
+	const pairs = args.exported.map((file) => {
+		const existing = existingFiles.find((candidate) =>
 			isSameFile(file, candidate)
 		);
-		if (existing === undefined) {
-			result.push(file);
+		return {
+			file,
+			existing,
+			exportedText: decodeUtf8(file.content),
+			/** the text to write if it keeps entries of the existing file */
+			kept: undefined as string | undefined,
+		};
+	});
+	const withExisting = pairs.filter((pair) => pair.existing !== undefined);
+	if (withExisting.length === 0) {
+		return args.exported;
+	}
+
+	/**
+	 * The JSON value of every file the plugin writes for `files`, imported
+	 * together like a project is loaded, by locale and name.
+	 */
+	const canonical = async (
+		files: Array<{ existing: ExistingFile; content: Uint8Array }>
+	): Promise<Map<string, unknown>> => {
+		const imported = await args.importFiles({
+			files: files.map(({ existing, content }) => ({
+				locale: existing.locale,
+				content,
+				toBeImportedFilesMetadata: existing.metadata,
+			})),
+			settings: structuredClone(args.settings),
+		});
+		const exported = await args.exportFiles({
+			...rowsFromImport(imported),
+			settings: structuredClone(args.settings),
+		});
+		const result = new Map<string, unknown>();
+		for (const file of exported) {
+			try {
+				result.set(fileKey(file), JSON.parse(decodeUtf8(file.content)));
+			} catch {
+				// not JSON, can't be compared
+			}
+		}
+		return result;
+	};
+
+	let previousCanonical: Map<string, unknown>;
+	try {
+		previousCanonical = await canonical(
+			existingFiles.map((existing) => ({ existing, content: existing.content }))
+		);
+	} catch {
+		// e.g. a previous file can't be imported
+		return args.exported;
+	}
+
+	const next = new Map<string, unknown>();
+	for (const pair of withExisting) {
+		const previous = decodeUtf8(pair.existing!.content);
+		if (previous === pair.exportedText) {
+			pair.kept = previous;
 			continue;
 		}
-		let content: Uint8Array | undefined;
 		try {
-			content = await keepUnchangedEntriesOfFile({
-				exported: file,
-				existing,
-				settings: args.settings,
-				importFiles: args.importFiles,
-				exportFiles: args.exportFiles,
-				indent: args.indent ?? "\t",
+			const value = JSON.parse(pair.exportedText) as unknown;
+			next.set(fileKey(pair.file), value);
+			pair.kept = stringifyJsonKeepingEntries({
+				previous,
+				previousCanonical: previousCanonical.get(fileKey(pair.file)),
+				next: value,
+				splitKey: args.splitKey,
+				indent: args.indent,
 			});
 		} catch {
-			// e.g. the previous file can't be imported
-			content = undefined;
+			pair.kept = undefined;
 		}
-		result.push(content === undefined ? file : { ...file, content });
 	}
-	return result;
+
+	// Only use the results if the plugin reads them as the full export. This
+	// guarantees that no edit is lost, e.g. if a previous file has a shape that
+	// this function doesn't understand. Files that don't pass are written in
+	// full, which can change how the others are read, so check again.
+	for (;;) {
+		const toCheck = withExisting.filter(
+			(pair) => pair.kept !== undefined && pair.kept !== pair.exportedText
+		);
+		if (toCheck.length === 0) break;
+		let result: Map<string, unknown>;
+		try {
+			result = await canonical(
+				withExisting.map((pair) => ({
+					existing: pair.existing!,
+					content:
+						pair.kept === undefined
+							? pair.file.content
+							: new TextEncoder().encode(pair.kept),
+				}))
+			);
+		} catch {
+			for (const pair of toCheck) pair.kept = undefined;
+			break;
+		}
+		const failed = toCheck.filter(
+			(pair) =>
+				jsonEquals(
+					result.get(fileKey(pair.file)),
+					next.get(fileKey(pair.file))
+				) === false
+		);
+		if (failed.length === 0) break;
+		for (const pair of failed) pair.kept = undefined;
+	}
+
+	return pairs.map((pair) =>
+		pair.kept === undefined
+			? pair.file
+			: {
+					...pair.file,
+					content:
+						pair.kept === pair.exportedText
+							? pair.file.content
+							: new TextEncoder().encode(pair.kept),
+					verbatim: true,
+				}
+	);
+}
+
+function fileKey(file: ExportFile): string {
+	return JSON.stringify([file.locale, file.name]);
 }
 
 function isSameLocaleAndNamespace(
@@ -121,95 +237,33 @@ function isSameLocaleAndNamespace(
 	);
 }
 
-async function keepUnchangedEntriesOfFile(args: {
-	exported: ExportFile;
-	existing: ExistingFile;
-	settings: any;
-	importFiles: (args: any) => any;
-	exportFiles: (args: any) => any;
-	indent: string;
-}): Promise<Uint8Array | undefined> {
-	const previous = decodeUtf8(args.existing.content);
-	const exportedText = decodeUtf8(args.exported.content);
-	if (previous === exportedText) {
-		return args.exported.content;
-	}
-	const next = JSON.parse(exportedText) as unknown;
-
-	/**
-	 * The JSON value the plugin writes for `content`: imports the file on its
-	 * own and exports the result.
-	 */
-	const canonical = async (content: Uint8Array): Promise<unknown> => {
-		const imported = await args.importFiles({
-			files: [
-				{
-					locale: args.existing.locale,
-					content,
-					toBeImportedFilesMetadata: args.existing.metadata,
-				},
-			],
-			settings: structuredClone(args.settings),
-		});
-		const files: ExportFile[] = await args.exportFiles({
-			...rowsFromImport(imported),
-			settings: structuredClone(args.settings),
-		});
-		const file = files.find(
-			(candidate) =>
-				candidate.locale === args.exported.locale &&
-				candidate.name === args.exported.name
-		);
-		return file === undefined
-			? undefined
-			: JSON.parse(decodeUtf8(file.content));
-	};
-
-	const text = stringifyJsonKeepingEntries({
-		previous,
-		previousCanonical: await canonical(args.existing.content),
-		next,
-		indent: args.indent,
-	});
-	if (text === undefined) {
-		return undefined;
-	}
-	if (text === exportedText) {
-		return args.exported.content;
-	}
-	const content = new TextEncoder().encode(text);
-	// Only use the result if the plugin reads it as the full export. This
-	// guarantees that no edit is lost, e.g. if the previous file has a shape
-	// that this function doesn't understand.
-	if (jsonEquals(await canonical(content), next) === false) {
-		return undefined;
-	}
-	return content;
-}
-
 /**
  * Writes `next` as JSON and keeps the text of the entries of `previous` that
  * didn't change. See `keepUnchangedJsonEntries`.
  *
- * Returns `undefined` if `previous` is not a JSON object.
+ * Returns `undefined` if `previous` is not a JSON object or has duplicate
+ * keys.
  *
  * @param args.previous The text of the previous file.
  * @param args.previousCanonical The JSON value the plugin writes for what the
  *   previous file imports to. An entry of `previous` whose value differs from
  *   `next` is kept if its value in `previousCanonical` equals `next`, e.g. a
- *   legacy shape of a message.
+ *   legacy shape of a message. Keys of `previous` that are neither in `next`
+ *   nor here are kept, the plugin doesn't import them.
  * @param args.next The JSON value of the new file.
+ * @param args.splitKey See `keepUnchangedJsonEntries`.
  * @param args.indent Indentation of new entries if `previous` has none.
  */
 export function stringifyJsonKeepingEntries(args: {
 	previous: string;
 	previousCanonical?: unknown;
 	next: unknown;
+	splitKey?: (key: string) => string[];
 	indent?: string;
 }): string | undefined {
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(args.previous.replace(/^\uFEFF/, ""));
+		parsed = JSON.parse(args.previous.replace(/^﻿/, ""));
 	} catch {
 		return undefined;
 	}
@@ -230,16 +284,11 @@ export function stringifyJsonKeepingEntries(args: {
 		// duplicate keys or a JSON feature the scanner doesn't support
 		return undefined;
 	}
-	const newline = args.previous.includes("\r\n") ? "\r\n" : "\n";
-	const firstMember = tree.members[0];
-	const indent =
-		firstMember === undefined
-			? (args.indent ?? "\t")
-			: lastLine(firstMember.before);
 	const writer: Writer = {
 		source: args.previous,
-		newline,
-		indent,
+		newline: args.previous.includes("\r\n") ? "\r\n" : "\n",
+		indent: detectIndent(tree, args.indent ?? "\t"),
+		splitKey: args.splitKey ?? splitAtDots,
 	};
 	return (
 		args.previous.slice(0, start) +
@@ -259,8 +308,29 @@ export function stringifyJsonKeepingEntries(args: {
 type Writer = {
 	source: string;
 	newline: string;
-	/** one level of indentation */
+	/** one level of indentation, "" for files without line breaks */
 	indent: string;
+	splitKey: (key: string) => string[];
+};
+
+/**
+ * The indentation of the first member on its own line, or `fallback` for an
+ * object without members.
+ */
+function detectIndent(tree: ObjectNode, fallback: string): string {
+	if (tree.members.length === 0) return fallback;
+	const member = tree.members.find((member) => member.before.includes("\n"));
+	return member === undefined ? "" : lastLine(member.before);
+}
+
+type Out = {
+	key: string;
+	before: string;
+	keyText: string;
+	colon: string;
+	value: string;
+	/** whitespace before the comma if it is not the last member */
+	after: string;
 };
 
 function writeObject(
@@ -275,21 +345,34 @@ function writeObject(
 		depth: number;
 	}
 ): string {
-	const { node, previous, canonical, next } = args;
-	type Out = {
-		key: string;
-		before: string;
-		keyText: string;
-		colon: string;
-		value: string;
-		/** whitespace before the comma if it is not the last member */
-		after: string;
-	};
-	const out: Out[] = [];
-	const previousKeys = new Set<string>();
+	const { node, previous, canonical } = args;
+	let next = args.next;
+	const previousKeys = new Set(node.members.map((member) => member.key));
 
+	// Flat keys of the previous file that stand for a nested path, e.g.
+	// `"nav.home"` for `{ "nav": { "home": … } }`. Their messages are taken out
+	// of the nested objects of `next`, so that they are not written twice.
+	const flat = new Map<string, string[]>();
+	{
+		for (const member of node.members) {
+			if (hasOwn(next, member.key)) continue;
+			const path = writer.splitKey(member.key);
+			if (path.length < 2 || hasOwn(next, path[0]!) === false) continue;
+			const value = getPath(next, path);
+			if (value === undefined || isObject(value)) continue;
+			flat.set(member.key, path);
+		}
+		if (flat.size > 0) next = withoutPaths(next, [...flat.values()]);
+	}
+	const canonicalWithoutFlat =
+		canonical !== undefined && flat.size > 0
+			? withoutPaths(canonical, [...flat.values()])
+			: canonical;
+
+	/** the members of the previous object that are written, by key */
+	const kept = new Map<string, Out>();
+	const out = { push: (member: Out) => kept.set(member.key, member) };
 	for (const [index, member] of node.members.entries()) {
-		previousKeys.add(member.key);
 		const isLast = index === node.members.length - 1;
 		const base = {
 			key: member.key,
@@ -299,15 +382,39 @@ function writeObject(
 			after: isLast ? "" : member.after,
 		};
 		const raw = writer.source.slice(member.value.start, member.value.end);
+		const path = flat.get(member.key);
+		if (path !== undefined) {
+			const nextValue = getPath(args.next, path);
+			const canonicalValue =
+				canonical === undefined ? undefined : getPath(canonical, path);
+			out.push({
+				...base,
+				value: isUnchanged(previous[member.key], canonicalValue, nextValue)
+					? raw
+					: stringifyValue(writer, nextValue, lastLine(member.before)),
+			});
+			continue;
+		}
 		if (hasOwn(next, member.key) === false) {
-			// removed, or not written by the plugin (as without a previous file)
+			if (
+				canonical !== undefined &&
+				hasOwn(canonical, member.key) === false &&
+				// a flat key that the plugin writes nested is not unknown
+				getPath(canonical, writer.splitKey(member.key)) === undefined
+			) {
+				// The plugin neither imports nor writes the key, e.g. `$schema`
+				// for a plugin that ignores it. Kept as it is.
+				out.push({ ...base, value: raw });
+			}
+			// otherwise removed
 			continue;
 		}
 		const nextValue = next[member.key];
 		const previousValue = previous[member.key];
 		const canonicalValue =
-			canonical !== undefined && hasOwn(canonical, member.key)
-				? canonical[member.key]
+			canonicalWithoutFlat !== undefined &&
+			hasOwn(canonicalWithoutFlat, member.key)
+				? canonicalWithoutFlat[member.key]
 				: undefined;
 		if (
 			member.value.kind === "object" &&
@@ -326,55 +433,73 @@ function writeObject(
 			});
 			continue;
 		}
-		const unchanged =
-			jsonEquals(previousValue, nextValue) ||
-			(canonicalValue !== undefined && jsonEquals(canonicalValue, nextValue));
 		out.push({
 			...base,
-			value: unchanged
+			value: isUnchanged(previousValue, canonicalValue, nextValue)
 				? raw
 				: stringifyValue(writer, nextValue, lastLine(member.before)),
 		});
 	}
 
-	// new keys, after the key that precedes them in `next`
-	let previousKeyInNext: string | undefined;
+	// New keys go after the key that precedes them in `next`.
+	const inserted = new Map<string | undefined, Out[]>();
+	let anchor: string | undefined;
+	let template: Out | undefined;
 	for (const key of Object.keys(next)) {
 		if (previousKeys.has(key)) {
-			previousKeyInNext = key;
+			anchor = key;
+			template = kept.get(key) ?? template;
 			continue;
 		}
+		const value = next[key];
 		if (
-			canonical !== undefined &&
-			hasOwn(canonical, key) &&
-			jsonEquals(canonical[key], next[key])
+			canonicalWithoutFlat !== undefined &&
+			hasOwn(canonicalWithoutFlat, key) &&
+			jsonEquals(canonicalWithoutFlat[key], value)
 		) {
 			// The previous file doesn't have the key, but the plugin writes it
-			// with the same value for the previous file, e.g. `$schema`. It
-			// is not data that changed.
+			// with the same value for the previous file too, e.g. `$schema`.
+			// It is not data that changed.
 			continue;
 		}
-		const index =
-			previousKeyInNext === undefined
-				? 0
-				: out.findIndex((member) => member.key === previousKeyInNext) + 1;
-		const template = out[index - 1] ?? out[index];
-		const memberIndent = writer.indent.repeat(args.depth + 1);
+		// formatted like the member it follows, or the first one
+		const like = template ?? kept.values().next().value;
 		const before =
-			template?.before ??
-			(writer.indent === "" ? "" : writer.newline + memberIndent);
-		out.splice(index, 0, {
+			like?.before ??
+			(writer.indent === ""
+				? ""
+				: writer.newline + writer.indent.repeat(args.depth + 1));
+		const member: Out = {
 			key,
 			before,
 			keyText: JSON.stringify(key),
-			colon: template?.colon ?? (writer.indent === "" ? ":" : ": "),
-			value: stringifyValue(writer, next[key], lastLine(before)),
+			colon: like?.colon ?? (writer.indent === "" ? ":" : ": "),
+			value: stringifyValue(writer, value, lastLine(before)),
 			after: "",
-		});
-		previousKeyInNext = key;
+		};
+		const list = inserted.get(anchor) ?? [];
+		list.push(member);
+		inserted.set(anchor, list);
+		// the next new key goes after this one
+		anchor = key;
+		template = member;
+	}
+	const members: Out[] = [];
+	const emit = (key: string | undefined) => {
+		for (const member of inserted.get(key) ?? []) {
+			members.push(member);
+			emit(member.key);
+		}
+	};
+	emit(undefined);
+	for (const member of node.members) {
+		const written = kept.get(member.key);
+		if (written !== undefined) members.push(written);
+		// also after a removed member, at its place
+		emit(member.key);
 	}
 
-	if (out.length === 0) {
+	if (members.length === 0) {
 		return node.members.length === 0
 			? writer.source.slice(node.start, node.end)
 			: "{}";
@@ -388,18 +513,66 @@ function writeObject(
 				: writer.newline + writer.indent.repeat(args.depth);
 	return (
 		"{" +
-		out
+		members
 			.map(
 				(member, index) =>
 					member.before +
 					member.keyText +
 					member.colon +
 					member.value +
-					(index === out.length - 1 ? closing : member.after)
+					(index === members.length - 1 ? closing : member.after)
 			)
 			.join(",") +
 		"}"
 	);
+}
+
+function splitAtDots(key: string): string[] {
+	return key.split(".");
+}
+
+function isUnchanged(
+	previousValue: unknown,
+	canonicalValue: unknown,
+	nextValue: unknown
+): boolean {
+	return (
+		jsonEquals(previousValue, nextValue) ||
+		(canonicalValue !== undefined && jsonEquals(canonicalValue, nextValue))
+	);
+}
+
+function getPath(value: unknown, path: string[]): unknown {
+	let cursor = value;
+	for (const segment of path) {
+		if (!isObject(cursor) || !hasOwn(cursor, segment)) return undefined;
+		cursor = cursor[segment];
+	}
+	return cursor;
+}
+
+/**
+ * A copy of `value` without the values at `paths`, and without objects that
+ * become empty that way.
+ */
+function withoutPaths(
+	value: Record<string, unknown>,
+	paths: string[][]
+): Record<string, unknown> {
+	const result: Record<string, unknown> = {};
+	for (const [key, child] of Object.entries(value)) {
+		const sub = paths
+			.filter((path) => path[0] === key)
+			.map((path) => path.slice(1));
+		if (sub.length === 0) {
+			result[key] = child;
+		} else if (isObject(child) && sub.every((path) => path.length > 0)) {
+			const rest = withoutPaths(child, sub);
+			if (Object.keys(rest).length > 0) result[key] = rest;
+		}
+		// else: the value itself is at a path
+	}
+	return result;
 }
 
 /**
@@ -435,24 +608,29 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Equality of JSON values. The order of object keys doesn't matter, the order
- * of array items does.
+ * Equality of JSON values. The order of object keys doesn't matter, except
+ * inside arrays (`ordered`): there, objects are values like the variants of a
+ * message-format `match`, whose order is meaningful.
  */
-export function jsonEquals(a: unknown, b: unknown): boolean {
+export function jsonEquals(a: unknown, b: unknown, ordered = false): boolean {
 	if (a === b) return true;
 	if (Array.isArray(a)) {
 		return (
 			Array.isArray(b) &&
 			a.length === b.length &&
-			a.every((item, index) => jsonEquals(item, b[index]))
+			a.every((item, index) => jsonEquals(item, b[index], true))
 		);
 	}
 	if (isObject(a)) {
 		if (!isObject(b)) return false;
 		const keys = Object.keys(a);
-		return (
-			keys.length === Object.keys(b).length &&
-			keys.every((key) => hasOwn(b, key) && jsonEquals(a[key], b[key]))
+		const otherKeys = Object.keys(b);
+		if (keys.length !== otherKeys.length) return false;
+		if (ordered && keys.some((key, index) => otherKeys[index] !== key)) {
+			return false;
+		}
+		return keys.every(
+			(key) => hasOwn(b, key) && jsonEquals(a[key], b[key], ordered)
 		);
 	}
 	return false;
@@ -489,7 +667,9 @@ export function rowsFromImport(imported: {
 		if (bundle.id === undefined) continue;
 		bundles.set(bundle.id, {
 			id: bundle.id,
-			declarations: bundle.declarations ?? [],
+			// an upsert keeps what isn't provided
+			declarations:
+				bundle.declarations ?? bundles.get(bundle.id)?.declarations ?? [],
 		});
 	}
 	for (const message of imported.messages) {
@@ -501,7 +681,7 @@ export function rowsFromImport(imported: {
 			id,
 			bundleId: message.bundleId,
 			locale: message.locale,
-			selectors: message.selectors ?? [],
+			selectors: message.selectors ?? messages.get(id)?.selectors ?? [],
 		});
 	}
 	for (const variant of imported.variants) {
@@ -531,7 +711,7 @@ export function rowsFromImport(imported: {
 			id,
 			messageId,
 			matches,
-			pattern: variant.pattern ?? [],
+			pattern: variant.pattern ?? variants.get(id)?.pattern ?? [],
 		});
 	}
 	return {
