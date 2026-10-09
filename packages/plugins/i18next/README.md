@@ -240,6 +240,18 @@ Plural forms are automatically generated with i18next suffixes:
 
 The plugin uses the CLDR plural rules for each locale to determine which plural forms are needed.
 
+## Exact numbers (`_zero`)
+
+i18next looks up `key_zero` whenever `count === 0`, in every language and before the plural category (French `_one` also covers 0, yet `_zero` wins). It only does so for cardinal plurals. `_zero` is i18next's only exact-number form.
+
+| inlang (MessageFormat 2) | i18next |
+|---|---|
+| exact `0` on `count`, or on an un-annotated alias of it such as `.local countPluralExact = {$count}` (ICU `{count, plural, =0 {…}}`, editors' "add exact number") | `key_zero` |
+| `countPlural` category `zero` (Latvian, Arabic, …) | `key_zero` |
+| other exact numbers (`=1`, `=5`), an exact number of an ordinal plural | not representable: export fails with an error naming the bundle and number |
+
+On import, `key_zero` becomes an exact `count = 0` match next to `countPlural` (plus the `zero` category for languages that have one). Editors and the inlang SDK treat `count` and `countPlural` as one choice, like `countPluralExact` and `countPlural`.
+
 # Limitations
 
 The following i18next features are **not supported** by this plugin:
@@ -251,6 +263,7 @@ The following i18next features are **not supported** by this plugin:
 | **Postprocessors** | Runtime-only feature, not applicable to static translation files |
 | **Template literal strings** | Only single and double quoted strings are parsed in code |
 | **Custom `t` function aliases** | Only standard `t()` function calls are detected by Sherlock |
+| **Exact numbers other than 0** | i18next has no form for ICU `=1`, `=5`, …; export reports them instead of writing a wrong plural |
 
 # Troubleshooting
 

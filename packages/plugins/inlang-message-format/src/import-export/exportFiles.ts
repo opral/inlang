@@ -15,6 +15,7 @@ import type {
 } from "../fileSchema.js";
 import { unflatten } from "flat";
 import { sortMessageKeys } from "../utils/sortKeys.js";
+import { orderSelectors } from "../utils/orderSelectors.js";
 
 export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	bundles,
@@ -128,7 +129,12 @@ function serializeVariants(
 					.filter((declaration) => declaration.type === "local-variable")
 					.map(serializeDeclaration),
 			],
-			selectors: message.selectors.map((s) => s.name).sort(),
+			// message order: selector order is the MessageFormat 2 preference
+			// order and must survive a round trip
+			selectors: orderSelectors(
+				message.selectors.map((s) => s.name),
+				bundle.declarations
+			),
 			match: Object.fromEntries(entries),
 		},
 	];
@@ -258,7 +264,7 @@ function serializeDeclaration(declaration: Declaration): string {
 		if (declaration.value.arg.type === "variable-reference") {
 			result = `local ${declaration.name} = ${declaration.value.arg.name}`;
 		} else if (declaration.value.arg.type === "literal") {
-			result = `local ${declaration.name} = "${declaration.value.arg.value}"`;
+			result = `local ${declaration.name} = "${declaration.value.arg.value.replace(/[\\"]/g, "\\$&")}"`;
 		}
 		if (declaration.value.annotation) {
 			result += `: ${declaration.value.annotation.name}`;

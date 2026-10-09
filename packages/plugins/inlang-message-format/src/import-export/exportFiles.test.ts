@@ -36,7 +36,8 @@ test("exporting does not mutate declaration or match ordering", async () => {
 
 	expect(exported.example[0]).toMatchObject({
 		declarations: ["input alpha", "input zebra"],
-		selectors: ["alpha", "zebra"],
+		// selector order is the MessageFormat 2 preference order
+		selectors: ["zebra", "alpha"],
 		match: { "alpha=*, zebra=yes": "Example" },
 	});
 	expect(bundle).toStrictEqual(originalBundle);

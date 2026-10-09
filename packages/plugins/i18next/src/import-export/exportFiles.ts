@@ -85,12 +85,25 @@ function serializeMessage(
 	variants: Variant[],
 	settings?: PluginSettings
 ): Array<{ key: string; value: string; locale: string }> {
+	// An exact number of `count` (ICU `{count, plural, =0 {…}}`) is either
+	// selected on the input itself (`count`, how `_zero` is imported) or on an
+	// un-annotated local alias of it (`.local countPluralExact = {$count}`, how
+	// `@inlang/plugin-icu1` imports `=0` and editors add exact numbers).
+	const exactSelectors = message.selectors
+		.map((selector) => selector.name)
+		.filter((name) => isExactCountSelector(name, bundle));
+	if (exactSelectors.length > 1) {
+		throw new Error(
+			`i18next export cannot represent the exact-number selectors ${exactSelectors.map((name) => `"${name}"`).join(", ")} of bundle "${bundle.id}": i18next has one exact form, "_zero"`
+		);
+	}
 	const supportedSelectors = new Set([
 		"context",
 		"pluralType",
 		"count",
 		"countPlural",
 		"countOrdinal",
+		...exactSelectors,
 	]);
 	const unsupportedSelector = message.selectors.find(
 		(selector) => !supportedSelectors.has(selector.name)
@@ -100,13 +113,24 @@ function serializeMessage(
 			`i18next export cannot represent selector "${unsupportedSelector.name}" in bundle "${bundle.id}"`
 		);
 	}
+	const hasCardinalPlural = message.selectors.some(
+		(selector) => selector.name === "countPlural"
+	);
+	const hasOrdinalPlural = message.selectors.some(
+		(selector) => selector.name === "countOrdinal"
+	);
 	const result = [];
 
 	// emit base keys first and the most specific keys last, mirroring how
 	// i18next files are conventionally written
-	const sortedVariants = [...variants].sort(
-		(a, b) => matchSpecificity(a) - matchSpecificity(b)
-	);
+	const sortedVariants = variants
+		.map((variant) => ({
+			...variant,
+			matches: variant.matches.map((match) =>
+				exactSelectors.includes(match.key) ? { ...match, key: "count" } : match
+			),
+		}))
+		.sort((a, b) => matchSpecificity(a) - matchSpecificity(b));
 
 	for (const variant of sortedVariants) {
 		const pattern = serializePattern(variant.pattern, settings);
@@ -135,7 +159,24 @@ function serializeMessage(
 		if (contextMatch !== undefined) {
 			key += `_${contextMatch.value}`;
 		}
-		if (countMatch?.value === "0") {
+		if (countMatch !== undefined) {
+			// i18next has exactly one exact-number form: `_zero`, looked up
+			// when `count === 0` in every language (before the plural
+			// category), but only for cardinal plurals.
+			// https://www.i18next.com/translation-function/plurals
+			if (Number(countMatch.value) !== 0 || countMatch.value.trim() === "") {
+				throw new Error(
+					`i18next export cannot represent the exact number =${countMatch.value} of bundle "${bundle.id}" (${message.locale}): i18next only has an exact form for 0 ("_zero"). Use a plural category or remove the form.`
+				);
+			}
+			if (
+				pluralTypeMatch?.value === "ordinal" ||
+				(hasOrdinalPlural && !hasCardinalPlural)
+			) {
+				throw new Error(
+					`i18next export cannot represent the exact number =0 of the ordinal plural of bundle "${bundle.id}" (${message.locale}): i18next only looks up "_zero" for cardinal plurals.`
+				);
+			}
 			// the exact `count = 0` match serializes back to i18next's
 			// `_zero` suffix (its Intl category fallback variant derives the
 			// same key), see https://github.com/opral/inlang/issues/4357
@@ -207,4 +248,22 @@ function serializePattern(pattern: Pattern, settings?: PluginSettings): string {
 	}
 
 	return result;
+}
+
+/**
+ * True for a selector that matches exact values of the `count` input: the
+ * input itself, or an un-annotated local alias of it such as
+ * `.local countPluralExact = {$count}`.
+ */
+function isExactCountSelector(name: string, bundle: Bundle): boolean {
+	if (name === "count") return true;
+	const declaration = bundle.declarations.find(
+		(declaration) => declaration.name === name
+	);
+	return (
+		declaration?.type === "local-variable" &&
+		declaration.value.annotation === undefined &&
+		declaration.value.arg.type === "variable-reference" &&
+		declaration.value.arg.name === "count"
+	);
 }
