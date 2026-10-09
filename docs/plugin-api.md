@@ -168,6 +168,23 @@ exportFiles: async ({ bundles, messages, variants, settings }) => {
 
 Set `verbatim: true` on an exported file that keeps the formatting of the existing file. `saveProjectToDirectory` then writes it byte for byte. Without it, `saveProjectToDirectory` re-indents exported JSON like the existing file (and writes LF line endings).
 
+JSON plugins can use `keepUnchangedJsonEntries` from `@inlang/sdk/json-formatting`. It takes the files of the full export and the plugin's own `importFiles` and `exportFiles`, and keeps every entry of the previous file for which the plugin writes the same value as for the new data:
+
+```typescript
+import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
+
+exportFiles: async (args) =>
+  keepUnchangedJsonEntries({
+    exported: await exportWholeFiles(args),
+    files: args.files,
+    settings: args.settings,
+    importFiles,
+    exportFiles: exportWholeFiles,
+  }),
+```
+
+It marks the files whose previous file it used as `verbatim`.
+
 **Returns:** Array of files to write:
 
 - `locale` — The locale
