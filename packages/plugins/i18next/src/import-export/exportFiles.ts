@@ -86,9 +86,11 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 	);
 	const byPosition = (namespace: string) =>
 		position.get(namespace) ?? position.size;
-	const read = namespacesWithSameIds(namespaces)
-		? await bundleIdsOfExistingFiles(files, settings)
-		: undefined;
+	const overlapping = overlappingNamespaces(namespaces);
+	const read =
+		overlapping.length > 0
+			? await bundleIdsOfExistingFiles(files, overlapping, settings)
+			: undefined;
 	/** of `namespaces`, the one read last: its text is the one a project shows */
 	const readLast = (namespaces: string[]) =>
 		namespaces.sort((a, b) => byPosition(b) - byPosition(a))[0];
@@ -216,28 +218,61 @@ const exportWholeFiles: NonNullable<(typeof plugin)["exportFiles"]> = async ({
 };
 
 /**
- * Whether two of the namespaces can have the same bundle id: `a` and `a:b`
- * (the key `b:c` of `a` and the key `c` of `a:b` are both `a:b:c`).
+ * The namespaces that can have the same bundle id as another one: `a` and
+ * `a:b` (the key `b:c` of `a` and the key `c` of `a:b` are both `a:b:c`).
  */
-function namespacesWithSameIds(namespaces: string[]): boolean {
-	return namespaces.some((namespace) =>
-		namespaces.some((other) => other.startsWith(`${namespace}:`))
+function overlappingNamespaces(namespaces: string[]): string[] {
+	return namespaces.filter((namespace) =>
+		namespaces.some(
+			(other) =>
+				other.startsWith(`${namespace}:`) || namespace.startsWith(`${other}:`)
+		)
 	);
 }
 
 /**
- * The bundle ids of the existing files and their locales, by namespace, as
- * importFiles reads the files of each namespace. Files that aren't valid JSON
- * are left out.
+ * Results of bundleIdsOfExistingFiles by `files`: an export with the
+ * existing files exports several times with the same files (see
+ * keepUnchangedJsonEntries).
  */
-async function bundleIdsOfExistingFiles(
+const bundleIdsCache = new WeakMap<
+	readonly ExistingFile[],
+	Map<string, Promise<Map<string, Map<string, Set<string>>>>>
+>();
+
+/**
+ * The bundle ids of the existing files of `namespaces` and their locales, by
+ * namespace, as importFiles reads the files of each namespace. Files that
+ * aren't valid JSON are left out.
+ */
+function bundleIdsOfExistingFiles(
 	files: readonly ExistingFile[] | undefined,
+	namespaces: string[],
+	settings: Parameters<typeof importFiles>[0]["settings"]
+): Promise<Map<string, Map<string, Set<string>>>> {
+	if (files === undefined) return Promise.resolve(new Map());
+	const byFiles = bundleIdsCache.get(files) ?? new Map();
+	bundleIdsCache.set(files, byFiles);
+	const key = JSON.stringify([namespaces, settings?.["plugin.inlang.i18next"]]);
+	let result = byFiles.get(key);
+	if (result === undefined) {
+		result = readBundleIds(files, namespaces, settings);
+		byFiles.set(key, result);
+	}
+	return result;
+}
+
+async function readBundleIds(
+	files: readonly ExistingFile[],
+	namespaces: string[],
 	settings: Parameters<typeof importFiles>[0]["settings"]
 ): Promise<Map<string, Map<string, Set<string>>>> {
 	const byNamespace = new Map<string, ExistingFile[]>();
-	for (const file of files ?? []) {
+	for (const file of files) {
 		const namespace = file.metadata?.namespace;
-		if (typeof namespace !== "string") continue;
+		if (typeof namespace !== "string" || !namespaces.includes(namespace)) {
+			continue;
+		}
 		try {
 			JSON.parse(new TextDecoder().decode(file.content));
 		} catch {
