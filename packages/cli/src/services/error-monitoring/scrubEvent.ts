@@ -2,8 +2,9 @@ import type { Event } from "@sentry/node";
 
 /**
  * Removes what can identify the user from an error report: the machine's
- * hostname and local paths in error messages and stack frames (which contain
- * user names, company and project names).
+ * hostname and fingerprint (boot time, memory, CPU, locale, timezone), console
+ * output, and local paths and plugin source code in error messages and stack
+ * frames (which contain user names, company and project names).
  */
 export function scrubEvent<T extends Event>(
   event: T,
@@ -13,6 +14,13 @@ export function scrubEvent<T extends Event>(
   delete event.user;
   // breadcrumbs carry console output: paths, message keys, locales
   delete event.breadcrumbs;
+  delete event.extra;
+  // keep the runtime and OS, drop what fingerprints the machine
+  const { runtime, os } = event.contexts ?? {};
+  event.contexts = {
+    ...(runtime ? { runtime } : {}),
+    ...(os ? { os: { name: os.name, version: os.version } } : {}),
+  };
   const redact = (text: string | undefined) =>
     text === undefined ? undefined : redactPaths(text, args);
   if (event.message !== undefined) event.message = redact(event.message);
@@ -23,39 +31,79 @@ export function scrubEvent<T extends Event>(
   for (const exception of event.exception?.values ?? []) {
     exception.value = redact(exception.value);
     for (const frame of exception.stacktrace?.frames ?? []) {
+      const inDependency = isInNodeModules(frame.filename ?? frame.abs_path);
       frame.filename = redactFramePath(frame.filename, args);
       frame.abs_path = redactFramePath(frame.abs_path, args);
+      // derived from the file name: contains basenames or plugin source code
+      delete frame.module;
       delete frame.vars;
+      // the user's own code, e.g. a local plugin
+      if (!inDependency) {
+        delete frame.pre_context;
+        delete frame.context_line;
+        delete frame.post_context;
+      }
     }
   }
-  delete event.extra;
   return event;
 }
 
+/** Characters that end a path in free text. */
+const PATH_END = `\\s'"\`)\\]},;`;
+
 /**
- * Replaces the current working directory with `.` and the home directory with
- * `~`, then any other absolute path with `<path>`.
+ * Replaces the current working directory with `.` and any other absolute
+ * path (including the home directory) with `<path>`.
  */
 export function redactPaths(
   text: string,
   args: { home: string; cwd: string },
 ): string {
   let result = text;
-  // longest first: the cwd is usually inside the home directory
-  for (const [path, replacement] of [
-    [args.cwd, "."],
-    [args.home, "~"],
-  ].sort((a, b) => b[0]!.length - a[0]!.length) as [string, string][]) {
-    if (path.length > 1) result = result.split(path).join(replacement);
-  }
+  // paths relative to the cwd are the project's, e.g. `./project.inlang`
+  if (args.cwd.length > 1 && args.cwd !== args.home)
+    result = result.replace(directoryPattern(args.cwd), ".");
+  if (args.home.length > 1)
+    result = result.replace(
+      new RegExp(`${directoryPattern(args.home).source}[^${PATH_END}]*`, "g"),
+      "<path>",
+    );
   return (
     result
-      // file URLs
-      .replace(/file:\/\/[^\s'"`)]+/g, "<path>")
+      // URLs of local files and modules, e.g. `file:///a` or `data:...`
+      .replace(/\b(?:file|data|blob):[^\s'"`]+/g, "<path>")
+      // quoted absolute paths, which can contain spaces (Node's fs errors)
+      .replace(/(['"`])(?:[A-Za-z]:)?[\\/](?!\1).*?\1/g, "$1<path>$1")
+      // Windows: `C:\a`, `C:/a` or `\\server\share`
+      .replace(
+        new RegExp(
+          `(?:\\b[A-Za-z]:|\\\\\\\\[^\\s\\\\'"\`]+)[\\\\/][^${PATH_END}]*`,
+          "g",
+        ),
+        "<path>",
+      )
       // POSIX: `/a/b`, not part of a URL (`https://x/y`) or a relative path
-      .replace(/(?<![\w.:/~<>-])\/[^\s'"`/:)]+(?:\/[^\s'"`/:)]*)+/g, "<path>")
-      // Windows: `C:\a` or `\\server\share`
-      .replace(/(?:\b[A-Za-z]:|\\\\[^\s\\'"`]+)\\[^\s'"`)]*/g, "<path>")
+      .replace(
+        new RegExp(
+          `(?<![\\w.~<>/-])\\/[^${PATH_END}/:]+(?:\\/[^${PATH_END}]*)?`,
+          "g",
+        ),
+        "<path>",
+      )
+  );
+}
+
+/** Matches `directory` when it's a whole directory, not a prefix of a name. */
+function directoryPattern(directory: string): RegExp {
+  const escaped = directory.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`${escaped}(?=[\\\\/${PATH_END}:]|$)`, "g");
+}
+
+function isInNodeModules(path: string | undefined): boolean {
+  return (
+    path !== undefined &&
+    !/^(?:data|blob):/.test(path) &&
+    path.replace(/\\/g, "/").includes("/node_modules/")
   );
 }
 
@@ -68,8 +116,11 @@ function redactFramePath(
   args: { home: string; cwd: string },
 ): string | undefined {
   if (path === undefined) return undefined;
-  const normalized = path.replace(/\\/g, "/");
-  const index = normalized.lastIndexOf("/node_modules/");
-  if (index !== -1) return normalized.slice(index + 1);
+  // plugins are imported from data URLs that contain their source code
+  if (/^(?:data|blob):/.test(path)) return "<data-url>";
+  if (isInNodeModules(path)) {
+    const normalized = path.replace(/\\/g, "/");
+    return normalized.slice(normalized.lastIndexOf("/node_modules/") + 1);
+  }
   return redactPaths(path, args);
 }

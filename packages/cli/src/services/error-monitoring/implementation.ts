@@ -13,6 +13,8 @@ export function initErrorMonitoring() {
     release: version,
     // Not interested in performance data
     tracesSampleRate: 0,
+    // no usage ping (release health session) on every run
+    autoSessionTracking: false,
     environment: ENV_VARIABLES.IS_PRODUCTION ? "production" : "development",
     // the hostname is the default server name
     serverName: "unknown",

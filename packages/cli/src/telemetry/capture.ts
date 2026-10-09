@@ -23,7 +23,6 @@ const events = [
  */
 export const capture = async (args: {
   event: (typeof events)[number];
-  projectId?: string;
   properties: Record<string, any>;
 }) => {
   // do not send events if the token is not set
@@ -45,8 +44,9 @@ export const capture = async (args: {
         // id is "unknown" because no user information is available
         distinct_id: "unknown",
         properties: {
-          $groups: args.projectId ? { project: args.projectId } : undefined,
           ...args.properties,
+          // don't resolve the request's IP to a location
+          $geoip_disable: true,
         },
       }),
     });

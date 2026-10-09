@@ -8,7 +8,6 @@ import { validate } from "./commands/validate/index.js";
 import { capture } from "./telemetry/capture.js";
 import { commandTelemetryProperties } from "./telemetry/commandProperties.js";
 import { isTelemetryDisabled } from "./telemetry/isTelemetryDisabled.js";
-import { lastUsedProject } from "./utilities/getInlangProject.js";
 import { lint } from "./commands/lint/index.js";
 import { check } from "./commands/check/index.js";
 import { cloud } from "./commands/cloud/index.js";
@@ -43,11 +42,9 @@ export const cli = new Command()
   .addCommand(lint, { hidden: true })
   // Hooks
   .hook("postAction", async (_cli, actionCommand) => {
-    // don't even read the project id if the user opted out
     if (isTelemetryDisabled()) return;
     await capture({
       event: `CLI command executed`,
-      projectId: await lastUsedProject?.id.get().catch(() => undefined),
       properties: {
         // the command's name and the names of the flags used, never their
         // values or arguments: those can be paths, globs, locales or keys

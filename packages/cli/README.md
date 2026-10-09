@@ -428,7 +428,7 @@ See how there is also a `--watch` flag, which enables a watch mode to monitor fo
 
 ## Telemetry
 
-The CLI sends anonymous usage data to improve inlang: the command's name (e.g. `check`), the names of the flags you passed (e.g. `--project`, `--locales`), the CLI version, Node.js version and platform, and a random ID of the inlang project. It never sends flag values or arguments: no paths, globs, locales, file names or message keys. Error reports leave out the hostname and console output, and replace local paths.
+The CLI sends anonymous usage data to improve inlang: the command's name (e.g. `check`), the names of the flags you passed (e.g. `--project`, `--locales`), the CLI version, Node.js version and platform. It never sends flag values or arguments: no paths, globs, locales, file names or message keys. Crashes are reported to Sentry without the hostname, machine details, console output or your code, and with local paths replaced.
 
 To turn off telemetry and error reports, set `DO_NOT_TRACK=1` or `INLANG_TELEMETRY=off`:
 

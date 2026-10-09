@@ -74,7 +74,6 @@ test("check sends the command and flag names, not the paths, globs or locales", 
   expect(calls).toEqual([
     {
       event: "CLI command executed",
-      projectId: expect.any(String),
       properties: {
         name: "check",
         flags: ["format", "locales", "no-fail", "project", "source"],
@@ -92,7 +91,6 @@ test("a project that can't be opened doesn't leak its path", async () => {
   expect(calls).toEqual([
     {
       event: "CLI command executed",
-      projectId: undefined,
       properties: expect.objectContaining({
         name: "check",
         flags: ["project"],
@@ -131,7 +129,6 @@ test("subcommands and deprecated commands send only flag names", async () => {
     expect(calls).toEqual([
       {
         event: "CLI command executed",
-        projectId: undefined,
         properties: expect.objectContaining({ name, flags }),
       },
     ]);

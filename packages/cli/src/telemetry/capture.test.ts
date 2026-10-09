@@ -26,7 +26,7 @@ const event = {
 } as const;
 
 test("sends the event with only the given properties", async () => {
-  await capture({ ...event, projectId: "project-id" });
+  await capture(event);
   expect(fetch).toHaveBeenCalledTimes(1);
   const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
   expect(url).toBe("https://eu.posthog.com/capture/");
@@ -34,7 +34,7 @@ test("sends the event with only the given properties", async () => {
     api_key: "test-token",
     event: "CLI cloud viewed",
     distinct_id: "unknown",
-    properties: { $groups: { project: "project-id" }, json: true },
+    properties: { json: true, $geoip_disable: true },
   });
 });
 
