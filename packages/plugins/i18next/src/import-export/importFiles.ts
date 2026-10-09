@@ -10,7 +10,6 @@ import type { plugin } from "../plugin.js";
 import { flatten } from "flat";
 import type { BundleImport, MessageImport, VariantImport } from "@inlang/sdk";
 import { matchSpecificity } from "./matchSpecificity.js";
-import { zeroCategorySelectsNonZero } from "./zeroCategory.js";
 import type { PluginSettings } from "../settings.js";
 
 export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
@@ -385,14 +384,19 @@ function parseMessage(args: {
 
 	const variants: VariantImport[] = [variant];
 
-	if (isZero && zeroCategorySelectsNonZero(args.locale)) {
+	if (isZero) {
 		// `_zero` additionally serves as the Intl "zero" plural category key,
-		// which Latvian selects for 10, 11–19, 20, … too. Only there a second
-		// variant keeps category-based selection working alongside the
-		// exact-0 match. Everywhere else (English, French, and Arabic or Welsh,
-		// whose "zero" category is 0 only) the exact-0 variant is all of
-		// `_zero`, so there is no second form that an edit could make diverge.
-		// Export fails if the two Latvian forms diverge, see exportFiles.
+		// which Latvian selects for 10, 11–19, 20, … too, so a second variant
+		// keeps category-based selection working alongside the exact-0 match.
+		//
+		// Also where that category never selects a number other than 0
+		// (English, French, Arabic, Welsh): the second variant keeps the
+		// position of `_zero` among the plural keys of the file. Export writes
+		// the keys in that order, and the exact-0 variant has to come before
+		// the plural categories for first-match-wins consumers, so it can't
+		// carry the position itself. Export writes the exact-0 text there.
+		// Without it, `_zero` would move behind `_one` / `_other` on the first
+		// export after an upgrade.
 		variants.push({
 			messageBundleId: bundleId,
 			messageLocale: args.locale,

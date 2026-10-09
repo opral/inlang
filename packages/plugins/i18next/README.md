@@ -252,7 +252,7 @@ i18next looks up `key_zero` whenever `count === 0`, in every language and before
 
 Where the `zero` category covers more than 0 (Latvian: 10, 11–19, 20, …), i18next uses `key_zero` for all of those counts, so an exact `0` alone cannot be expressed: its text would also show for 10, 11, 20. There an exact `0` exports only next to a `zero` form with the same text; otherwise the export fails with an error.
 
-On import, `key_zero` becomes one form: an exact `count = 0` match next to `countPlural`. Editors and the inlang SDK treat `count` and `countPlural` as one choice, like `countPluralExact` and `countPlural`. Only where the `zero` category also selects other numbers (Latvian: 10, 11–19, 20, …) is a second form with `countPlural = zero` imported. Both forms export to `key_zero`, so they need the same text; if they differ, the export fails instead of dropping one.
+On import, `key_zero` becomes an exact `count = 0` match next to `countPlural`, plus a second form with `countPlural = zero` and the same text. Editors and the inlang SDK treat `count` and `countPlural` as one choice, like `countPluralExact` and `countPlural`. Both forms export to `key_zero`, at the position `key_zero` had in the file. Where the `zero` category selects no number other than 0 (English, French: none; Arabic, Welsh: only 0), i18next shows the exact text for `key_zero`, so export writes the exact form's text. Where it also selects other numbers (Latvian: 10, 11–19, 20, …), both forms need the same text; if they differ, the export fails instead of dropping one.
 
 # Limitations
 
