@@ -1,10 +1,14 @@
 import { describe, expect, test } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
 import {
 	type Project,
+	contentOf,
 	decode,
 	encode,
 	importPlugin,
 	insertRows,
+	selectRows,
 	tables,
 } from "./harness.js";
 import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
@@ -12,9 +16,11 @@ import {
 	type Fixture,
 	exportFixtureFiles,
 	fixtures,
+	fixturesDir,
 	openFixtureProject,
 	readSourceFiles,
 	settingsFor,
+	upgrades,
 } from "./fixtures.js";
 
 /**
@@ -389,3 +395,153 @@ describe.each(legacy)("legacy shapes: $dir", ({ dir, texts }) => {
 		await project.close();
 	});
 });
+
+/**
+ * A catalog as Xcode writes it (`xcstringstool sync` writes it byte for
+ * byte): strings extracted from code that nobody translated yet (`{ }` with
+ * a blank line), only a `comment`, `shouldTranslate: false`, a manual string
+ * with only a `comment`, a stale translated string, strings translated to
+ * `de` only, a plural and a manual string with an `en` value.
+ *
+ * Not one of `fixtures`: the published plugin can't import strings without
+ * localizations, so there are no files or databases it wrote for it.
+ */
+describe("apple-xcstrings: a catalog as Xcode writes it", () => {
+	const fixture = fixtures.find((f) => f.dir === "apple-xcstrings")!;
+	const xcode = fs.readFileSync(
+		path.join(fixturesDir, fixture.dir, "xcode", "Localizable.xcstrings"),
+		"utf-8"
+	);
+	const texts = { en: xcode };
+
+	test("the published plugin can't import it", async () => {
+		const project = await openFixtureProject(fixture, "published", "published");
+		await expect(
+			project.importFiles({
+				pluginKey: fixture.key,
+				files: [{ locale: "en", content: encode(xcode) }],
+			})
+		).rejects.toThrow("source-only entry");
+		await project.close();
+	});
+
+	test.each(upgrades)(
+		"is imported by the $plugin plugin on the $sdk SDK, with the key as the source language value of strings without one",
+		async ({ sdk, plugin }) => {
+			const project = await openFixtureProject(fixture, sdk, plugin);
+			await project.importFiles({
+				pluginKey: fixture.key,
+				files: [{ locale: "en", content: encode(xcode) }],
+			});
+			const rows = contentOf(await selectRows(project));
+			const strings = Object.keys(JSON.parse(xcode).strings);
+			expect(rows.bundles.map((bundle) => bundle.id).sort()).toEqual(
+				[...strings].sort()
+			);
+			// every string has a source language message
+			for (const id of strings) {
+				expect(
+					rows.messages.some((message) => message.key === `${id}/en`),
+					id
+				).toBe(true);
+			}
+			await project.close();
+		}
+	);
+
+	test("stays byte-identical when exported with it", async () => {
+		const project = await load(fixture, texts);
+		expect(await exportWith(project, fixture, texts)).toEqual(texts);
+		await project.close();
+	});
+
+	test("an edited translation changes only its line", async () => {
+		const project = await load(fixture, texts);
+		await setPattern(project, "settings.title", "de", "EDITED VALUE");
+		const result = await exportWith(project, fixture, texts);
+		expect(changedLines(xcode, result.en!)).toEqual({
+			before: ['            "value" : "Einstellungen"'],
+			after: ['            "value" : "EDITED VALUE"'],
+		});
+		await project.close();
+	});
+
+	test("translating a string without localizations adds only its translation", async () => {
+		const project = await load(fixture, texts);
+		const t = tables(project.version);
+		await project.db
+			.insertInto(t.message)
+			.values({
+				id: "not_yet_translated_de",
+				[t.bundleId]: "Not yet translated",
+				locale: "de",
+				selectors: [],
+			})
+			.execute();
+		await project.db
+			.insertInto(t.variant)
+			.values({
+				id: "not_yet_translated_de_variant",
+				[t.messageId]: "not_yet_translated_de",
+				matches: [],
+				pattern: [{ type: "text", value: "Noch nicht übersetzt" }],
+			})
+			.execute();
+		const result = await exportWith(project, fixture, texts);
+		expect(changedLines(xcode, result.en!)).toEqual({
+			// the blank line of Xcode's empty object
+			before: [""],
+			after: [
+				'      "localizations" : {',
+				'        "de" : {',
+				'          "stringUnit" : {',
+				'            "state" : "translated",',
+				'            "value" : "Noch nicht übersetzt"',
+				"          }",
+				"        }",
+				"      }",
+			],
+		});
+		await project.close();
+	});
+
+	test("the published SDK, which doesn't pass the existing file, writes every string and doesn't add the key as a value", async () => {
+		const project = await openFixtureProject(fixture, "published", "current");
+		await project.importFiles({
+			pluginKey: fixture.key,
+			files: [{ locale: "en", content: encode(xcode) }],
+		});
+		const [file] = await exportFixtureFiles(project, fixture);
+		await project.close();
+		const before = JSON.parse(xcode).strings;
+		const after = JSON.parse(file!.content).strings;
+		expect(Object.keys(after).sort()).toEqual(Object.keys(before).sort());
+		for (const [id, entry] of Object.entries<any>(before)) {
+			// the same locales, e.g. none for strings without localizations
+			expect(Object.keys(after[id].localizations ?? {}), id).toEqual(
+				Object.keys(entry.localizations ?? {})
+			);
+		}
+	});
+});
+
+/** Sets the pattern of the message of `bundleId` in `locale` to text. */
+async function setPattern(
+	project: Project,
+	bundleId: string,
+	locale: string,
+	text: string
+) {
+	const t = tables(project.version);
+	const message = await project.db
+		.selectFrom(t.message)
+		.where(t.bundleId, "=", bundleId)
+		.where("locale", "=", locale)
+		.select("id")
+		.executeTakeFirstOrThrow();
+	await project.db
+		.updateTable(t.variant)
+		.set({ pattern: [{ type: "text", value: text }] })
+		.where(t.messageId, "=", message.id)
+		.execute();
+}

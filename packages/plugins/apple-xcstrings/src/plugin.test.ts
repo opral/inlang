@@ -374,12 +374,6 @@ describe("Apple String Catalog plugin", () => {
     expect(() =>
       plugin.importFiles!({
         settings,
-        files: [{ locale: "en", content: encode(catalog({ sourceOnly: {} })) }],
-      }),
-    ).toThrow("source-only entry");
-    expect(() =>
-      plugin.importFiles!({
-        settings,
         files: [
           {
             locale: "en",
@@ -394,6 +388,136 @@ describe("Apple String Catalog plugin", () => {
         ],
       }),
     ).toThrow("must match baseLocale");
+  });
+
+  test("imports the key as the source language value of strings without a localization of the source language", async () => {
+    // Xcode uses the key at runtime, e.g. for strings extracted from code
+    // that nobody translated yet, `shouldTranslate: false`, stale strings
+    const imported = await plugin.importFiles!({
+      settings,
+      files: [
+        {
+          locale: "en",
+          content: encode(
+            catalog({
+              "": {},
+              "Hello, %@!": {
+                localizations: {
+                  de: { stringUnit: translated("Hallo, %@!") },
+                },
+              },
+              "Not yet translated": {},
+              "Rate: %.1f": { comment: "a format the plugin can't read" },
+              "Copyright © 2026": { shouldTranslate: false },
+              "onboarding.title": {
+                comment: "Title of the first page",
+                extractionState: "manual",
+              },
+              stale: { extractionState: "stale", localizations: {} },
+            }),
+          ),
+        },
+      ],
+    });
+    const sourceMessages = (bundleId: string) =>
+      imported.messages.filter((message) => message.bundleId === bundleId);
+    const pattern = (bundleId: string, locale: string) =>
+      imported.variants.find(
+        (variant) =>
+          variant.messageBundleId === bundleId &&
+          variant.messageLocale === locale,
+      )?.pattern;
+    for (const id of [
+      "",
+      "Not yet translated",
+      "Rate: %.1f",
+      "Copyright © 2026",
+      "onboarding.title",
+      "stale",
+    ]) {
+      expect(sourceMessages(id), id).toEqual([
+        { bundleId: id, locale: "en", selectors: [] },
+      ]);
+      expect(pattern(id, "en"), id).toEqual([{ type: "text", value: id }]);
+    }
+    expect(sourceMessages("Hello, %@!").map((m) => m.locale)).toEqual([
+      "de",
+      "en",
+    ]);
+    // the key is a format string like the values
+    expect(pattern("Hello, %@!", "en")).toEqual([
+      { type: "text", value: "Hello, " },
+      {
+        type: "expression",
+        arg: { type: "variable-reference", name: "arg1" },
+        annotation: {
+          type: "function-reference",
+          name: "apple-printf",
+          options: [
+            { name: "specifier", value: { type: "literal", value: "@" } },
+            { name: "position", value: { type: "literal", value: "1" } },
+          ],
+        },
+      },
+      { type: "text", value: "!" },
+    ]);
+    expect(
+      imported.bundles.find((bundle) => bundle.id === "Hello, %@!")
+        ?.declarations,
+    ).toEqual([{ type: "input-variable", name: "arg1" }]);
+  });
+
+  test("doesn't write the key as the source language value, so that strings without one keep their shape", async () => {
+    const source = catalog({
+      "Hello, %@!": {
+        localizations: { de: { stringUnit: translated("Hallo, %@!") } },
+      },
+      "Not yet translated": {},
+      "Rate: %.1f": {},
+      "settings.title": {
+        localizations: { en: { stringUnit: translated("Settings") } },
+      },
+    });
+    const imported = await plugin.importFiles!({
+      settings,
+      files: [{ locale: "en", content: encode(source) }],
+    });
+    const data = concretize(imported);
+    const [file] = await plugin.exportFiles!({ settings, ...data });
+    const exported = JSON.parse(decode(file!.content));
+    expect(exported.strings).toEqual({
+      "Hello, %@!": {
+        extractionState: "manual",
+        localizations: { de: { stringUnit: translated("Hallo, %1$@!") } },
+      },
+      "Not yet translated": { extractionState: "manual" },
+      "Rate: %.1f": { extractionState: "manual" },
+      "settings.title": {
+        extractionState: "manual",
+        localizations: { en: { stringUnit: translated("Settings") } },
+      },
+    });
+    compileWithXcode(file!.content);
+
+    // a source language value other than the key is written
+    const edited = structuredClone(data);
+    const variant = edited.variants.find(
+      (variant: any) =>
+        variant.messageId ===
+        edited.messages.find(
+          (message: any) =>
+            message.bundleId === "Not yet translated" &&
+            message.locale === "en",
+        ).id,
+    );
+    variant.pattern = [{ type: "text", value: "Not translated yet" }];
+    const [editedFile] = await plugin.exportFiles!({ settings, ...edited });
+    expect(
+      JSON.parse(decode(editedFile!.content)).strings["Not yet translated"],
+    ).toEqual({
+      extractionState: "manual",
+      localizations: { en: { stringUnit: translated("Not translated yet") } },
+    });
   });
 
   test("rejects ambiguous printf arguments and duplicate identities", () => {

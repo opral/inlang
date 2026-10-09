@@ -104,18 +104,12 @@ function importCatalogs(
   for (const [id, entry] of Object.entries(catalog.strings)) {
     if (!entry || typeof entry !== "object")
       throw new Error(`Invalid catalog entry "${id}"`);
-    if (!entry.localizations || Object.keys(entry.localizations).length === 0)
-      throw new Error(
-        `Apple .xcstrings source-only entry "${id}" has no localization value to import`,
-      );
-    for (const [locale, localization] of Object.entries(
-      entry.localizations ?? {},
-    )) {
-      if (!settings.locales.includes(locale))
-        throw new Error(
-          `Apple .xcstrings locale "${locale}" in "${id}" is not declared in project settings`,
-        );
-      const imported = importLocalization(id, localization);
+    const localizations = entry.localizations ?? {};
+    assertObject(localizations, `localizations of "${id}"`);
+    const add = (
+      locale: string,
+      imported: ReturnType<typeof importLocalization>,
+    ) => {
       const existing = bundles.get(id) ?? { id, declarations: [] };
       bundles.set(id, mergeDeclarations(existing, imported.declarations));
       messages.push({ bundleId: id, locale, selectors: imported.selectors });
@@ -125,9 +119,74 @@ function importCatalogs(
           messageLocale: locale,
           ...variant,
         });
+    };
+    for (const [locale, localization] of Object.entries(localizations)) {
+      if (!settings.locales.includes(locale))
+        throw new Error(
+          `Apple .xcstrings locale "${locale}" in "${id}" is not declared in project settings`,
+        );
+      add(locale, importLocalization(id, localization));
     }
+    // Strings without a localization of the source language, e.g. strings
+    // extracted from code that nobody translated yet (`"key" : { }`), strings
+    // with `shouldTranslate: false`, stale or manual strings: Xcode uses the
+    // key as their source language value. It is imported as such, so that
+    // editors show it and translators can translate it. The export doesn't
+    // write it back, see `isKeyAsSourceValue`.
+    if (!own(localizations, catalog.sourceLanguage))
+      add(catalog.sourceLanguage, importKeyAsSourceValue(id));
   }
   return { bundles: [...bundles.values()], messages, variants };
+}
+
+/**
+ * The message of the source language for a string without a localization of
+ * the source language: its key, which Xcode uses as the value. A key that is
+ * not a format string the plugin supports (e.g. `"Rate: %.1f"`) is text.
+ */
+function importKeyAsSourceValue(id: string) {
+  const parsed = parseKey(id);
+  return {
+    declarations: inputDeclarations(parsed.variables),
+    selectors: [],
+    variants: [{ matches: [], pattern: parsed.pattern }],
+  };
+}
+
+function parseKey(id: string): { pattern: Pattern; variables: string[] } {
+  try {
+    return parsePattern(id);
+  } catch {
+    return { pattern: [{ type: "text", value: id }], variables: [] };
+  }
+}
+
+/**
+ * Whether `localization` of the source language is what Xcode uses for a
+ * string without one: its key. The export doesn't write such a localization,
+ * so that a string without a localization of the source language, which the
+ * import gives the key as value, is written as it was, and a translation of
+ * it only adds the translated locale.
+ */
+function isKeyAsSourceValue(
+  id: string,
+  locale: string,
+  localization: Localization,
+  settings: ExportArgs["settings"],
+) {
+  if (locale !== settings.baseLocale) return false;
+  if (Object.keys(localization).join() !== "stringUnit") return false;
+  const parsed = parseKey(id);
+  let keyValue: string;
+  try {
+    keyValue = serializePattern(parsed.pattern, {
+      id,
+      declarations: inputDeclarations(parsed.variables),
+    });
+  } catch {
+    return false;
+  }
+  return localization.stringUnit?.value === keyValue;
 }
 
 function importLocalization(id: string, localization: Localization) {
@@ -598,20 +657,24 @@ function exportCatalog({
     );
     if (bundleMessages.length === 0) continue;
     const localizations: Record<string, Localization> = {};
+    const locales = new Set<string>();
     for (const message of bundleMessages) {
-      if (localizations[message.locale])
+      if (locales.has(message.locale))
         throw new Error(
           `Duplicate Apple .xcstrings locale "${message.locale}" in "${bundle.id}"`,
         );
-      localizations[message.locale] = exportLocalization(
-        bundle,
-        message,
-        variants,
-      );
+      locales.add(message.locale);
+      const localization = exportLocalization(bundle, message, variants);
+      if (isKeyAsSourceValue(bundle.id, message.locale, localization, settings))
+        continue;
+      localizations[message.locale] = localization;
     }
     stringEntries.push([
       bundle.id,
-      { extractionState: "manual", localizations },
+      Object.keys(localizations).length > 0
+        ? { extractionState: "manual", localizations }
+        : // the key is the value of the source language, see `importCatalogs`
+          { extractionState: "manual" },
     ]);
   }
   const catalog: Catalog = {
