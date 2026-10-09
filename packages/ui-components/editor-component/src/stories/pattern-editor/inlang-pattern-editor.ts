@@ -21,12 +21,13 @@ import {
 import { registerPlainText } from "@lexical/plain-text";
 import { mergeRegister } from "@lexical/utils";
 import { createChangeEvent } from "../../helper/event.js";
-import { EchoTracker } from "../../helper/echoTracker.js";
+import { EchoTracker, canonicalJson } from "../../helper/echoTracker.js";
 import {
 	$caretQuery,
 	$createPatternTokenNode,
 	$getCaretOffset,
-	$hasOrphanMarkup,
+	$lostPartnerKeys,
+	$pairedMarkupKeys,
 	$insertVariableAt,
 	$removeOrphanMarkup,
 	$wrapSelection,
@@ -158,6 +159,9 @@ export default class InlangPatternEditor extends LitElement {
 	 */
 	private _echoes = new EchoTracker();
 
+	/** The id of the variant the content belongs to. */
+	private _variantId?: string;
+
 	/** Focus requested before the editable area was rendered. */
 	private _pendingFocus?: FocusOptions;
 
@@ -178,15 +182,20 @@ export default class InlangPatternEditor extends LitElement {
 
 	// update editor state when variant prop changes
 	override updated(changedProperties: PropertyValues<this>) {
-		// Echoes of our own edits and copies of the pattern passed before keep what was typed.
-		if (
-			changedProperties.has("variant") &&
-			this._echoes.receive(
-				JSON.stringify(this.variant?.pattern ?? []),
-				this._patternState && JSON.stringify(this._patternState)
-			) === "replace"
-		)
-			this._setEditorState();
+		if (changedProperties.has("variant")) {
+			// Another variant ("+ Add form" reuses the editor): its pattern replaces the content, and
+			// pending echoes of the previous variant's text must never be taken for this one's.
+			const id = this.variant?.id;
+			const other = id !== this._variantId;
+			this._variantId = id;
+			if (other) this._echoes.clear();
+			// Echoes of our own edits and copies of the pattern passed before keep what was typed.
+			const decision = this._echoes.receive(
+				this.variant?.pattern ?? [],
+				this._patternState
+			);
+			if (other || decision === "replace") this._setEditorState();
+		}
 		if (changedProperties.has("declarations")) this._refreshTitles();
 		if (this._pendingFocus) {
 			const options = this._pendingFocus;
@@ -335,25 +344,27 @@ export default class InlangPatternEditor extends LitElement {
 				},
 				COMMAND_PRIORITY_LOW
 			),
-			this.editor.registerUpdateListener(({ editorState, tags }) => {
+			this.editor.registerUpdateListener(({ editorState, prevEditorState, tags }) => {
 				if (editorState.read($markupFormatsOutOfSync)) {
 					this.editor.update($syncMarkupFormats, { tag: SYNC_FORMAT_TAG });
 				}
 				this._refreshTitles();
 				if (tags.has(SET_PATTERN_TAG)) return;
-				// One tag of a pair was deleted: drop its partner before reporting the edit.
-				if (editorState.read($hasOrphanMarkup)) {
-					this.editor.update($removeOrphanMarkup);
+				// One tag of a pair was deleted: drop its partner before reporting the edit. Markup that
+				// had no partner before (a lone markup-start, valid MF2) stays.
+				const lost = editorState.read(() =>
+					$lostPartnerKeys(prevEditorState.read($pairedMarkupKeys))
+				);
+				if (lost.size) {
+					this.editor.update(() => $removeOrphanMarkup(lost));
 					return;
 				}
 				queueMicrotask(() => this._updatePopups());
 				const pattern = editorState.read($readPattern);
-				if (
-					JSON.stringify(pattern) === JSON.stringify(this._patternState ?? [])
-				)
+				if (canonicalJson(pattern) === canonicalJson(this._patternState ?? []))
 					return;
 				this._patternState = pattern;
-				this._echoes.record(JSON.stringify(pattern));
+				this._echoes.record(pattern);
 				this.dispatchEvent(
 					createChangeEvent({
 						entityId: this.variant.id,
@@ -542,6 +553,8 @@ export default class InlangPatternEditor extends LitElement {
 
 	/** Shortcut keys for markup and suggestion navigation; returns true when handled. */
 	private _onKey(event: KeyboardEvent): boolean {
+		// Enter, Tab, Escape and shortcuts confirm or cancel an IME composition: leave them to the IME.
+		if (event.isComposing || event.keyCode === 229) return false;
 		const suggest = this._suggest;
 		if (suggest) {
 			if (event.key === "ArrowDown" || event.key === "ArrowUp") {

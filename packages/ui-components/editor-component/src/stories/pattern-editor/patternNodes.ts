@@ -378,17 +378,39 @@ function $orphanMarkup(): PatternTokenNode[] {
 	return orphans;
 }
 
-/** True when a markup tag lost its partner. */
-export function $hasOrphanMarkup(): boolean {
-	return $orphanMarkup().length > 0;
+/** Keys of the markup tokens that have a partner (start ↔ end). */
+export function $pairedMarkupKeys(): Set<string> {
+	const orphans = new Set($orphanMarkup().map((node) => node.getKey()));
+	const paired = new Set<string>();
+	for (const node of $leaves()) {
+		if (!$isPatternTokenNode(node)) continue;
+		const type = node.getPart().type;
+		if ((type === "markup-start" || type === "markup-end") && !orphans.has(node.getKey()))
+			paired.add(node.getKey());
+	}
+	return paired;
 }
 
 /**
- * Removes markup tags without a partner, so deleting one end of a link or
- * bold removes the markup and keeps the words inside it.
+ * Keys of markup tags that lost their partner since `paired` (see {@link $pairedMarkupKeys}) was
+ * read, e.g. after Backspace removed one of them. A tag that had no partner before (a lone
+ * `markup-start` is valid MF2) is not one.
  */
-export function $removeOrphanMarkup() {
-	for (const node of $orphanMarkup()) node.remove();
+export function $lostPartnerKeys(paired: ReadonlySet<string>): Set<string> {
+	return new Set(
+		$orphanMarkup()
+			.map((node) => node.getKey())
+			.filter((key) => paired.has(key))
+	);
+}
+
+/**
+ * Removes markup tags without a partner (only those in `keys` when given), so deleting one end of
+ * a link or bold removes the markup and keeps the words inside it.
+ */
+export function $removeOrphanMarkup(keys?: ReadonlySet<string>) {
+	for (const node of $orphanMarkup())
+		if (!keys || keys.has(node.getKey())) node.remove();
 }
 
 /**

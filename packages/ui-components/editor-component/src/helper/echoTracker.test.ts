@@ -56,3 +56,14 @@ it("receive() replaces the content only with a pattern that changed on the host'
 	tracker.clear();
 	expect(tracker.receive("theirs", "typed")).toBe("replace");
 });
+
+it("compares patterns structurally, so a store that reorders keys still echoes", () => {
+	const tracker = new EchoTracker();
+	const emitted = [{ type: "expression", arg: { type: "variable-reference", name: "count" } }];
+	const stored = [{ arg: { name: "count", type: "variable-reference" }, type: "expression" }];
+	expect(tracker.receive([], undefined)).toBe("replace");
+	tracker.record(emitted);
+	tracker.record([...emitted, { type: "text", value: " items" }]);
+	expect(tracker.receive(stored, [...emitted, { type: "text", value: " items" }])).toBe("keep");
+	expect(tracker.receive([{ value: " items", type: "text" }], [...emitted, { type: "text", value: " items" }])).toBe("replace");
+});

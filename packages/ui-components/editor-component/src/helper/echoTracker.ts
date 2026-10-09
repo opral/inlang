@@ -8,14 +8,30 @@
  */
 export const ECHO_HISTORY = 1000;
 
+/**
+ * JSON with object keys sorted, so the same pattern serializes the same way whatever order its keys
+ * have: a store (the SDK database) may return `{"arg":…,"type":…}` for `{"type":…,"arg":…}`.
+ */
+export function canonicalJson(value: unknown): string {
+	return JSON.stringify(value, (_key, item: unknown) =>
+		item && typeof item === "object" && !Array.isArray(item)
+			? Object.fromEntries(
+					Object.keys(item)
+						.sort()
+						.map((key) => [key, (item as Record<string, unknown>)[key]])
+				)
+			: item
+	);
+}
+
 export class EchoTracker {
 	private emitted: string[] = [];
 	/** The pattern the host passed last. */
 	private received?: string;
 
-	/** The editor emitted this pattern (serialized). */
-	record(pattern: string) {
-		this.emitted.push(pattern);
+	/** The editor emitted this pattern. Patterns are compared structurally (see {@link canonicalJson}). */
+	record(pattern: unknown) {
+		this.emitted.push(canonicalJson(pattern));
 		if (this.emitted.length > ECHO_HISTORY)
 			this.emitted.splice(0, this.emitted.length - ECHO_HISTORY);
 	}
@@ -24,8 +40,8 @@ export class EchoTracker {
 	 * `true` if `incoming` is an echo of an emitted pattern: it and everything emitted before it are
 	 * dropped (hosts pass echoes back in order, merged ones may be skipped).
 	 */
-	consume(incoming: string): boolean {
-		const index = this.emitted.indexOf(incoming);
+	consume(incoming: unknown): boolean {
+		const index = this.emitted.indexOf(canonicalJson(incoming));
 		if (index === -1) return false;
 		this.emitted.splice(0, index + 1);
 		return true;
@@ -37,11 +53,12 @@ export class EchoTracker {
 	 * same pattern as last time: hosts with immutable snapshots pass a fresh copy whenever anything
 	 * else changes, e.g. while a new form is still being saved, and that must not undo typing.
 	 */
-	receive(incoming: string, content: string | undefined): "replace" | "keep" {
-		const unchanged = incoming === this.received;
-		this.received = incoming;
+	receive(incoming: unknown, content: unknown): "replace" | "keep" {
+		const serialized = canonicalJson(incoming);
+		const unchanged = serialized === this.received;
+		this.received = serialized;
 		if (content === undefined) return "replace";
-		if (this.consume(incoming) || unchanged || incoming === content)
+		if (this.consume(incoming) || unchanged || serialized === canonicalJson(content))
 			return "keep";
 		this.emitted = [];
 		return "replace";
