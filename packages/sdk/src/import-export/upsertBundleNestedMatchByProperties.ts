@@ -3,6 +3,10 @@ import type {
 	InlangDatabaseSchema,
 	NewBundleNested,
 } from "../database/schema.js";
+import {
+	findExistingVariant,
+	orderVariantsLikeImport,
+} from "./variantMatches.js";
 
 export const upsertBundleNestedMatchByProperties = async (
 	db: Kysely<InlangDatabaseSchema>,
@@ -48,17 +52,32 @@ export const upsertBundleNestedMatchByProperties = async (
 				.returning("id")
 				.executeTakeFirstOrThrow();
 
-			const existingVariants = await trx
+			let existingVariants = await trx
 				.selectFrom("inlang_variant")
 				.where("message_id", "=", insertedMessage.id)
 				.selectAll()
 				.execute();
 
+			const idsInImportOrder: string[] = [];
 			for (const variant of message.variants) {
 				// match by matches
-				const existingVariant = existingVariants.find(
-					(v) => JSON.stringify(v.matches) === JSON.stringify(variant.matches)
+				const { existing: existingVariant, duplicates } = findExistingVariant(
+					existingVariants,
+					variant.matches
 				);
+				if (duplicates.length > 0) {
+					await trx
+						.deleteFrom("inlang_variant")
+						.where(
+							"id",
+							"in",
+							duplicates.map((duplicate) => duplicate.id)
+						)
+						.execute();
+					existingVariants = existingVariants.filter(
+						(v) => !duplicates.includes(v)
+					);
+				}
 
 				const variantToInsert = {
 					id: existingVariant?.id,
@@ -66,12 +85,25 @@ export const upsertBundleNestedMatchByProperties = async (
 					matches: variant.matches,
 					pattern: variant.pattern,
 				};
-				await trx
-					.insertInto("inlang_variant")
-					.values(variantToInsert)
-					.onConflict((oc) => oc.column("id").doUpdateSet(variantToInsert))
-					.execute();
+				if (variantToInsert.id === undefined) {
+					const inserted = await trx
+						.insertInto("inlang_variant")
+						.values(variantToInsert)
+						.returningAll()
+						.executeTakeFirstOrThrow();
+					// a later variant of the message with the same matches updates it
+					existingVariants.push(inserted);
+					idsInImportOrder.push(inserted.id);
+				} else {
+					await trx
+						.insertInto("inlang_variant")
+						.values(variantToInsert)
+						.onConflict((oc) => oc.column("id").doUpdateSet(variantToInsert))
+						.execute();
+					idsInImportOrder.push(variantToInsert.id);
+				}
 			}
+			await orderVariantsLikeImport(trx, idsInImportOrder);
 		}
 	});
 };
