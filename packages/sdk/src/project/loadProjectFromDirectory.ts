@@ -124,7 +124,12 @@ export async function loadProjectFromDirectory(
 	// import files from local fs
 	for (const plugin of importExportPlugins) {
 		const files: ImportFile[] = [];
-		const readPaths: Array<{ path: string; content: Uint8Array }> = [];
+		const readPaths: Array<{
+			path: string;
+			content: Uint8Array;
+			locale: string;
+			metadata?: Record<string, any>;
+		}> = [];
 		if (plugin.toBeImportedFiles) {
 			const toBeImportedFiles = await plugin.toBeImportedFiles({
 				settings: await project.settings.get(),
@@ -138,7 +143,12 @@ export async function loadProjectFromDirectory(
 						content: data,
 						toBeImportedFilesMetadata: toBeImported.metadata,
 					});
-					readPaths.push({ path: absolute, content: data });
+					readPaths.push({
+						path: absolute,
+						content: data,
+						locale: toBeImported.locale,
+						metadata: toBeImported.metadata,
+					});
 				} catch (e) {
 					// https://github.com/opral/inlang/issues/202
 					if ((e as any)?.code === "ENOENT") {
@@ -159,7 +169,7 @@ export async function loadProjectFromDirectory(
 			files,
 		});
 		for (const file of readPaths) {
-			await rememberReadFile(project, file.path, file.content);
+			await rememberReadFile(project, file.path, file.content, file);
 		}
 	}
 

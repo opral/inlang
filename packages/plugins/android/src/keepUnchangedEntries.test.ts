@@ -1521,4 +1521,31 @@ describe("a locale whose messages were all deleted", () => {
   test("a file the project didn't read is not written", () => {
     expect(exportWith(false).map((file) => file.locale)).toEqual(["en"]);
   });
+
+  test("a file that can't be kept and has other elements stays, without failing the export", () => {
+    const withEntity = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE resources [<!ENTITY app "My App">]>
+<resources>
+    <string name="welcome">Hallo &app;</string>
+    <string-array name="planets">
+        <item>Merkur</item>
+    </string-array>
+</resources>
+`;
+    const data = identifyRows(importAndroid(en));
+    const files = plugin.exportFiles!({
+      settings,
+      ...data,
+      files: [
+        { path, locale: "en", content: encode(en), imported: true },
+        {
+          path: dePath,
+          locale: "de",
+          content: encode(withEntity),
+          imported: true,
+        },
+      ],
+    }) as Array<{ locale: string }>;
+    expect(files.map((file) => file.locale)).toEqual(["en"]);
+  });
 });

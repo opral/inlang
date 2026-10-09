@@ -411,7 +411,14 @@ function emptiedFiles(exported: ExportFile[], args: ExportArgs): ExportFile[] {
       content = undefined;
     }
     if (content === undefined) {
-      assertNothingLost(existing);
+      // Without the kept text, the empty file would remove elements the
+      // plugin doesn't import: leave the file as it is rather than fail
+      // the whole export.
+      try {
+        assertNothingLost(existing);
+      } catch {
+        continue;
+      }
       content = empty;
     }
     result.push({ locale: existing.locale, name: existing.path, content });

@@ -1576,3 +1576,48 @@ test("marks the files the project read or wrote as imported", async () => {
 		["de", false],
 	]);
 });
+
+test("a file read as another locale keeps its messages", async () => {
+	// like Android's `values/`: the file of the base locale
+	const plugin: InlangPlugin = {
+		...keepingJsonPlugin(["./{locale}.json"]),
+		toBeImportedFiles: ({ settings }) =>
+			settings.locales.map((locale) => ({
+				locale,
+				path:
+					locale === settings.baseLocale
+						? "./default.json"
+						: `./${locale}.json`,
+			})),
+	};
+	const volume = Volume.fromJSON({
+		"/repo/default.json": '{"hello": "Hello"}',
+		"/repo/project.inlang/settings.json": JSON.stringify({
+			baseLocale: "en",
+			locales: ["en"],
+			modules: [],
+			mock: { pathPattern: ["./{locale}.json"] },
+		}),
+	});
+	const project = await loadProjectFromDirectory({
+		fs: volume as any,
+		path: "/repo/project.inlang",
+		providePlugins: [plugin],
+	});
+	// default.json is now the file of `de`, which has no messages
+	await project.settings.set({
+		...(await project.settings.get()),
+		baseLocale: "de",
+		locales: ["de", "en"],
+	});
+
+	await saveProjectToDirectory({
+		fs: volume as any,
+		project,
+		path: "/repo/project.inlang",
+	});
+
+	expect(volume.readFileSync("/repo/default.json", "utf-8")).toBe(
+		'{"hello": "Hello"}'
+	);
+});

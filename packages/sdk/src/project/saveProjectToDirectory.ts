@@ -103,7 +103,8 @@ async function readExistingFiles(args: {
 				imported: await wasReadFile(
 					args.project,
 					absolutePathFromProject(args.projectPath, file.path),
-					bytes
+					bytes,
+					file
 				),
 			});
 		} catch (error) {
@@ -162,7 +163,7 @@ async function writeExportedFile(args: {
 		await args.fs.writeFile(args.path, content);
 	}
 	// the project's messages are what the file now holds
-	await rememberReadFile(args.project, args.path, content);
+	await rememberReadFile(args.project, args.path, content, args.file);
 }
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
