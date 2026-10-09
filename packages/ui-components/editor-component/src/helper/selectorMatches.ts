@@ -10,6 +10,12 @@ export type SelectorMatches = {
 const pluralCache = new Map<string, SelectorMatches>();
 const categories = ["zero", "one", "two", "few", "many", "other"];
 const fallback: MatchSuggestion = { value: "*", description: "Fallback · matches any remaining value" };
+/** Results are cached, so callers always receive a private copy they may mutate. */
+const copy = (matches: SelectorMatches): SelectorMatches => ({
+  label: matches.label,
+  suggestions: matches.suggestions.map(suggestion => ({ ...suggestion })),
+  ...(matches.allowed ? { allowed: [...matches.allowed] } : {}),
+});
 
 /** Derive suggestions from declarations, never from a variable's spelling. */
 export function selectorMatches(name: string, declarations: Declaration[], locale: string, variants: VariantRow[]): SelectorMatches {
@@ -26,7 +32,7 @@ export function selectorMatches(name: string, declarations: Declaration[], local
   if (resolver?.name === "plural") {
     const cacheKey = JSON.stringify([locale, resolver.options]);
     const cached = pluralCache.get(cacheKey);
-    if (cached) return cached;
+    if (cached) return copy(cached);
     const option = resolver.options.find(value => value.name === "type");
     let knownType = !option || option.value.type === "literal" && ["cardinal", "ordinal"].includes(option.value.value);
     const type = option?.value.type === "literal" && option.value.value === "ordinal" ? "ordinal" : "cardinal";
@@ -56,7 +62,7 @@ export function selectorMatches(name: string, declarations: Declaration[], local
     };
     if (pluralCache.size >= 128) pluralCache.delete(pluralCache.keys().next().value!);
     pluralCache.set(cacheKey, result);
-    return result;
+    return copy(result);
   }
   const existing = [...new Set(variants.flatMap(variant => variant.matches.flatMap(match => match.key === name && match.type === "literal-match" && match.value ? [match.value] : [])))];
   return { label: resolver ? `${resolver.name} · custom value` : "Text · custom value", suggestions: [...existing.map(value => ({ value, description: "Used in this message" })), fallback] };

@@ -218,9 +218,14 @@ export default class InlangAddSelector extends LitElement {
     return variables;
   };
 
-  private _handleAddSelector = (newMatchers: string[]) => {
+  private _handleAddSelector = (matchers: string[]) => {
     if (this._variable && this.message) {
-      if (this.message.selectors.some(selector => selector.name === this._variable!.name)) return;
+      if (this.message.selectors.some(selector => selector.name === this._variable!.name)) {
+        this._matchError = `${this._variable.name} is already a selector. Choose another input.`;
+        return;
+      }
+      // Blank inputs and repeated values would create empty or duplicate variants.
+      const newMatchers = [...new Set(matchers.filter(value => value.trim() !== ""))];
       const allowed = this._getPluralCategories();
       if (allowed && newMatchers.some(value => !allowed.includes(value))) {
         this._matchError = `Choose ${allowed.join(", ")}.`;
@@ -248,6 +253,9 @@ export default class InlangAddSelector extends LitElement {
         newSelectorName: this._variable.name,
       });
       this._addVariantsFromNewCombinations(newCombinations);
+
+      // The message was updated in place; offer the next unused input.
+      this._variable = this._getAvailablevariables()[0];
 
       this.dispatchEvent(new CustomEvent("submit"));
     }
@@ -356,14 +364,14 @@ export default class InlangAddSelector extends LitElement {
     }
     if (changedProperties.has("message") || changedProperties.has("_variable")) {
       this._matchError = "";
-      this._matchers = this._getPluralCategories() || ["*"];
+      this._matchers = [...(this._getPluralCategories() ?? ["*"])];
     }
   }
 
   override async firstUpdated() {
     await this.updateComplete;
     this._variable = this._getAvailablevariables()?.[0];
-    this._matchers = this._getPluralCategories() || ["*"];
+    this._matchers = [...(this._getPluralCategories() ?? ["*"])];
   }
 
   override render() {
@@ -418,7 +426,7 @@ export default class InlangAddSelector extends LitElement {
               </div>`
         }
 					${
-            this._variable
+            this._variable && this.message
               ? html`<div class="options-container">
                     <div class="dropdown-header">
                       <p class="dropdown-title">Match · ${selectorMatches(this._variable.name, this.bundle.declarations, this.message.locale, this.variants).label}</p>
