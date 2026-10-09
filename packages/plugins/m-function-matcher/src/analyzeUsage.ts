@@ -377,40 +377,57 @@ if (
 					"TSImportEqualsDeclaration",
 				].includes(node.type)
 			) {
-				// `typeof m.label` in a type keeps the message: deleting it breaks the build.
-				const types: Node[] = [node];
+				// `typeof m.label` in a type keeps the message: deleting it breaks the build. So do
+				// `typeof all.m.label` and `(typeof m)["label"]`; any other `typeof` of a message
+				// namespace (`keyof typeof m`, `typeof all`) can depend on every message.
+				const types: { type: Node; parent?: Node; key?: string }[] = [{ type: node }];
 				while (types.length) {
-					const type = types.pop()!;
+					const { type, parent: typeParent, key: typeKey } = types.pop()!;
 					if (type.type === "TSTypeQuery" && isNode(type.exprName)) {
-						const name = type.exprName;
-						if (
-							name.type === "TSQualifiedName" &&
-							namespaces.has(identifier(name.left) ?? "")
-						) {
-							const id = identifier(name.right);
-							if (id !== undefined) {
-								used.add(id);
-								refer(id, name);
-							}
+						// the identifiers of `typeof a.b.c`, root first
+						const path: (string | undefined)[] = [];
+						let name: unknown = type.exprName;
+						while (isNode(name) && name.type === "TSQualifiedName") {
+							path.unshift(identifier(name.right));
+							name = name.left;
+						}
+						path.unshift(identifier(name));
+						const [root, first] = path;
+						if (root !== undefined && namespaces.has(root)) {
+							// the members after the message namespace: `m.x` -> [x], `all.m.x` -> [x]
+							const nested = moduleNamespaces.has(root) && first === "m";
+							const members = nested ? path.slice(2) : path.slice(1);
+							if (first !== undefined) used.add(first);
+							const indexed =
+								typeParent?.type === "TSIndexedAccessType" &&
+								typeKey === "objectType" &&
+								isNode(typeParent.indexType) &&
+								typeParent.indexType.type === "TSLiteralType" &&
+								isNode(typeParent.indexType.literal) &&
+								typeof typeParent.indexType.literal.value === "string"
+									? (typeParent.indexType.literal.value as string)
+									: undefined;
+							if (members.length === 1 && members[0] !== undefined) {
+								used.add(members[0]);
+								refer(members[0], type.exprName as Node);
+							} else if (members.length === 0 && indexed !== undefined) {
+								used.add(indexed);
+								refer(indexed, typeParent!);
+							} else
+								unresolved.add(
+									"A type depends on a message namespace (keyof typeof m, typeof all, …)."
+								);
 						}
 					}
-					if (
-						type.type === "TSIndexedAccessType" &&
-						isNode(type.objectType) &&
-						type.objectType.type === "TSTypeQuery" &&
-						namespaces.has(identifier(type.objectType.exprName) ?? "") &&
-						isNode(type.indexType) &&
-						type.indexType.type === "TSLiteralType" &&
-						isNode(type.indexType.literal) &&
-						typeof type.indexType.literal.value === "string"
-					) {
-						const id = type.indexType.literal.value;
-						used.add(id);
-						refer(id, type);
-					}
-					for (const value of Object.values(type))
+					for (const [childKey, value] of Object.entries(type))
 						for (const child of Array.isArray(value) ? value : [value])
-							if (isNode(child)) types.push(child);
+							if (isNode(child))
+								// `(typeof m)["x"]`: parentheses are transparent
+								types.push(
+									type.type === "TSParenthesizedType"
+										? { type: child, parent: typeParent, key: typeKey }
+										: { type: child, parent: type, key: childKey }
+								);
 				}
 				continue;
 			}
@@ -617,6 +634,21 @@ if (object && namespaces.has(object)) {
 							"A message namespace is aliased, exported, destructured, or passed as a value."
 						);
 				}
+				// `import.meta.hot` only as `import.meta.hot.x`: an alias could call accept(deps, cb) unseen
+				if (
+					isNode(node.object) &&
+					node.object.type === "MetaProperty" &&
+					propertyName === "hot" &&
+					!(
+						parent &&
+						(parent.type === "MemberExpression" ||
+							parent.type === "OptionalMemberExpression") &&
+						key === "object"
+					)
+				)
+					unresolved.add(
+						"An aliased import.meta.hot can hand message modules to a callback."
+					);
 				// `all.m.hello`, `all.m["hello"]`, `all?.m?.hello`
 				const inner = node.object;
 				if (
