@@ -1,0 +1,4 @@
+"Cancel" = "Cancel";
+"ManageSale.PricePlaceholder" = "Hello \"world\" %1$@";
+"greeting" = "Hello %1$@";
+"types/key" = "%2$lld / %1$.2f / %3$@ 100%%";

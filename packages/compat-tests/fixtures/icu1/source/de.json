@@ -1,0 +1,6 @@
+{
+  "hello": "Hallo Welt!",
+  "items": "{count, plural, =0 {Keine Artikel} one {# Artikel} other {# Artikel}}",
+  "pronoun": "{gender, select, male {Er} female {Sie} other {Sie}}",
+  "escaped": "Es gibt '{'wörtliche Klammern'}'"
+}

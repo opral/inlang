@@ -1,0 +1,20 @@
+{
+	"$schema": "https://inlang.com/schema/inlang-message-format",
+	"hello_world": "Bonjour le monde !",
+	"items": [
+		{
+			"declarations": [
+				"input count",
+				"local countPlural = count: plural"
+			],
+			"selectors": [
+				"countPlural"
+			],
+			"match": {
+				"countPlural=one": "{count} article",
+				"countPlural=many": "{count} d’articles",
+				"countPlural=*": "{count} articles"
+			}
+		}
+	]
+}

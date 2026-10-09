@@ -1,0 +1,15 @@
+{
+	"hello": "Hello World!",
+	"greeting": "Good morning {name}!",
+	"likes": "You have {count, plural, one {# like} other {# likes}}",
+	"items": "{count, plural, =0 {No items} one {# item} other {# items}}",
+	"guests": "{count, plural, offset:1 =0 {Nobody came} =1 {Only {host} came} one {{host} and # other came} other {{host} and # others came}}",
+	"rank": "{place, selectordinal, one {#st} two {#nd} few {#rd} other {#th}}",
+	"pronoun": "{gender, select, male {He} female {She} other {They}}",
+	"cats": "{gender, select, female {{count, plural, one {She has one cat} other {She has # cats}}} other {{count, plural, one {They have one cat} other {They have # cats}}}}",
+	"escaped": "It''s '{'literal braces'}' and a ''#'' sign",
+	"price": "Price: {amount, number, currency}",
+	"today": "Today is {today, date, short}",
+	"progress": "{rate, number, percent} done",
+	"nested_pound": "{count, plural, one {# {gender, select, female {her item} other {their item}}} other {# items}}"
+}

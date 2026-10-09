@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="app_name">My App</string>
+  <string name="welcome">Hello %1$s &amp; welcome</string>
+  <string name="types">"id=%2$d price=%1$.2f name=%3$s 100%%"</string>
+  <plurals name="cart_items">
+    <item quantity="one">%d item</item>
+    <item quantity="other">%d items</item>
+  </plurals>
+</resources>

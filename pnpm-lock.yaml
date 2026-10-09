@@ -91,6 +91,84 @@ importers:
         specifier: workspace:*
         version: link:../../plugins/inlang-message-format
 
+  packages/compat-tests:
+    devDependencies:
+      '@inlang/plugin-android':
+        specifier: workspace:*
+        version: link:../plugins/android
+      '@inlang/plugin-apple-strings':
+        specifier: workspace:*
+        version: link:../plugins/apple-strings
+      '@inlang/plugin-apple-xcstrings':
+        specifier: workspace:*
+        version: link:../plugins/apple-xcstrings
+      '@inlang/plugin-i18next':
+        specifier: workspace:*
+        version: link:../plugins/i18next
+      '@inlang/plugin-icu1':
+        specifier: workspace:*
+        version: link:../plugins/icu1
+      '@inlang/plugin-json':
+        specifier: workspace:*
+        version: link:../plugins/json
+      '@inlang/plugin-m-function-matcher':
+        specifier: workspace:*
+        version: link:../plugins/m-function-matcher
+      '@inlang/plugin-message-format':
+        specifier: workspace:*
+        version: link:../plugins/inlang-message-format
+      '@inlang/plugin-next-intl':
+        specifier: workspace:*
+        version: link:../plugins/next-intl
+      '@inlang/sdk':
+        specifier: workspace:*
+        version: link:../sdk
+      '@inlang/tsconfig':
+        specifier: workspace:*
+        version: link:../tsconfig
+      '@types/node':
+        specifier: ^22.5.1
+        version: 22.15.33
+      prettier:
+        specifier: ^3.5.1
+        version: 3.6.2
+      published-plugin-android:
+        specifier: npm:@inlang/plugin-android@0.2.7
+        version: '@inlang/plugin-android@0.2.7'
+      published-plugin-apple-strings:
+        specifier: npm:@inlang/plugin-apple-strings@0.2.7
+        version: '@inlang/plugin-apple-strings@0.2.7'
+      published-plugin-apple-xcstrings:
+        specifier: npm:@inlang/plugin-apple-xcstrings@0.2.7
+        version: '@inlang/plugin-apple-xcstrings@0.2.7'
+      published-plugin-i18next:
+        specifier: npm:@inlang/plugin-i18next@6.3.0
+        version: '@inlang/plugin-i18next@6.3.0'
+      published-plugin-icu1:
+        specifier: npm:@inlang/plugin-icu1@1.1.1
+        version: '@inlang/plugin-icu1@1.1.1'
+      published-plugin-json:
+        specifier: npm:@inlang/plugin-json@5.1.58
+        version: '@inlang/plugin-json@5.1.58'
+      published-plugin-m-function-matcher:
+        specifier: npm:@inlang/plugin-m-function-matcher@2.2.17
+        version: '@inlang/plugin-m-function-matcher@2.2.17'
+      published-plugin-message-format:
+        specifier: npm:@inlang/plugin-message-format@4.4.5
+        version: '@inlang/plugin-message-format@4.4.5'
+      published-plugin-next-intl:
+        specifier: npm:@inlang/plugin-next-intl@2.2.1
+        version: '@inlang/plugin-next-intl@2.2.1'
+      published-sdk:
+        specifier: npm:@inlang/sdk@3.1.0
+        version: '@inlang/sdk@3.1.0'
+      typescript:
+        specifier: ^5.5.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.4(@types/debug@4.1.12)(@types/node@22.15.33)(@vitest/browser@3.2.4)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(lightningcss@1.30.2)(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+
   packages/fink:
     dependencies:
       '@inlang/editor-component':
@@ -3227,6 +3305,33 @@ packages:
     peerDependencies:
       '@sinclair/typebox': ^0.31.17
 
+  '@inlang/plugin-android@0.2.7':
+    resolution: {integrity: sha512-ZY1tH1unpxOQuTpejCRTPJyCOit51EZvLNNCj0Qhfyyne3MjfT0yM7BYfwk6lWyz/u3xuggt3DUOgHwT2f8PwA==}
+
+  '@inlang/plugin-apple-strings@0.2.7':
+    resolution: {integrity: sha512-7iWGwCoOHFM9VrtJG+7xUVf7hrLhUtNP6RCu3ePYD2Qw+zmYyYN80fmPQtE41nQDWsHlokKESolyFFcbTD19Qg==}
+
+  '@inlang/plugin-apple-xcstrings@0.2.7':
+    resolution: {integrity: sha512-smNKyQ0heMy8SqusJbwqcPGojB9s2dTA2fY/Zn60pm4BGBbtxD07UIAf7ZoCbQjm2D2PFZgb1YNPkZwtZUMbYw==}
+
+  '@inlang/plugin-i18next@6.3.0':
+    resolution: {integrity: sha512-xVHFtXaNJPVrN5NMbhSzyhLvvNPWkYvjmonN4ie/BAu8etGk0JzP0aqtH/B4ItQBjWn90r8PjuqGAbMDWH/TyA==}
+
+  '@inlang/plugin-icu1@1.1.1':
+    resolution: {integrity: sha512-0GzwH16JwSEoLR0iyyyVb/TchcdfH62AdM12bIvn84S53RycNgLCa0/+qWck5HcK8dk+H7EXPPOzM7Ot+e6cWA==}
+
+  '@inlang/plugin-json@5.1.58':
+    resolution: {integrity: sha512-QCBg0PZCbCy87YU6+7PJYrj85P7eD0SjKZQlPWh+QLsRrULHjugTQL6JvFAn1jP8SAkQVtdxsw9m7iQ9uvRXkQ==}
+
+  '@inlang/plugin-m-function-matcher@2.2.17':
+    resolution: {integrity: sha512-KzJuRQiXVRJR48HCqIjx83cOwuvnyvugSl2VrBtPmyW7w5p+ulEGdNCZu2+KvIiOI/Q1HAEWwM/XSpLY9vunMA==}
+
+  '@inlang/plugin-message-format@4.4.5':
+    resolution: {integrity: sha512-g3WpG00mx3Wq/3zulz4uuT+HhdBRB7UMz2hVbfSm+E4RJHXNYyFyvS0elPETX7gEz8yiTd0KbyukZGJHetmkZA==}
+
+  '@inlang/plugin-next-intl@2.2.1':
+    resolution: {integrity: sha512-ikwwQTGwGbNgMQJjChMhLpaGsfIbhXw51CZwKudb0UkqgDvc9HimgguNxb9+KzwR0af1L1lwZgaJ9vqXMri/Kw==}
+
   '@inlang/plugin@2.0.0':
     resolution: {integrity: sha512-l4oMJ/rOOtZ/cI2sDMRH3FE8LJSAFOlQCEwVGcJrJu+U07OkDYe00bJ6tKrra34rAU0J6J9+yHW8cNoo/vdeTg==}
     deprecated: use the inlang sdk directly https://www.npmjs.com/package/@inlang/sdk
@@ -3251,6 +3356,10 @@ packages:
   '@inlang/sdk@0.9.0':
     resolution: {integrity: sha512-iNujE/spsKiltnrYL+Vz65H+0dMFQ9i7FfMjSESrLT8UhEgxt7Gqgpvxp9hfKUu3k7XDrQ+911kQYpmiQSJB4A==}
     engines: {node: '>=18.0.0'}
+
+  '@inlang/sdk@3.1.0':
+    resolution: {integrity: sha512-l8LqeyqLfe00cmDvKY7J6YuCkfWVfgzaNWlB8IAHxWOWqkUAwyG4AhuMYUiBbeA0wM6zdVphPCG2lay/OzTdFg==}
+    engines: {node: '>=20.0.0'}
 
   '@inlang/translatable@1.3.1':
     resolution: {integrity: sha512-VAtle21vRpIrB+axtHFrFB0d1HtDaaNj+lV77eZQTJyOWbTFYTVIQJ8WAbyw9eu4F6h6QC2FutLyxjMomxfpcQ==}
@@ -13759,6 +13868,53 @@ snapshots:
       '@inlang/plugin': 2.4.14(@sinclair/typebox@0.31.28)
       '@sinclair/typebox': 0.31.28
 
+  '@inlang/plugin-android@0.2.7':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+      fast-xml-parser: 4.5.3
+
+  '@inlang/plugin-apple-strings@0.2.7':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+
+  '@inlang/plugin-apple-xcstrings@0.2.7':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+
+  '@inlang/plugin-i18next@6.3.0':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+
+  '@inlang/plugin-icu1@1.1.1':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@messageformat/parser': 5.1.1
+      '@sinclair/typebox': 0.31.28
+
+  '@inlang/plugin-json@5.1.58':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+
+  '@inlang/plugin-m-function-matcher@2.2.17':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+
+  '@inlang/plugin-message-format@4.4.5':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+      flat: 6.0.1
+
+  '@inlang/plugin-next-intl@2.2.1':
+    dependencies:
+      '@inlang/sdk': 3.1.0
+      '@sinclair/typebox': 0.31.28
+
   '@inlang/plugin@2.0.0(@sinclair/typebox@0.34.52)':
     dependencies:
       '@inlang/json-types': 1.1.0(@sinclair/typebox@0.34.52)
@@ -13812,6 +13968,13 @@ snapshots:
       throttle-debounce: 5.0.0
     transitivePeerDependencies:
       - babel-plugin-macros
+
+  '@inlang/sdk@3.1.0':
+    dependencies:
+      '@lix-js/sdk': 0.19.0
+      '@sinclair/typebox': 0.31.28
+      kysely: 0.28.14
+      uuid: 14.0.0
 
   '@inlang/translatable@1.3.1':
     dependencies:
@@ -14177,12 +14340,6 @@ snapshots:
       - typescript
       - verdaccio
 
-  '@nrwl/devkit@18.3.5(nx@18.3.5)':
-    dependencies:
-      '@nx/devkit': 18.3.5(nx@18.3.5)
-    transitivePeerDependencies:
-      - nx
-
   '@nrwl/devkit@18.3.5(nx@21.4.1)':
     dependencies:
       '@nx/devkit': 18.3.5(nx@21.4.1)
@@ -14192,21 +14349,6 @@ snapshots:
   '@nrwl/js@18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.4.5)':
     dependencies:
       '@nx/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.4.5)
-    transitivePeerDependencies:
-      - '@babel/traverse'
-      - '@swc-node/register'
-      - '@swc/core'
-      - '@swc/wasm'
-      - '@types/node'
-      - debug
-      - nx
-      - supports-color
-      - typescript
-      - verdaccio
-
-  '@nrwl/js@18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.7.3)':
-    dependencies:
-      '@nx/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.7.3)
     transitivePeerDependencies:
       - '@babel/traverse'
       - '@swc-node/register'
@@ -14324,7 +14466,7 @@ snapshots:
 
   '@nx/devkit@18.3.5(nx@18.3.5)':
     dependencies:
-      '@nrwl/devkit': 18.3.5(nx@18.3.5)
+      '@nrwl/devkit': 18.3.5(nx@21.4.1)
       ejs: 3.1.10
       enquirer: 2.3.6
       ignore: 5.3.2
@@ -14419,7 +14561,7 @@ snapshots:
       '@babel/preset-env': 7.26.0(@babel/core@7.28.5)
       '@babel/preset-typescript': 7.28.5(@babel/core@7.28.5)
       '@babel/runtime': 7.28.4
-      '@nrwl/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.7.3)
+      '@nrwl/js': 18.3.5(@babel/traverse@7.28.5)(@types/node@24.10.2)(nx@21.4.1)(typescript@5.4.5)
       '@nx/devkit': 18.3.5(nx@21.4.1)
       '@nx/workspace': 18.3.5
       '@phenomnomnominal/tsquery': 5.0.1(typescript@5.7.3)
@@ -16043,7 +16185,7 @@ snapshots:
   '@types/jsonwebtoken@9.0.10':
     dependencies:
       '@types/ms': 2.1.0
-      '@types/node': 16.18.126
+      '@types/node': 22.15.33
 
   '@types/lodash.merge@4.6.7':
     dependencies:
@@ -16569,6 +16711,27 @@ snapshots:
       - vite
     optional: true
 
+  '@vitest/browser@3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(playwright@1.55.0)(vite@7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))(vitest@3.2.4)(webdriverio@9.2.1)':
+    dependencies:
+      '@testing-library/dom': 10.4.1
+      '@testing-library/user-event': 14.6.1(@testing-library/dom@10.4.1)
+      '@vitest/mocker': 3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(vite@7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))
+      '@vitest/utils': 3.2.4
+      magic-string: 0.30.21
+      sirv: 3.0.2
+      tinyrainbow: 2.0.0
+      vitest: 3.2.4(@types/debug@4.1.12)(@types/node@22.15.33)(@vitest/browser@3.2.4)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(lightningcss@1.30.2)(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+      ws: 8.18.3
+    optionalDependencies:
+      playwright: 1.55.0
+      webdriverio: 9.2.1
+    transitivePeerDependencies:
+      - bufferutil
+      - msw
+      - utf-8-validate
+      - vite
+    optional: true
+
   '@vitest/browser@3.2.4(msw@2.10.2(@types/node@24.10.2)(typescript@5.7.3))(playwright@1.55.0)(vite@7.2.7(@types/node@24.10.2)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))(vitest@3.2.4)(webdriverio@9.2.1)':
     dependencies:
       '@testing-library/dom': 10.4.1
@@ -16789,6 +16952,25 @@ snapshots:
       magic-string: 0.30.21
     optionalDependencies:
       msw: 2.10.2(@types/node@22.15.33)(typescript@5.7.3)
+      vite: 7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+    optional: true
+
+  '@vitest/mocker@3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(vite@6.3.5(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))':
+    dependencies:
+      '@vitest/spy': 3.2.4
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      msw: 2.10.2(@types/node@22.15.33)(typescript@5.9.3)
+      vite: 6.3.5(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+
+  '@vitest/mocker@3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(vite@7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))':
+    dependencies:
+      '@vitest/spy': 3.2.4
+      estree-walker: 3.0.3
+      magic-string: 0.30.21
+    optionalDependencies:
+      msw: 2.10.2(@types/node@22.15.33)(typescript@5.9.3)
       vite: 7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
     optional: true
 
@@ -21442,6 +21624,32 @@ snapshots:
       - '@types/node'
     optional: true
 
+  msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3):
+    dependencies:
+      '@bundled-es-modules/cookie': 2.0.1
+      '@bundled-es-modules/statuses': 1.0.1
+      '@bundled-es-modules/tough-cookie': 0.1.6
+      '@inquirer/confirm': 5.1.21(@types/node@22.15.33)
+      '@mswjs/interceptors': 0.39.8
+      '@open-draft/deferred-promise': 2.2.0
+      '@open-draft/until': 2.1.0
+      '@types/cookie': 0.6.0
+      '@types/statuses': 2.0.6
+      graphql: 16.12.0
+      headers-polyfill: 4.0.3
+      is-node-process: 1.2.0
+      outvariant: 1.4.3
+      path-to-regexp: 6.3.0
+      picocolors: 1.1.1
+      strict-event-emitter: 0.5.1
+      type-fest: 4.41.0
+      yargs: 17.7.2
+    optionalDependencies:
+      typescript: 5.9.3
+    transitivePeerDependencies:
+      - '@types/node'
+    optional: true
+
   msw@2.10.2(@types/node@24.10.2)(typescript@5.4.5):
     dependencies:
       '@bundled-es-modules/cookie': 2.0.1
@@ -24499,6 +24707,51 @@ snapshots:
       '@types/debug': 4.1.12
       '@types/node': 22.15.33
       '@vitest/browser': 3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.7.3))(playwright@1.55.0)(vite@7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))(vitest@3.2.4)(webdriverio@9.2.1)
+      happy-dom: 18.0.1
+      jsdom: 27.3.0(postcss@8.5.6)
+    transitivePeerDependencies:
+      - jiti
+      - less
+      - lightningcss
+      - msw
+      - sass
+      - sass-embedded
+      - stylus
+      - sugarss
+      - supports-color
+      - terser
+      - tsx
+      - yaml
+
+  vitest@3.2.4(@types/debug@4.1.12)(@types/node@22.15.33)(@vitest/browser@3.2.4)(happy-dom@18.0.1)(jiti@2.6.1)(jsdom@27.3.0(postcss@8.5.6))(lightningcss@1.30.2)(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1):
+    dependencies:
+      '@types/chai': 5.2.2
+      '@vitest/expect': 3.2.4
+      '@vitest/mocker': 3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(vite@6.3.5(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))
+      '@vitest/pretty-format': 3.2.4
+      '@vitest/runner': 3.2.4
+      '@vitest/snapshot': 3.2.4
+      '@vitest/spy': 3.2.4
+      '@vitest/utils': 3.2.4
+      chai: 5.3.3
+      debug: 4.4.1
+      expect-type: 1.2.2
+      magic-string: 0.30.18
+      pathe: 2.0.3
+      picomatch: 4.0.3
+      std-env: 3.9.0
+      tinybench: 2.9.0
+      tinyexec: 0.3.2
+      tinyglobby: 0.2.14
+      tinypool: 1.1.1
+      tinyrainbow: 2.0.0
+      vite: 6.3.5(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1)
+      vite-node: 3.2.4(@types/node@22.15.33)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)
+      why-is-node-running: 2.3.0
+    optionalDependencies:
+      '@types/debug': 4.1.12
+      '@types/node': 22.15.33
+      '@vitest/browser': 3.2.4(msw@2.10.2(@types/node@22.15.33)(typescript@5.9.3))(playwright@1.55.0)(vite@7.2.7(@types/node@22.15.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass-embedded@1.89.2)(terser@5.36.0)(tsx@4.20.5)(yaml@2.8.1))(vitest@3.2.4)(webdriverio@9.2.1)
       happy-dom: 18.0.1
       jsdom: 27.3.0(postcss@8.5.6)
     transitivePeerDependencies:
