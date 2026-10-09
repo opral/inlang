@@ -202,18 +202,36 @@ function serializeMessage(
 					: `_${pluralMatch.value}`;
 		}
 		if (
+			countMatch === undefined &&
 			pluralMatch?.value === "zero" &&
 			pluralTypeMatch?.value !== "ordinal" &&
 			key.endsWith("_zero")
 		) {
 			zeroCategoryKeys.add(key);
 		}
-		// two forms can map to one key: in Latvian `_zero` is both the exact
-		// `count = 0` form and the plural category "zero" (10, 11–19, …).
-		// i18next has one text for both, so refuse to drop either silently.
+		// two forms can map to one key: `_zero` is both the exact `count = 0`
+		// form and the plural category "zero". The key keeps the position of
+		// the form written first.
 		const existing = result.find((entry) => entry.key === key);
 		if (existing !== undefined) {
 			if (existing.value !== pattern) {
+				// Where the category "zero" selects no number other than 0
+				// (English, French: never; Arabic, Welsh: only 0, where the exact
+				// form wins), the exact form is the text i18next shows for
+				// `_zero`. Write it, as earlier versions did, instead of failing
+				// on a category form that is never shown, e.g. after a
+				// translator edited only the "=0" form of a `_zero` that an
+				// earlier version imported as both forms.
+				if (
+					exactZeroKeys.has(key) &&
+					zeroCategoryKeys.has(key) &&
+					!zeroCategorySelectsNonZero(message.locale)
+				) {
+					if (countMatch !== undefined) existing.value = pattern;
+					continue;
+				}
+				// In Latvian, "zero" also selects 10, 11–19, …, so i18next has
+				// one text for two forms: refuse to drop either silently.
 				throw new Error(
 					`i18next export cannot represent two different texts for "${key}" of bundle "${bundle.id}" (${message.locale}): ${
 						key.endsWith("_zero")

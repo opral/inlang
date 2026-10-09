@@ -76,7 +76,9 @@ test("saveProjectToDirectory writes namespaced files back to their pathPattern",
 			)
 		).toStrictEqual({ hello: "Hello updated" });
 		expect(
-			JSON.parse(nodeFs.readFileSync(nodePath.join(dir, "en/app.json"), "utf-8"))
+			JSON.parse(
+				nodeFs.readFileSync(nodePath.join(dir, "en/app.json"), "utf-8")
+			)
 		).toStrictEqual({ title: "My app" });
 	} finally {
 		await project.close();
