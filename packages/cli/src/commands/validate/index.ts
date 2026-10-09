@@ -1,5 +1,8 @@
 import { Command } from "commander";
-import { getInlangProject } from "../../utilities/getInlangProject.js";
+import {
+  getInlangProject,
+  ProjectLoadError,
+} from "../../utilities/getInlangProject.js";
 import { log } from "../../utilities/log.js";
 import { exit } from "../../utilities/exit.js";
 import { projectOption } from "../../utilities/globalFlags.js";
@@ -25,7 +28,7 @@ export async function validateCommandAction(args: {
   );
   try {
     log.info("🔎 Validating the inlang project...");
-    // if `getInlangProject` doesn't throw, the project is valid
+    // if `getInlangProject` doesn't throw, the project can be opened
     const project = await getInlangProject({ projectPath: args.project });
 
     const errors = await project.errors.get();
@@ -38,7 +41,7 @@ export async function validateCommandAction(args: {
     log.success("The project is valid!");
     return 0;
   } catch (error) {
-    log.error(error);
+    log.error(error instanceof ProjectLoadError ? error.message : error);
     return 1;
   }
 }

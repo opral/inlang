@@ -231,8 +231,9 @@ function normalizeAnalysis(value: UsageAnalysis): UsageAnalysis {
 			issues.push({
 				reason,
 				...(path !== undefined ? { path } : {}),
-				...(start !== undefined ? { start: position(start) } : {}),
-				...(end !== undefined ? { end: position(end) } : {}),
+				// `null` like absent: an analyzer without a location for this issue
+				...(start != null ? { start: position(start) } : {}),
+				...(end != null ? { end: position(end) } : {}),
 			});
 		}
 	return { status, usedBundleIds, issues, references };

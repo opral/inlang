@@ -109,7 +109,7 @@ describe("inlang check", { timeout: 60_000 }, () => {
     const { code, stdout } = await run(app(), ["check", ...project]);
     expect(code).toBe(1);
     expect(stdout).toContain(
-      "Checked project.inlang · 7 messages · locales en-US, pt-BR · 2 source files in .",
+      "Checked project.inlang · 7 messages · locales en-US, pt-BR · 2 source files in ./",
     );
     expect(stdout).toContain(
       "missing-translation (1)\n  welcome_back  pt-BR  no translation\n",
@@ -160,14 +160,16 @@ describe("inlang check", { timeout: 60_000 }, () => {
     expect(code).toBe(1);
     const report = JSON.parse(stdout);
     expect(report).toMatchObject({
+      version: 1,
       project: "project.inlang",
       locales: ["en-US", "pt-BR"],
       baseLocale: "en-US",
       messages: 7,
-      source: { roots: ["."], files: 1 },
+      source: { roots: ["./"], files: 1 },
       errors: [],
       summary: {
         findings: 6,
+        errors: 0,
         byCheck: {
           "missing-translation": 1,
           "missing-variable": 2,
@@ -189,7 +191,17 @@ describe("inlang check", { timeout: 60_000 }, () => {
         ],
       }),
     );
-    expect(report.diagnostics[0]).not.toHaveProperty("fixes");
+    // plugins regenerate message and variant IDs on every load
+    expect(report.diagnostics).toContainEqual({
+      checkId: "missing-variable",
+      bundleId: "greeting",
+      locale: "pt-BR",
+      name: "name",
+      message: 'Message "greeting" is missing {name} in "pt-BR".',
+    });
+    for (const diagnostic of report.diagnostics)
+      for (const key of ["fixes", "severity", "messageId", "variantId"])
+        expect(diagnostic).not.toHaveProperty(key);
   });
 
   test("JSON lists incomplete analysis with locations and code", async () => {
@@ -241,6 +253,10 @@ describe("inlang check", { timeout: 60_000 }, () => {
     ]);
     expect(filtered.code).toBe(0);
     expect(filtered.stdout).toContain("locale en-US");
+    // a clean result says which checks couldn't complete
+    expect(filtered.stdout).toContain(
+      "No findings, but unused-message incomplete.",
+    );
     // the hidden v1 alias, comma separated
     const alias = await run(root, [
       "check",
@@ -276,6 +292,19 @@ describe("inlang check", { timeout: 60_000 }, () => {
     expect(stdout).toContain(
       "unused-message not checked: The installed @inlang/plugin-m-function-matcher can't analyze usages.\n  Unused-message check needs @inlang/plugin-m-function-matcher ≥ 2.3.0, update the module URL in settings.json: ./project.inlang/plugins/plugin-m-function-matcher@2.2.6.js",
     );
+  });
+
+  test("a project that can't be opened is a short error", async () => {
+    const { code, stderr } = await run(app(), [
+      "check",
+      "--project",
+      "./missing.inlang",
+    ]);
+    expect(code).toBe(1);
+    expect(stderr).toContain(
+      "Couldn't open the inlang project at ./missing.inlang: ENOENT",
+    );
+    expect(stderr).not.toMatch(/^\s+at /m);
   });
 
   test("reports project errors", async () => {

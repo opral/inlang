@@ -89,8 +89,18 @@ export function formatText(
     lines.push(...describeStatus(check, s), "");
   }
 
+  const unchecked = report.checks
+    .filter((check) => check.status !== "complete")
+    .map(
+      (check) =>
+        `${check.id} ${check.status === "unavailable" ? "not checked" : "incomplete"}`,
+    );
   if (report.summary.findings === 0 && report.errors.length === 0) {
-    lines.push(s.green("✔ No findings."));
+    lines.push(
+      unchecked.length
+        ? s.yellow(`No findings, but ${unchecked.join(", ")}.`)
+        : s.green("✔ No findings."),
+    );
   } else {
     const rows: [string, number][] = [
       ...(report.errors.length

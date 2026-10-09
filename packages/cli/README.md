@@ -207,7 +207,7 @@ npx @inlang/cli check --project ./project.inlang
 ```
 
 ```
-Checked project.inlang · 7 messages · locales en-US, pt-BR · 2 source files in .
+Checked project.inlang · 7 messages · locales en-US, pt-BR · 2 source files in ./
 
 missing-translation (1)
   welcome_back  pt-BR  no translation
@@ -245,8 +245,8 @@ The project's settings and plugin errors are always reported.
 
 - `--project <path>`: Path to the inlang project.
 - `--locales <locales...>`: Only report findings for these locales, comma or space separated, e.g. `--locales de,fr`. Findings that don't belong to a locale, such as unused messages, are always reported.
-- `--source <paths...>`: Files or directories to search for message usages. Defaults to the project's parent directory, without git-ignored files, `node_modules`, `dist`, `build`, dot directories, build tool configs (`*.config.*`) and Paraglide's compiled output.
-- `--format <text|json>`: `json` prints the full report, including every finding, check status and the location of each usage that couldn't be analyzed, for CI and editors.
+- `--source <paths...>`: Files or directories to search for message usages. Defaults to the project's parent directory. In a git repository, directories are read without git-ignored files; outside of one, without dot directories and a top-level `dist`, `build` and `coverage`. `node_modules`, `*.inlang` projects, Paraglide's compiled output, dotfiles and known build tool configs (`vite.config.ts`, `tailwind.config.cjs`, …) are always skipped; symlinked directories are followed. Files passed explicitly are always read.
+- `--format <text|json>`: `json` prints the full report for CI and editors: every finding, the status of each check and the location of each usage that couldn't be analyzed (1-based lines, 0-based columns). The report has a `version`; findings are identified by `bundleId`, `locale` and, for a form, `matches`.
 - `--no-fail`: Exit with 0 even if there are findings.
 
 **Exit codes**
@@ -261,7 +261,7 @@ A message is only reported as unused when every usage in the analyzed source cou
 
 **Deprecated commands**
 
-`inlang validate` and `inlang lint` still work but are hidden from `--help`. `validate` only reports the project's settings and plugin errors; `lint` runs `check` and accepts `--languageTags` and `--no-fail`. Use `inlang check` instead.
+`inlang validate` and `inlang lint` still work but are hidden from `--help`. `validate` only reports the project's settings and plugin errors. `lint` runs `check` and accepts `--languageTags` and `--no-fail`; like v1's `lint`, it exits with 1 on findings unless `--no-fail` is passed. Use `inlang check` instead.
 
 ## `plugin`
 

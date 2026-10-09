@@ -87,14 +87,22 @@ export type ReportCheck = Omit<CheckStatus, "issues"> & {
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown
   ? Omit<T, K>
   : never;
+/**
+ * An SDK diagnostic without the IDs that plugins regenerate on every load
+ * (`messageId`, `variantId`) and without fix metadata: key on `bundleId`,
+ * `locale` and `matches`.
+ */
 export type ReportDiagnostic = DistributiveOmit<
   CheckDiagnostic,
-  "severity" | "fixes"
+  "severity" | "fixes" | "messageId" | "variantId"
 > & {
-  /** The form of a variant-level diagnostic, e.g. `[{ key: "countPlural", value: "one" }]`. */
+  /** The form of a variant-level diagnostic, e.g. `[{ type: "literal-match", key: "countPlural", value: "one" }]`. */
   matches?: Match[];
 };
+/** The JSON report (`--format json`). Lines are 1-based, columns 0-based. */
 export type CheckReport = {
+  /** Version of this report's shape. */
+  version: 1;
   project: string;
   /** Locales findings are reported for. */
   locales: string[];
@@ -107,7 +115,10 @@ export type CheckReport = {
   checks: ReportCheck[];
   diagnostics: ReportDiagnostic[];
   summary: {
+    /** Number of diagnostics. */
     findings: number;
+    /** Number of project errors. */
+    errors: number;
     byCheck: Partial<Record<CheckId, number>>;
   };
 };
@@ -206,6 +217,7 @@ export async function runCheck(args: {
     ? await checkProject({ project, files, checks: sdkChecks })
     : { diagnostics: [], checks: [] };
 
+  const lines = sourceLines(files);
   const statuses: ReportCheck[] = checks.map((id) => {
     const status = result.checks.find((check) => check.id === id);
     if (id === "unused-message" && usageCheck && !status) return usageCheck;
@@ -217,7 +229,7 @@ export async function runCheck(args: {
         ? {
             issues: issues.map((issue) => ({
               ...issue,
-              ...locate(issue, files),
+              ...locate(issue, lines),
             })),
           }
         : {}),
@@ -250,15 +262,34 @@ export async function runCheck(args: {
         wantedLocales.includes(diagnostic.locale),
     )
     .map((diagnostic) => {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { severity, fixes, ...rest } = diagnostic;
+      const {
+        checkId,
+        bundleId,
+        locale,
+        message,
+        /* eslint-disable @typescript-eslint/no-unused-vars */
+        severity,
+        fixes,
+        messageId,
+        variantId,
+        /* eslint-enable @typescript-eslint/no-unused-vars */
+        ...details
+      } = diagnostic as CheckDiagnostic & {
+        messageId?: string;
+        variantId?: string;
+      };
       const matches =
-        "variantId" in diagnostic && !("matches" in diagnostic)
-          ? variantMatches.get(diagnostic.variantId)
+        variantId !== undefined && !("matches" in details)
+          ? variantMatches.get(variantId)
           : undefined;
-      return (
-        matches?.length ? { ...rest, matches } : rest
-      ) as ReportDiagnostic;
+      return {
+        checkId,
+        bundleId,
+        ...(locale !== undefined ? { locale } : {}),
+        ...details,
+        ...(matches?.length ? { matches } : {}),
+        message,
+      } as ReportDiagnostic;
     });
 
   // Grouped by check, then by message, so output and JSON are stable.
@@ -279,6 +310,7 @@ export async function runCheck(args: {
     .executeTakeFirst();
 
   return {
+    version: 1,
     project: displayPath(args.cwd, args.projectPath),
     locales: wantedLocales ?? locales,
     baseLocale: settings.baseLocale,
@@ -287,7 +319,7 @@ export async function runCheck(args: {
     errors,
     checks: statuses,
     diagnostics,
-    summary: { findings: diagnostics.length, byCheck },
+    summary: { findings: diagnostics.length, errors: errors.length, byCheck },
   };
 }
 
@@ -305,14 +337,27 @@ function matcherHint(modules: readonly string[] | undefined): string {
     : `${MATCHER_UPDATE_HINT}.`;
 }
 
+/** The lines of each source file, split once on first use. */
+function sourceLines(files: readonly SourceFile[] | undefined) {
+  const contents = new Map(files?.map((file) => [file.path, file.content]));
+  const cache = new Map<string, string[]>();
+  return (path: string): string[] | undefined => {
+    if (!cache.has(path)) {
+      const content = contents.get(path);
+      if (content === undefined) return undefined;
+      cache.set(path, content.split(/\r?\n/));
+    }
+    return cache.get(path);
+  };
+}
+
 /** The source code an issue points at, from the snapshot the analyzer read. */
 function locate(
   issue: UsageIssue,
-  files: readonly SourceFile[] | undefined,
+  lines: (path: string) => string[] | undefined,
 ): { code?: string } {
   if (!issue.start || !issue.end || issue.path === undefined) return {};
-  const file = files?.find((file) => file.path === issue.path);
-  const line = file?.content.split("\n")[issue.start.line - 1];
+  const line = lines(issue.path)?.[issue.start.line - 1];
   if (line === undefined) return {};
   const end =
     issue.end.line === issue.start.line ? issue.end.column : line.length;

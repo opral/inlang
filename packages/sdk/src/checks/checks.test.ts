@@ -529,14 +529,20 @@ test("passes issue locations through to checks and findUsages", async () => {
 			analyzeUsage: () => ({
 				status: "incomplete",
 				usedBundleIds: [],
-				issues: [{ ...location, start: { ...location.start, extra: 1 } }],
+				issues: [
+					{ ...location, start: { ...location.start, extra: 1 } },
+					{ reason: "Unlocated", start: null, end: null } as never,
+				],
 			}),
 		},
 	]);
 	const result = await checkProject({ project, files });
-	expect(result.checks[1]?.issues).toEqual([location]);
+	expect(result.checks[1]?.issues).toEqual([location, { reason: "Unlocated" }]);
 	(result.checks[1]!.issues![0]!.start as { line: number }).line = 1;
-	expect((await findUsages({ project, files })).issues).toEqual([location]);
+	expect((await findUsages({ project, files })).issues).toEqual([
+		location,
+		{ reason: "Unlocated" },
+	]);
 	const invalid = await setup([
 		{
 			key: "invalid",

@@ -1,6 +1,9 @@
 import { Command, Option } from "commander";
 import type { CheckId } from "@inlang/sdk";
-import { getInlangProject } from "../../utilities/getInlangProject.js";
+import {
+  getInlangProject,
+  ProjectLoadError,
+} from "../../utilities/getInlangProject.js";
 import { log } from "../../utilities/log.js";
 import { exit } from "../../utilities/exit.js";
 import { projectOption } from "../../utilities/globalFlags.js";
@@ -35,7 +38,7 @@ export const check = new Command()
   .addOption(new Option("--languageTags <tags...>").hideHelp())
   .option(
     "--source <paths...>",
-    "Files or directories to search for message usages. Defaults to the project's parent directory, without git-ignored files, node_modules, dist, build and Paraglide's output.",
+    "Files or directories to search for message usages (default: the project's parent directory). Directories skip git-ignored files, node_modules, Paraglide's output and build tool configs.",
   )
   .addOption(
     new Option("--format <format>", "Output format.")
@@ -44,12 +47,13 @@ export const check = new Command()
   )
   .option("--no-fail", "Exit with 0 even if there are findings.");
 for (const { flag, description } of CHECKS)
-  check.option(flag, `Only check for ${description}.`);
+  check.option(flag, `Report ${description}.`);
 check
   .addHelpText(
     "after",
     `
 All checks run by default. Pass check flags to run only those checks.
+Project errors (settings, plugins) are always reported.
 Exits with 1 if there are findings or project errors, so it can run in CI.
 
 Examples:
@@ -99,7 +103,8 @@ export async function checkCommandAction(
     }
     return 0;
   } catch (error) {
-    if (error instanceof CheckUsageError) log.error(error.message);
+    if (error instanceof CheckUsageError || error instanceof ProjectLoadError)
+      log.error(error.message);
     else log.error(error);
     return 1;
   }

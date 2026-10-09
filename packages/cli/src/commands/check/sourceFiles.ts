@@ -6,19 +6,26 @@ import type { SourceFile } from "@inlang/sdk";
 
 /**
  * Files that can reference messages. Formats the usage analyzer doesn't support
- * (CommonJS, Vue, Astro) are included on purpose: the analyzer reports them as
- * incomplete instead of the CLI silently hiding possible usages.
+ * (CommonJS, Vue, Astro, mdsvex, MDX, Marko) are included on purpose: the
+ * analyzer reports them as incomplete instead of the CLI silently hiding
+ * possible usages.
  */
-const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|svelte|vue|astro)$/i;
-/** Build tool configs (`vite.config.ts`, `tailwind.config.cjs`) don't render messages. */
-const CONFIG_FILE = /\.config\.[^./]+$/i;
-/** Dependencies and build output. Dot directories (`.git`, `.svelte-kit`, `.next`) are skipped too. */
-const EXCLUDED_DIRECTORIES = new Set([
-  "node_modules",
-  "dist",
-  "build",
-  "coverage",
-]);
+const SOURCE_FILE = /\.(?:[cm]?[jt]sx?|svelte|svx|mdx|vue|astro|marko)$/i;
+/**
+ * Build tool configs often are CommonJS, which would make every project's
+ * analysis incomplete, and they don't render messages. Only known tools: an
+ * app's own `nav.config.ts` can use messages.
+ */
+const TOOL_CONFIG =
+  /^(?:vite|vitest|svelte|tailwind|postcss|eslint|prettier|stylelint|next|nuxt|astro|remix|react-router|playwright|jest|cypress|babel|webpack|rollup|rolldown|rspack|tsup|esbuild|turbo|commitlint|lint-staged|uno|windi|quasar|metro|karma|vue|electron\.vite|wxt)\.config\.[cm]?[jt]s$/i;
+/** Never analyzed: dependencies and inlang projects. */
+const ALWAYS_EXCLUDED = (name: string) =>
+  name === "node_modules" || name === ".git" || name.endsWith(".inlang");
+/**
+ * Build output, only skipped outside git (where `.gitignore` decides) and only
+ * at the top of a root: `src/routes/build/` can be app code.
+ */
+const BUILD_OUTPUT = new Set(["dist", "build", "coverage"]);
 
 /** The analyzer's limits: a larger snapshot can't be analyzed, so it isn't read. */
 export const SOURCE_LIMITS = { files: 10_000, bytes: 50_000_000 };
@@ -29,9 +36,14 @@ export type SourceSnapshot =
 
 /**
  * Reads the application source files under `roots` into the full snapshot
- * `checkProject` expects. Respects `.gitignore` when the roots are in a git
- * repository, and skips dependencies, build output, dot directories, build
- * tool configs, `*.inlang` projects and Paraglide's generated output.
+ * `checkProject` expects.
+ *
+ * In a git repository, the files git doesn't ignore are read (tracked and
+ * untracked). Outside of one, every file is read except dot directories and
+ * `dist`, `build` and `coverage` at the top of a root. Both skip
+ * `node_modules`, `*.inlang` projects, Paraglide's compiled output, dotfiles
+ * and known build tool configs. Symlinked directories and submodules are
+ * followed. Explicitly passed files are always read.
  *
  * Paths are relative to `cwd` so diagnostics point at files the user can open.
  */
@@ -40,31 +52,43 @@ export async function collectSourceFiles(args: {
   cwd: string;
 }): Promise<SourceSnapshot> {
   const paths = new Set<string>();
-  const outputDirectory = paraglideOutputDetector();
+  const isOutput = paraglideOutputDetector();
   for (const root of args.roots) {
     const absolute = nodePath.resolve(args.cwd, root);
     const stat = statSync(absolute, { throwIfNoEntry: false });
     if (!stat) throw new Error(`Source path "${root}" doesn't exist.`);
-    // An explicitly passed file is always read.
     if (stat.isFile()) {
       paths.add(absolute);
       continue;
     }
-    const relativePaths = gitFiles(absolute) ?? (await walk(absolute));
-    for (const relative of relativePaths) {
+    const listed = gitFiles(absolute);
+    const candidates: string[] = [];
+    if (listed === undefined) candidates.push(...(await walk(absolute, true)));
+    else
+      for (const relative of listed) {
+        const file = nodePath.join(absolute, relative);
+        // A symlinked directory or a submodule: git lists it as one entry.
+        if (statSync(file, { throwIfNoEntry: false })?.isDirectory())
+          candidates.push(
+            ...(await walk(file, false)).map((path) =>
+              nodePath.join(relative, path),
+            ),
+          );
+        else candidates.push(relative);
+      }
+    for (const relative of candidates) {
       const segments = relative.split(/[\\/]/);
       const name = segments.at(-1)!;
       const directories = segments.slice(0, -1);
       if (
         !SOURCE_FILE.test(name) ||
-        CONFIG_FILE.test(name) ||
+        TOOL_CONFIG.test(name) ||
         name.startsWith(".") ||
-        directories.some(isExcludedDirectory)
+        directories.some(ALWAYS_EXCLUDED) ||
+        isOutput(absolute, directories)
       )
         continue;
-      const file = nodePath.join(absolute, relative);
-      if (outputDirectory(absolute, directories)) continue;
-      paths.add(file);
+      paths.add(nodePath.join(absolute, relative));
     }
   }
   const roots = args.roots.map((root) => displayPath(args.cwd, root));
@@ -96,18 +120,10 @@ export async function collectSourceFiles(args: {
   };
 }
 
-function isExcludedDirectory(name: string): boolean {
-  return (
-    EXCLUDED_DIRECTORIES.has(name) ||
-    name.startsWith(".") ||
-    name.endsWith(".inlang")
-  );
-}
-
-/** A path relative to `cwd` with forward slashes, `.` for `cwd` itself. */
+/** A path relative to `cwd` with forward slashes, `./` for `cwd` itself. */
 export function displayPath(cwd: string, path: string): string {
   const relative = nodePath.relative(cwd, nodePath.resolve(cwd, path));
-  return relative === "" ? "." : relative.split(nodePath.sep).join("/");
+  return relative === "" ? "./" : relative.split(nodePath.sep).join("/");
 }
 
 /**
@@ -132,20 +148,37 @@ function gitFiles(directory: string): string[] | undefined {
   }
 }
 
-/** Every file under `directory`, relative to it, without descending into excluded directories. */
-async function walk(directory: string): Promise<string[]> {
+/**
+ * Every file under `directory`, relative to it. Follows symlinks (once per
+ * real directory) and skips `node_modules`, dot directories and, if
+ * `skipBuildOutput`, `dist`, `build` and `coverage` at the top.
+ */
+async function walk(
+  directory: string,
+  skipBuildOutput: boolean,
+): Promise<string[]> {
   const result: string[] = [];
+  const visited = new Set<string>();
   const pending = [""];
   while (pending.length) {
     const relative = pending.pop()!;
-    const entries = await fs.readdir(nodePath.join(directory, relative), {
-      withFileTypes: true,
-    });
-    for (const entry of entries) {
+    const current = nodePath.join(directory, relative);
+    const real = await fs.realpath(current).catch(() => undefined);
+    if (real === undefined || visited.has(real)) continue;
+    visited.add(real);
+    for (const entry of await fs.readdir(current, { withFileTypes: true })) {
       const path = relative ? nodePath.join(relative, entry.name) : entry.name;
-      if (entry.isDirectory()) {
-        if (!isExcludedDirectory(entry.name)) pending.push(path);
-      } else if (entry.isFile()) result.push(path);
+      const type = entry.isSymbolicLink()
+        ? statSync(nodePath.join(directory, path), { throwIfNoEntry: false })
+        : entry;
+      if (type?.isDirectory()) {
+        if (
+          !ALWAYS_EXCLUDED(entry.name) &&
+          !entry.name.startsWith(".") &&
+          !(skipBuildOutput && !relative && BUILD_OUTPUT.has(entry.name))
+        )
+          pending.push(path);
+      } else if (type?.isFile()) result.push(path);
     }
   }
   return result;
@@ -153,18 +186,22 @@ async function walk(directory: string): Promise<string[]> {
 
 /**
  * Whether a file lies in Paraglide's compiled output (`outdir`), recognized by
- * its `runtime.js` and `messages.js`. The output re-exports every message, so
- * analyzing it would make usage analysis incomplete.
+ * its `runtime.js`, `messages.js` and `messages/` directory. The output
+ * re-exports every message, so analyzing it would make usage analysis
+ * incomplete.
  */
 function paraglideOutputDetector() {
   const cache = new Map<string, boolean>();
   const isOutput = (directory: string) => {
     let result = cache.get(directory);
     if (result === undefined) {
-      const has = (name: string) =>
-        existsSync(nodePath.join(directory, `${name}.js`)) ||
-        existsSync(nodePath.join(directory, `${name}.ts`));
-      result = has("runtime") && has("messages");
+      const has = (name: string) => existsSync(nodePath.join(directory, name));
+      result =
+        has("runtime.js") &&
+        has("messages.js") &&
+        statSync(nodePath.join(directory, "messages"), {
+          throwIfNoEntry: false,
+        })?.isDirectory() === true;
       cache.set(directory, result);
     }
     return result;
