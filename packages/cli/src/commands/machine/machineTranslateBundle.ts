@@ -220,7 +220,8 @@ const UUID_V7 =
  * translated `one` must not end up after an existing catch-all. Variants are
  * ordered by id (uuid v7) in the project, so the variants from the first one
  * whose place changes on get new ids in the new order; the ids they had are
- * returned, to be deleted. Existing variants keep their matches and pattern.
+ * returned, to be deleted. Existing variants keep their matches and pattern,
+ * and are put in the order of the source too.
  * A variant the source doesn't have (e.g. a plural category of the target
  * language) stays after the variant it followed. Messages whose order doesn't
  * change keep every id.
@@ -244,8 +245,12 @@ export function orderLikeSource(
   const ordered = [...keyed]
     .sort((a, b) => a.key - b.key || a.position - b.position)
     .map(({ variant }) => variant);
+  // the first variant whose place changes, or whose id doesn't sort after
+  // the variant before it (e.g. an added variant after a non-v7 id)
   let start = ordered.findIndex(
-    (variant, index) => variant !== message.variants[index],
+    (variant, index) =>
+      variant !== message.variants[index] ||
+      (index > 0 && !(ordered[index - 1]!.id < variant.id)),
   );
   if (start === -1) return [];
   // the variants before keep their ids: a new id must sort after them
