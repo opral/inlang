@@ -6,9 +6,11 @@ Composable editor components for list-style translation UIs.
 
 New components: `<inlang-pattern-view>` (read-only pattern with variable tokens and real bold/italic/underline for markup), `<inlang-message-forms>` (list, grid or tabbed grid of a message's variants with plural example numbers and "+ Add form" buttons for missing required forms; `select-variant` / `add-variant` events) and `<inlang-message-preview>` (inputs derived from the bundle's input variables and the formatted output, optionally next to the reference language; `values-change` / `variant-match` events).
 
-New helpers: `pluralExamples`, `selectVariant`, `formatPattern` / `formatMessage`, `previewInputs`. The translation rules (required forms, missing / unknown variables, missing markup) are not part of the component: `<inlang-message-forms>` uses `selectorGroups` / `missingVariants` of `@inlang/sdk` (imported from `@inlang/sdk/browser`), the same rules as the SDK's `missing-variant` check, and hosts use `checkBundle` / `checkTranslation` for problems. Requires the `@inlang/sdk` release with those exports.
+New helpers: `pluralExamples`, `selectVariant`, `formatPattern` / `formatMessage`, `previewInputs`. The translation rules (required forms, missing / unknown variables, missing markup) are not part of the component: `<inlang-message-forms>` uses `selectorGroups` / `missingVariants` of `@inlang/sdk` (imported from `@inlang/sdk/browser`), the same rules as the SDK's `missing-variant` check, and hosts use `checkBundle` / `checkTranslation` for problems. Requires `@inlang/sdk` ^4.
 
 `lit` is now a runtime dependency, and test files are no longer published.
+
+Breaking: the components use the `@inlang/sdk` 4 database rows. The `change` event's `newData` and the `message` / `variants` properties carry `bundle_id` / `message_id` instead of `bundleId` / `messageId`.
 
 Breaking changes in `<inlang-pattern-editor>`:
 

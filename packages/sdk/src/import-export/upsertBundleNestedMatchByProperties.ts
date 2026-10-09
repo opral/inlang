@@ -11,7 +11,9 @@ export const upsertBundleNestedMatchByProperties = async (
 	if (bundle.id === undefined) {
 		throw new Error("upsert expets a bundle id for matching");
 	}
-	const bundleToInsert = { ...bundle, messages: undefined };
+	// Pick the columns explicitly so the deprecated `bundleId`/`messageId`
+	// inputs and any `lixcol_*` properties never reach the insert.
+	const bundleToInsert = { id: bundle.id, declarations: bundle.declarations };
 
 	await db.transaction().execute(async (trx) => {
 		const insertedBundle = await trx
@@ -34,10 +36,10 @@ export const upsertBundleNestedMatchByProperties = async (
 			);
 
 			const messageToInsert = {
-				...message,
 				id: existingMessage?.id,
 				bundle_id: insertedBundle.id,
-				variants: undefined,
+				locale: message.locale,
+				selectors: message.selectors,
 			};
 			const insertedMessage = await trx
 				.insertInto("inlang_message")
@@ -59,9 +61,10 @@ export const upsertBundleNestedMatchByProperties = async (
 				);
 
 				const variantToInsert = {
-					...variant,
 					id: existingVariant?.id,
 					message_id: insertedMessage.id,
+					matches: variant.matches,
+					pattern: variant.pattern,
 				};
 				await trx
 					.insertInto("inlang_variant")
