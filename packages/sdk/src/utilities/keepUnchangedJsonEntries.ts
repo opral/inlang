@@ -82,7 +82,7 @@ export async function keepUnchangedJsonEntries<Settings>(args: {
 	isSameFile?: (exported: ExportFile, existing: ExistingFile) => boolean;
 	/**
 	 * The path that a flat key of a previous file can stand for, for plugins
-	 * that write nested objects, e.g. `"nav.home"` → `["nav", "home"]` (the
+	 * that write nested objects, e.g. `"nav.home"` -> `["nav", "home"]` (the
 	 * default). Lets a previous file keep flat keys. Only used for keys that
 	 * the full export doesn't have.
 	 */
@@ -263,7 +263,7 @@ export function stringifyJsonKeepingEntries(args: {
 }): string | undefined {
 	let parsed: unknown;
 	try {
-		parsed = JSON.parse(args.previous.replace(/^﻿/, ""));
+		parsed = JSON.parse(args.previous.replace(/^\uFEFF/, ""));
 	} catch {
 		return undefined;
 	}
@@ -365,7 +365,7 @@ function writeObject(
 	const previousKeys = new Set(node.members.map((member) => member.key));
 
 	// Flat keys of the previous file that stand for a nested path, e.g.
-	// `"nav.home"` for `{ "nav": { "home": … } }`. Their messages are taken out
+	// `"nav.home"` for `{ "nav": { "home": ... } }`. Their messages are taken out
 	// of the nested objects of `next`, so that they are not written twice.
 	const flat = new Map<string, string[]>();
 	{

@@ -589,3 +589,14 @@ function nest(json: Record<string, unknown>): Record<string, unknown> {
 	}
 	return result;
 }
+
+test("the module is ASCII, so that plugins that bundle it load in SDK 3", async () => {
+	// SDK 3 imports plugin modules from a base64 data URL made with `btoa`,
+	// which throws on characters outside Latin-1.
+	const { readFileSync } = await import("node:fs");
+	const source = readFileSync(
+		new URL("./keepUnchangedJsonEntries.ts", import.meta.url),
+		"utf8"
+	);
+	expect(source.match(/[^\x00-\x7F]/g) ?? []).toEqual([]);
+});
