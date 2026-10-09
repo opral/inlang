@@ -9,6 +9,8 @@ import type {
   VariantImport,
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
+import { mergeEntries, type EntryText } from "./mergeEntries.js";
+import { scanResources } from "./scanResources.js";
 
 export const PLUGIN_KEY = "plugin.inlang.android";
 type Config = { [PLUGIN_KEY]: PluginSettings };
@@ -18,6 +20,7 @@ type ImportArgs = Parameters<
 type ExportArgs = Parameters<
   NonNullable<InlangPlugin<Config>["exportFiles"]>
 >[0];
+type ExportFile = { locale: string; name: string; content: Uint8Array };
 const quantities = new Set(["zero", "one", "two", "few", "many", "other"]);
 
 export const plugin: InlangPlugin<Config> = {
@@ -33,12 +36,15 @@ export const plugin: InlangPlugin<Config> = {
       ),
     })),
   importFiles: ({ files }: ImportArgs) => importAndroidFiles(files),
-  exportFiles: (args: ExportArgs) => exportAndroidFiles(args),
+  exportFiles: (args: ExportArgs) =>
+    keepUnchangedEntries(exportAndroidFiles(args), args),
 };
 
-function importAndroidFiles(
-  files: ImportArgs["files"],
-): ReturnType<NonNullable<InlangPlugin<Config>["importFiles"]>> {
+function importAndroidFiles(files: ImportArgs["files"]): {
+  bundles: Bundle[];
+  messages: MessageImport[];
+  variants: VariantImport[];
+} {
   const bundles = new Map<string, Bundle>();
   const seen = new Set<string>();
   const messages: MessageImport[] = [];
@@ -123,12 +129,166 @@ function importAndroidFiles(
   return { bundles: [...bundles.values()], messages, variants };
 }
 
+/**
+ * Keeps the text of the entries of the existing files that didn't change
+ * (comments, whitespace, order, escapes, the XML declaration, and elements
+ * that the plugin doesn't import, e.g. `<string-array>`), so that an export
+ * only changes the bytes of edited messages.
+ *
+ * A `<string>` or `<plurals>` element is unchanged if the plugin writes the
+ * same element for it as for what the previous element imports to. Plurals
+ * are compared item by item. Changed elements and items are replaced, removed
+ * ones are removed with the comment directly above them, and new ones are
+ * inserted after the one that precedes them in the full export. The result is
+ * only used if it imports to what the full export imports to. Otherwise, and
+ * if a previous file can't be read, the full export is used.
+ */
+function keepUnchangedEntries(
+  exported: ExportFile[],
+  args: ExportArgs,
+): ExportFile[] {
+  if (!args.files?.length) return exported;
+  return exported.map((file) => {
+    const previous = args.files!.find(
+      (candidate) => candidate.locale === file.locale,
+    );
+    if (previous === undefined) return file;
+    try {
+      const content = keepUnchangedEntriesOfFile({
+        previous: previous.content,
+        exported: file.content,
+        locale: file.locale,
+        settings: args.settings,
+      });
+      return content === undefined ? file : { ...file, content };
+    } catch {
+      // e.g. the previous file can't be parsed or imported
+      return file;
+    }
+  });
+}
+
+function keepUnchangedEntriesOfFile(args: {
+  previous: Uint8Array;
+  exported: Uint8Array;
+  locale: string;
+  settings: ExportArgs["settings"];
+}): Uint8Array | undefined {
+  // keeps a byte order mark
+  const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+    args.previous,
+  );
+  const exportedText = decode(args.exported);
+  /** The text the plugin writes for what `text` imports to. */
+  const canonical = (text: string) => {
+    const imported = importAndroidFiles([
+      { locale: args.locale, content: encode(text) },
+    ]);
+    const files = exportAndroidFiles({
+      ...rowsOf(imported),
+      settings: args.settings,
+    });
+    const file = files.find((candidate) => candidate.locale === args.locale);
+    return file === undefined ? "" : decode(file.content);
+  };
+  const scanned = scanResources(text);
+  const newline = text.includes("\r\n") ? "\r\n" : "\n";
+  const indent = scanned.indent ?? "  ";
+  const result = mergeEntries({
+    text,
+    entries: scanned.entries,
+    comments: scanned.comments,
+    previous: entryTexts(canonical(text)),
+    next: entryTexts(exportedText),
+    indentUnit: "  ",
+    fileIndentUnit: indent === "" ? "  " : indent,
+    emptyIndent: indent,
+    insertIntoEmpty: (elements) => {
+      const at = scanned.closeTagStart;
+      const lineStart = text.lastIndexOf("\n", at - 1) + 1;
+      // before the line of `</resources>`, or before the tag
+      return /^[ \t]*$/.test(text.slice(lineStart, at))
+        ? {
+            start: lineStart,
+            end: lineStart,
+            text: elements
+              .map((element) => indent + element + newline)
+              .join(""),
+          }
+        : {
+            start: at,
+            end: at,
+            text:
+              elements.map((element) => newline + indent + element).join("") +
+              newline,
+          };
+    },
+  });
+  if (result === undefined) return undefined;
+  // Only use the result if it imports to what the full export imports to.
+  if (canonical(result) !== canonical(exportedText)) return undefined;
+  return encode(result);
+}
+
+/**
+ * The elements of a file the plugin writes, by name, with lines after the
+ * first relative to the indentation of the element.
+ */
+function entryTexts(text: string): Map<string, EntryText> {
+  const result = new Map<string, EntryText>();
+  // no file: no elements
+  if (text === "") return result;
+  for (const entry of scanResources(text).entries) {
+    const lineStart = text.lastIndexOf("\n", entry.start - 1) + 1;
+    const base = text.slice(lineStart, entry.start);
+    const element = text
+      .slice(entry.start, entry.end)
+      .split("\n")
+      .map((line, index) =>
+        index > 0 && line.startsWith(base) ? line.slice(base.length) : line,
+      )
+      .join("\n");
+    result.set(entry.key, {
+      text: element,
+      ...(entry.children
+        ? {
+            shell: /^<[^>]*>/.exec(element)![0],
+            children: new Map(
+              entry.children.map((child) => [
+                child.key,
+                { text: text.slice(child.start, child.end) },
+              ]),
+            ),
+          }
+        : {}),
+    });
+  }
+  return result;
+}
+
+/** Bundles, messages and variants with ids from the result of an import. */
+function rowsOf(imported: ReturnType<typeof importAndroidFiles>) {
+  const messages: Message[] = imported.messages.map((message) => ({
+    id: `${message.bundleId}\u0000${message.locale}`,
+    bundleId: message.bundleId,
+    locale: message.locale,
+    selectors: message.selectors ?? [],
+  }));
+  const variants: Variant[] = imported.variants.map((variant, index) => ({
+    id: String(index),
+    messageId: `${variant.messageBundleId}\u0000${variant.messageLocale}`,
+    matches: variant.matches ?? [],
+    pattern: variant.pattern ?? [],
+  }));
+  return { bundles: imported.bundles, messages, variants };
+}
+
 function exportAndroidFiles({
   bundles,
   messages,
   variants,
   settings,
-}: ExportArgs) {
+}: Omit<ExportArgs, "files">) {
   const files = new Map<string, string[]>();
   for (const message of messages) {
     const bundle = requiredBundle(bundles, message);
