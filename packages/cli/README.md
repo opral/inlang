@@ -225,6 +225,8 @@ unused-message incomplete: unused messages can't be determined because:
   missing-variable     2
 ```
 
+### Checks
+
 All checks run by default. Pass one or more check flags to run only those:
 
 | Flag                     | Reports                                                               |
@@ -241,7 +243,7 @@ All checks run by default. Pass one or more check flags to run only those:
 
 The project's settings and plugin errors are always reported.
 
-**Options**
+### Check options
 
 - `--project <path>`: Path to the inlang project.
 - `--locales <locales...>`: Only report findings for these locales, comma or space separated, e.g. `--locales de,fr`. Findings that don't belong to a locale, such as unused messages, are always reported.
@@ -249,19 +251,131 @@ The project's settings and plugin errors are always reported.
 - `--format <text|json>`: `json` prints the full report for CI and editors: every finding, the status of each check and the location of each usage that couldn't be analyzed (1-based lines, 0-based columns). The report has a `version`; findings are identified by `bundleId`, `locale` and, for a form, `matches`.
 - `--no-fail`: Exit with 0 even if there are findings.
 
-**Exit codes**
+### Check examples
+
+Fail CI on findings in the locales you ship:
+
+```sh
+npx @inlang/cli check --project ./project.inlang --locales de,fr
+```
+
+```yaml
+# .github/workflows/i18n.yml
+name: i18n
+on: pull_request
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npx @inlang/cli check --project ./project.inlang --locales de,fr
+```
+
+Find unused messages in `src` only:
+
+```sh
+npx @inlang/cli check --project ./project.inlang --unused-messages --source ./src
+```
+
+```
+Checked project.inlang · 7 messages · locales en-US, pt-BR · 12 source files in src
+
+unused-message (2)
+  legacy_banner
+  password_label
+
+2 findings
+  unused-message  2
+```
+
+Run only some checks without failing, for a report:
+
+```sh
+npx @inlang/cli check --project ./project.inlang --missing-translations --missing-variables --no-fail
+```
+
+Write a JSON report for other tools, e.g. the number of missing translations per locale with `jq`:
+
+```sh
+npx @inlang/cli check --project ./project.inlang --format json > inlang-check.json
+jq '[.diagnostics[] | select(.checkId == "missing-translation") | .locale] | group_by(.) | map({(.[0]): length}) | add' inlang-check.json
+```
+
+### Exit codes
+
+| Exit code | When                                                                                                  |
+| --------- | ----------------------------------------------------------------------------------------------------- |
+| `0`       | No findings and no project errors, or `--no-fail` was passed.                                         |
+| `1`       | Findings or project errors; an invalid option such as an unknown locale; the project can't be opened. |
 
 `check` exits with `1` when it reports findings or project errors, and with `0` otherwise. A check that couldn't run or couldn't complete, such as unused messages with dynamic keys, is reported but doesn't fail the command.
 
-**Unused messages**
+### Unused messages
 
 Unused messages need the source code and a plugin that analyzes message usages: [`@inlang/plugin-m-function-matcher`](https://inlang.com/m/632iow21/plugin-inlang-mFunctionMatcher) 2.3.0 or later for Paraglide's `m.message_key()`. With an older version, `check` asks you to update the module URL in `settings.json`.
 
 A message is only reported as unused when every usage in the analyzed source could be resolved. Dynamic keys such as ``m[`${fieldName}_label`]()``, `m[key]()` or `keyof typeof m` make the analysis incomplete; `check` then lists where they are instead of reporting unused messages. "Unused" means not used in the analyzed source: messages used by other repositories or code outside `--source` can still be reported.
 
-**Deprecated commands**
+### JSON output
 
-`inlang validate` and `inlang lint` still work but are hidden from `--help`. `validate` only reports the project's settings and plugin errors. `lint` runs `check` and accepts `--languageTags` and `--no-fail`; like v1's `lint`, it exits with 1 on findings unless `--no-fail` is passed. Use `inlang check` instead.
+`--format json` prints only the report on stdout:
+
+```json
+{
+  "version": 1,
+  "project": "project.inlang",
+  "locales": ["pt-BR"],
+  "baseLocale": "en-US",
+  "messages": 7,
+  "source": { "roots": ["./"], "files": 1 },
+  "errors": [],
+  "checks": [
+    { "id": "missing-variable", "status": "complete" },
+    { "id": "unused-message", "status": "complete" }
+  ],
+  "diagnostics": [
+    {
+      "checkId": "missing-variable",
+      "bundleId": "cart_items",
+      "locale": "pt-BR",
+      "name": "count",
+      "matches": [
+        { "key": "countPlural", "type": "literal-match", "value": "other" }
+      ],
+      "message": "Message \"cart_items\" is missing {count} in \"pt-BR\"."
+    },
+    {
+      "checkId": "unused-message",
+      "bundleId": "legacy_banner",
+      "message": "Message \"legacy_banner\" has no detected usage in the supplied source snapshot."
+    }
+  ],
+  "summary": {
+    "findings": 2,
+    "errors": 0,
+    "byCheck": { "missing-variable": 1, "unused-message": 1 }
+  }
+}
+```
+
+- `version`: the version of the report's shape.
+- `errors`: the project's settings and plugin errors (`name`, `message`).
+- `checks`: the status of each check that ran: `complete`, `incomplete` or `unavailable`, with a `reason`. An incomplete `unused-message` check lists `issues` with `path`, `start`, `end` and the `code` there (1-based lines, 0-based columns).
+- `diagnostics`: findings, identified by `checkId`, `bundleId`, `locale` and, for a form, `matches`; the other fields depend on the check (`name` of a variable or markup, `suggestion`, `values`).
+- `summary`: the number of findings, project errors and findings per check.
+
+## Deprecated commands
+
+### `validate`
+
+`inlang validate --project ./project.inlang` is deprecated: use [`inlang check`](#check). It still works, is hidden from `--help`, prints a deprecation warning and, as before, only reports the project's settings and plugin errors, exiting with 1 if there are any.
+
+### `lint`
+
+`inlang lint` is deprecated: use [`inlang check`](#check). It is hidden from `--help`, prints a deprecation warning and runs `check`, mapping `--languageTags de,fr` to `--locales de,fr` and accepting `--no-fail`. Like v1's `lint`, it exits with 1 on findings unless `--no-fail` is passed.
 
 ## `plugin`
 
