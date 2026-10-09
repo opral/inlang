@@ -9,6 +9,7 @@ import { capture } from "./telemetry/capture.js";
 import { lastUsedProject } from "./utilities/getInlangProject.js";
 import { lint } from "./commands/lint/index.js";
 import { check } from "./commands/check/index.js";
+import { cloud } from "./commands/cloud/index.js";
 
 // --------------- INIT ---------------
 
@@ -30,6 +31,11 @@ export const cli = new Command()
   .addCommand(check)
   .addCommand(machine)
   .addCommand(plugin)
+  .addCommand(cloud)
+  .addHelpText(
+    "after",
+    "\nHosted AI translation and handoff between design, translation and code are coming: run `inlang cloud`.",
+  )
   // Deprecated, hidden from --help: use `check`.
   .addCommand(validate, { hidden: true })
   .addCommand(lint, { hidden: true })

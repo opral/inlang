@@ -6,7 +6,11 @@ import { ENV_VARIABLES } from "../env-variables/index.js";
  * - prefix with `CLI` to avoid collisions with other apps
  * - use past tense to indicate that the event has been completed
  */
-const events = ["CLI command executed", "CLI started"] as const;
+const events = [
+  "CLI command executed",
+  "CLI started",
+  "CLI cloud interest",
+] as const;
 
 /**
  * Capture an event.
