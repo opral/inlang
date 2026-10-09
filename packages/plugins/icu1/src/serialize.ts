@@ -19,8 +19,6 @@ const POUND_FUNCTION = "icu:pound";
 type PluralContext = {
   arg: string;
   offset: number;
-  /** The plural this one is nested in, if any */
-  outer: PluralContext | undefined;
 };
 
 export function serializeMessage(args: {
@@ -29,9 +27,13 @@ export function serializeMessage(args: {
   variants: Variant[];
 }): string {
   const { bundle, message, variants } = args;
+  const pluralOffsets = collectPluralOffsets(bundle.declarations, message);
   if (message.selectors.length === 0) {
     if (variants.length === 0) return "";
-    return serializePattern(variants[0]!.pattern, { plural: undefined });
+    return serializePattern(variants[0]!.pattern, {
+      plural: undefined,
+      pluralOffsets,
+    });
   }
 
   return serializeVariants(
@@ -39,7 +41,51 @@ export function serializeMessage(args: {
     message.selectors,
     bundle.declarations,
     undefined,
+    pluralOffsets,
   );
+}
+
+/**
+ * The offsets of the plurals on each argument, to resolve the offset of a
+ * `#` imported before the offset was kept on `#`. Only the plurals the
+ * message selects on count: the bundle's declarations are shared by all
+ * locales, and another locale may use the same argument without an offset.
+ * For an argument the message has no plural on, e.g. after an editor removed
+ * the plural around a `#`, all plurals of the bundle on it count.
+ */
+type PluralOffsets = Map<string, Set<number>>;
+
+function collectPluralOffsets(
+  declarations: Declaration[],
+  message: Message,
+): PluralOffsets {
+  const selected = new Set(message.selectors.map((selector) => selector.name));
+  const all: PluralOffsets = new Map();
+  const ofMessage: PluralOffsets = new Map();
+  for (const declaration of declarations) {
+    if (
+      declaration.type !== "local-variable" ||
+      declaration.value.arg.type !== "variable-reference" ||
+      declaration.value.annotation?.type !== "function-reference" ||
+      declaration.value.annotation.name !== "plural"
+    ) {
+      continue;
+    }
+    const arg = declaration.value.arg.name;
+    const offset = parseOffset(
+      optionValue(declaration.value.annotation, "offset"),
+    );
+    for (const offsets of selected.has(declaration.name)
+      ? [all, ofMessage]
+      : [all]) {
+      if (!offsets.has(arg)) offsets.set(arg, new Set());
+      offsets.get(arg)!.add(offset);
+    }
+  }
+  for (const [arg, offsets] of all) {
+    if (!ofMessage.has(arg)) ofMessage.set(arg, offsets);
+  }
+  return ofMessage;
 }
 
 function serializeVariants(
@@ -47,10 +93,11 @@ function serializeVariants(
   selectors: VariableReference[],
   declarations: Declaration[],
   plural: PluralContext | undefined,
+  pluralOffsets: PluralOffsets,
 ): string {
   if (variants.length === 0) return "";
   if (selectors.length === 0) {
-    return serializePattern(variants[0]!.pattern, { plural });
+    return serializePattern(variants[0]!.pattern, { plural, pluralOffsets });
   }
 
   const nextSelectorIndex = selectors.findIndex((candidate) =>
@@ -59,7 +106,7 @@ function serializeVariants(
     ),
   );
   if (nextSelectorIndex === -1) {
-    return serializePattern(variants[0]!.pattern, { plural });
+    return serializePattern(variants[0]!.pattern, { plural, pluralOffsets });
   }
 
   const selector = selectors[nextSelectorIndex]!;
@@ -73,6 +120,7 @@ function serializeVariants(
       selectors.slice(nextSelectorIndex + 2),
       declarations,
       plural,
+      pluralOffsets,
       pluralSelectorPair,
     );
   }
@@ -123,12 +171,9 @@ function serializeVariants(
       restSelectors,
       declarations,
       isPluralContext
-        ? {
-            arg: selectorConfig.arg,
-            offset: selectorConfig.offset ?? 0,
-            outer: plural,
-          }
+        ? { arg: selectorConfig.arg, offset: selectorConfig.offset ?? 0 }
         : plural,
+      pluralOffsets,
     );
     return `${caseKey} {${tokens}}`;
   });
@@ -141,9 +186,9 @@ function serializeVariants(
   const select = `{${header} ${cases.join(" ")}}`;
 
   return [
-    serializePattern(prefix, { plural }),
+    serializePattern(prefix, { plural, pluralOffsets }),
     select,
-    serializePattern(suffix, { plural }),
+    serializePattern(suffix, { plural, pluralOffsets }),
   ].join("");
 }
 
@@ -305,6 +350,7 @@ function serializePluralSelectorPair(
   selectors: VariableReference[],
   declarations: Declaration[],
   plural: PluralContext | undefined,
+  pluralOffsets: PluralOffsets,
   pair: {
     exactSelector: VariableReference;
     pluralSelector: VariableReference;
@@ -361,11 +407,13 @@ function serializePluralSelectorPair(
   const cases = Array.from(groups.entries())
     .sort(([left], [right]) => pluralCasePriority(left) - pluralCasePriority(right))
     .map(([key, groupVariants]) => {
-      const tokens = serializeVariants(groupVariants, selectors, declarations, {
-        arg: pair.config.arg,
-        offset: pair.config.offset ?? 0,
-        outer: plural,
-      });
+      const tokens = serializeVariants(
+        groupVariants,
+        selectors,
+        declarations,
+        { arg: pair.config.arg, offset: pair.config.offset ?? 0 },
+        pluralOffsets,
+      );
       return `${key} {${tokens}}`;
     });
 
@@ -377,9 +425,9 @@ function serializePluralSelectorPair(
   const select = `{${header} ${cases.join(" ")}}`;
 
   return [
-    serializePattern(prefix, { plural }),
+    serializePattern(prefix, { plural, pluralOffsets }),
     select,
-    serializePattern(suffix, { plural }),
+    serializePattern(suffix, { plural, pluralOffsets }),
   ].join("");
 }
 
@@ -413,10 +461,14 @@ function optionValue(
   return option.value.value;
 }
 
-function serializePattern(
-  pattern: Pattern,
-  options: { plural: PluralContext | undefined },
-): string {
+type PatternOptions = {
+  /** The plural or selectordinal the pattern sits in. */
+  plural: PluralContext | undefined;
+  /** To resolve the offset of a legacy `#`. */
+  pluralOffsets: PluralOffsets;
+};
+
+function serializePattern(pattern: Pattern, options: PatternOptions): string {
   return pattern
     .map((part: Pattern[number]) => {
       switch (part.type) {
@@ -437,7 +489,7 @@ function serializePattern(
 
 function serializeExpression(
   expression: Expression,
-  options: { plural: PluralContext | undefined },
+  options: PatternOptions,
 ): string {
   if (
     expression.annotation?.type === "function-reference" &&
@@ -464,52 +516,66 @@ function serializeExpression(
 
 /**
  * `#` displays `arg - offset` of the plural it sits in. Write `#` when it
- * sits in that plural. Elsewhere, for example after an editor removed or
- * changed the plural around it, write what it displays: `{count, number}`,
- * or a one-case plural that applies the offset.
+ * sits in a plural on the same argument with the same offset. Elsewhere, for
+ * example after an editor removed or changed the plural around it, write what
+ * it displays: `{count, number}`, or a one-case plural that applies the
+ * offset.
  */
 function serializePound(
   arg: Expression["arg"],
   annotation: FunctionReference,
-  options: { plural: PluralContext | undefined },
+  options: PatternOptions,
 ): string {
   if (arg.type !== "variable-reference") return "#";
-  const offsetOption = optionValue(annotation, "offset");
-  const plural = options.plural;
-  if (plural && plural.arg === arg.name) {
-    if (offsetOption !== undefined) {
-      if (Number(offsetOption) === plural.offset) return "#";
-    } else if (
-      plural.offset === 0 ||
-      // A `#` without an offset option is an offset-0 `#`, or one imported
-      // before the offset was kept on `#`, which belongs to the plural it
-      // sits in. If an enclosing plural on the same argument has no offset,
-      // the `#` can be that plural's: the export moves a `#` that is not
-      // shared by all cases into the nested plural's cases.
-      !hasEnclosingPluralWithoutOffset(plural.outer, arg.name)
-    ) {
-      return "#";
-    }
+  const offset = poundOffset(arg.name, annotation, options);
+  if (
+    options.plural &&
+    options.plural.arg === arg.name &&
+    offset === options.plural.offset
+  ) {
+    return "#";
   }
-  const offset = offsetOption === undefined ? 0 : Number(offsetOption);
-  if (!offset) return `{${arg.name}, number}`;
+  if (offset === 0) return `{${arg.name}, number}`;
   return `{${arg.name}, plural, offset:${offset} other {#}}`;
 }
 
-function hasEnclosingPluralWithoutOffset(
-  plural: PluralContext | undefined,
-  arg: string,
-): boolean {
-  for (let current = plural; current; current = current.outer) {
-    if (current.arg === arg && current.offset === 0) return true;
-  }
-  return false;
+/**
+ * The offset a `#` subtracts from its argument.
+ *
+ * `#` imports with an `offset` option when its plural has an offset, and
+ * without one when it has none. Imports from before the offset was kept on
+ * `#` have no option even in a plural with an offset. A `#` without an option
+ * is therefore only such a legacy `#` when no plural on its argument (see
+ * `collectPluralOffsets`) lacks an offset: then it takes the offset of the
+ * enclosing plural on its argument, or, outside of one, the offset of the
+ * plural on its argument. Otherwise it has offset 0.
+ */
+function poundOffset(
+  argName: string,
+  annotation: FunctionReference,
+  options: PatternOptions,
+): number {
+  const offsetOption = optionValue(annotation, "offset");
+  if (offsetOption !== undefined) return parseOffset(offsetOption);
+
+  const pluralOffsets = options.pluralOffsets.get(argName) ?? new Set();
+  if (pluralOffsets.size === 0 || pluralOffsets.has(0)) return 0;
+
+  // legacy `#`
+  if (options.plural?.arg === argName) return options.plural.offset;
+  // outside of its plural, the offset is only known if all plurals on the
+  // argument share it
+  if (pluralOffsets.size === 1) return [...pluralOffsets][0]!;
+  return 0;
 }
 
-function escapeText(
-  value: string,
-  options: { plural: PluralContext | undefined },
-): string {
+function parseOffset(value: string | undefined): number {
+  if (value === undefined) return 0;
+  const offset = Number(value);
+  return Number.isFinite(offset) ? offset : 0;
+}
+
+function escapeText(value: string, options: PatternOptions): string {
   return escapeIcuText(value, options.plural !== undefined);
 }
 
