@@ -32,7 +32,7 @@ test("recognizes namespace imports, renamed m imports and named function imports
 });
 test("ignores comments, strings, regex literals and type-only usages", async () => {
 	const result = await analyze(`import { m } from './messages'; // m.fake()
-		const s = "m.fake()"; const r = /m.fake()/; type Keys = keyof typeof m; m.real();`);
+		const s = "m.fake()"; const r = /m.fake()/; type Label = typeof m.real; m.real();`);
 	expect(result.status).toBe("complete");
 	expect(result.usedBundleIds).toEqual(["real"]);
 });
@@ -445,4 +445,37 @@ test.each([
 	"import * as all from './paraglide/messages.js'; export default all",
 ])("other ways a namespace of namespaces escapes withhold unused findings: %s", async (code) => {
 	expect((await analyze(code, "src/app.ts")).status).toBe("incomplete");
+});
+
+test("typeof a namespace import's m.x in a type counts as a usage", async () => {
+	const result = await analyze(
+		`import * as all from './paraglide/messages.js'; all.m.used(); export type T = typeof all.m.old; type U = (typeof all.m)["quoted"];`,
+		"src/app.ts"
+	);
+	expect(result.status).toBe("complete");
+	expect(new Set(result.usedBundleIds)).toEqual(
+		new Set(["m", "used", "old", "quoted"])
+	);
+});
+
+test.each([
+	"type T = typeof all",
+	"type T = typeof all.m",
+	"type T = (typeof all.m)[K]",
+	"type T = typeof m",
+	"type Keys = keyof typeof m",
+])("other typeof uses of a namespace withhold unused findings: %s", async (code) => {
+	const result = await analyze(
+		`import * as all from './paraglide/messages.js'; import { m } from './paraglide/messages.js'; ${code};`,
+		"src/app.ts"
+	);
+	expect(result.status).toBe("incomplete");
+});
+
+test("an aliased import.meta.hot withholds unused findings", async () => {
+	const result = await analyze(
+		`import { m } from './messages'; const hot = import.meta.hot; hot?.accept("./paraglide/messages.js", (mod) => mod.hello());`,
+		"src/app.ts"
+	);
+	expect(result.status).toBe("incomplete");
 });

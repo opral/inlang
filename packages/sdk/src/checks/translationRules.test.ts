@@ -391,3 +391,138 @@ test("full scans order bundles like SQLite's BINARY collation", async () => {
 	expect([...ids].sort(compareBinary)).toEqual(["a", "～", "😀"]);
 	expect([...ids].sort()).not.toEqual(["a", "～", "😀"]);
 });
+
+test("a select next to a plural: forms without the plural's number don't need it", () => {
+	const reference = message("en", ["gender", "countPlural"], {
+		"gender=female,countPlural=one": [t("Nothing here")],
+		"gender=female,countPlural=*": [t("Nothing here")],
+		"gender=*,countPlural=one": [v("count"), t(" item")],
+		"gender=*,countPlural=*": [v("count"), t(" items")],
+	});
+	const target = message("de", ["gender", "countPlural"], {
+		"gender=female,countPlural=one": [t("Nichts hier")],
+		"gender=female,countPlural=*": [t("Nichts hier")],
+		"gender=*,countPlural=one": [v("count"), t(" Artikel")],
+		"gender=*,countPlural=*": [v("count"), t(" Artikel")],
+	});
+	expect(checkTranslation({ reference, target, declarations: plural })).toEqual(
+		[]
+	);
+	expect(
+		checkTranslation({ reference, target: reference, declarations: plural })
+	).toEqual([]);
+});
+
+test("markup or a variable in one reference category is needed in that category, not in every one", () => {
+	const reference = message("en", ["countPlural"], {
+		"countPlural=one": [
+			{ type: "markup-start", name: "b", options: [], attributes: [] } as never,
+			v("count"),
+			{ type: "markup-end", name: "b", options: [], attributes: [] } as never,
+			t(" item in "),
+			v("folder"),
+		],
+		"countPlural=*": [v("count"), t(" items")],
+	});
+	const target = message("de", ["countPlural"], {
+		"countPlural=one": [
+			{ type: "markup-start", name: "b", options: [], attributes: [] } as never,
+			t("Ein"),
+			{ type: "markup-end", name: "b", options: [], attributes: [] } as never,
+			t(" Artikel in "),
+			v("folder"),
+		],
+		"countPlural=*": [v("count"), t(" Artikel")],
+	});
+	expect(checkTranslation({ reference, target, declarations: plural })).toEqual(
+		[]
+	);
+	// a category only the target has compares with the reference's other form
+	const russian = message("ru", ["countPlural"], {
+		"countPlural=one": [v("count"), t(" товар в "), v("folder")],
+		"countPlural=few": [v("count"), t(" товара")],
+		"countPlural=many": [v("count"), t(" товаров")],
+		"countPlural=*": [v("count"), t(" товара")],
+	});
+	expect(
+		checkTranslation({ reference, target: russian, declarations: plural })
+	).toEqual([
+		{ type: "missing-markup", name: "b", variantId: "ru:countPlural=one" },
+	]);
+});
+
+test("missing-selector names the selector its values belong to: plural and exact number apart", () => {
+	const reference = message("en", ["countPluralExact", "countPlural"], {
+		"countPluralExact=0,countPlural=*": [t("No files")],
+		"countPluralExact=*,countPlural=one": [v("count"), t(" file")],
+		"countPluralExact=*,countPlural=*": [v("count"), t(" files")],
+	});
+	const single = (locale: string) =>
+		checkTranslation({
+			reference,
+			target: message(locale, [], { "": [v("count"), t(" x")] }),
+			declarations: plural,
+		});
+	expect(single("ja")).toEqual([
+		{
+			type: "missing-selector",
+			selector: "countPluralExact",
+			input: "count",
+			values: ["0"],
+		},
+	]);
+	expect(single("ru")).toEqual([
+		{
+			type: "missing-selector",
+			selector: "countPlural",
+			input: "count",
+			values: [],
+		},
+		{
+			type: "missing-selector",
+			selector: "countPluralExact",
+			input: "count",
+			values: ["0"],
+		},
+	]);
+});
+
+test("every fixture reference checked against itself is clean", () => {
+	const references = [
+		message("en", ["hasName"], {
+			"hasName=true": [t("Hello "), v("name")],
+			"hasName=*": [t("Hello")],
+		}),
+		message("en", ["countPluralExact", "countPlural"], {
+			"countPluralExact=0,countPlural=*": [t("No files in "), v("folder")],
+			"countPluralExact=*,countPlural=one": [
+				v("count"),
+				t(" file in "),
+				v("folder"),
+			],
+			"countPluralExact=*,countPlural=*": [
+				v("count"),
+				t(" files in "),
+				v("folder"),
+			],
+		}),
+		message("en", ["countPlural"], {
+			"countPlural=one": [t("One file")],
+			"countPlural=*": [v("count"), t(" files")],
+		}),
+		message("en", ["gender", "countPlural"], {
+			"gender=female,countPlural=one": [t("Nothing here")],
+			"gender=female,countPlural=*": [t("Nothing here")],
+			"gender=*,countPlural=one": [v("count"), t(" item")],
+			"gender=*,countPlural=*": [v("count"), t(" items")],
+		}),
+		message("en", ["countPlural"], {
+			"countPlural=one": [t("One item in "), v("folder")],
+			"countPlural=*": [v("count"), t(" items")],
+		}),
+	];
+	for (const reference of references)
+		expect(
+			checkTranslation({ reference, target: reference, declarations: plural })
+		).toEqual([]);
+});
