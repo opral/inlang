@@ -641,7 +641,8 @@ test("local variables with function declarations and options", async () => {
 					"input date",
 					"local formattedDate = date: datetime month=long day=numeric",
 				],
-				selectors: ["formattedDate"],
+				// `*` only selects nothing: the file keeps its empty selectors
+				selectors: [],
 				match: {
 					"formattedDate=*": "Today is {formattedDate}.",
 				},
@@ -739,7 +740,7 @@ test("local variables support whitespace around literal formatter options", asyn
 					"input date",
 					"local formattedDate = date: datetime month=long day=numeric",
 				],
-				selectors: ["formattedDate"],
+				selectors: [],
 				match: {
 					"formattedDate=*": "Today is {formattedDate}.",
 				},
@@ -790,7 +791,7 @@ test("local variables support variable references in formatter options", async (
 					"input priceCurrency",
 					"local formattedAmount = amount: number style=currency currency=$priceCurrency notation=compact",
 				],
-				selectors: ["formattedAmount"],
+				selectors: [],
 				match: {
 					"formattedAmount=*": "{formattedAmount}",
 				},
@@ -839,7 +840,7 @@ test("turns string syntax into ", async () => {
 		some_happy_cat: [
 			{
 				declarations: ["input date", "local formattedDate = date: datetime"],
-				selectors: ["formattedDate"],
+				selectors: [],
 				match: {
 					"formattedDate=*": "Today is {formattedDate}.",
 				},

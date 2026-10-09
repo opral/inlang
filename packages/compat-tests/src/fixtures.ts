@@ -215,3 +215,53 @@ export async function exportFixtureFiles(
 			`${a.name}${a.locale}`.localeCompare(`${b.name}${b.locale}`)
 		);
 }
+
+/**
+ * `files` with the variants of some messages in another order, given as
+ * `{ "<bundle>/<locale>": [match keys in the new order] }`. Everything else
+ * keeps its bytes (the files are written with `JSON.stringify(…, "\t")`).
+ *
+ * Only for messages that runtimes reading variants in file order (Paraglide
+ * JS 2.26) display wrong: a variant after the catch-all can never be
+ * selected. The function checks that the message had one.
+ */
+export function withVariantOrder(
+	files: Files,
+	orders: Record<string, string[]>
+): Files {
+	const used = new Set<string>();
+	const result = files.map((file) => {
+		const keys = Object.keys(orders).filter((key) =>
+			key.endsWith(`/${file.locale}`)
+		);
+		if (keys.length === 0) return file;
+		const json = JSON.parse(file.content);
+		let changed = false;
+		for (const [key, order] of Object.entries(orders)) {
+			const [bundle, locale] = key.split("/") as [string, string];
+			if (locale !== file.locale) continue;
+			const match = json[bundle][0].match as Record<string, string>;
+			const keys = Object.keys(match);
+			const catchAll = keys.findIndex((k) =>
+				k.split(", ").every((part) => part.endsWith("=*"))
+			);
+			if (catchAll === -1 || catchAll === keys.length - 1) {
+				throw new Error(`${key}: every variant can be selected already`);
+			}
+			if ([...order].sort().join() !== [...keys].sort().join()) {
+				throw new Error(`${key}: the order must have the keys ${keys}`);
+			}
+			json[bundle][0].match = Object.fromEntries(
+				order.map((k) => [k, match[k]])
+			);
+			used.add(key);
+			changed = true;
+		}
+		return changed
+			? { ...file, content: JSON.stringify(json, undefined, "\t") }
+			: file;
+	});
+	const unused = Object.keys(orders).filter((key) => !used.has(key));
+	if (unused.length > 0) throw new Error(`No message ${unused}`);
+	return result;
+}

@@ -17,6 +17,7 @@ import {
 	openFixtureProject as openProject,
 	readSourceFiles,
 	upgrades,
+	withVariantOrder,
 } from "./fixtures.js";
 import { editorSpecs, rowsFromSpecs } from "./editorRows.js";
 
@@ -80,6 +81,27 @@ function listFiles(dir: string): string[] {
 const importChanges: Record<string, string[]> = {
 	// `#` in a plural with an offset keeps the offset (`icu:pound offset=1`)
 	icu1: ["guests"],
+};
+
+/**
+ * Messages that editors stored with a variant after the catch-all, which the
+ * published plugin wrote in that order. Runtimes that try variants in file
+ * order (Paraglide JS 2.26) never select that variant. The current plugin
+ * writes the catch-all last; nothing else of the file changes. See
+ * corrections.test.ts.
+ */
+const variantOrderChanges: Record<string, Record<string, string[]>> = {
+	"message-format": {
+		"editor_items_count/en": ["countPlural=one", "countPlural=*"],
+		"editor_items_count/de": ["countPlural=one", "countPlural=*"],
+		"editor_pronoun/en": ["gender=male", "gender=female", "gender=*"],
+		"editor_invite/en": [
+			"countPlural=one, gender=female",
+			"countPlural=one, gender=*",
+			"countPlural=*, gender=female",
+			"countPlural=*, gender=*",
+		],
+	},
 };
 
 describe.each(fixtures)("$dir", (fixture) => {
@@ -163,7 +185,9 @@ describe.each(fixtures)("$dir", (fixture) => {
 			expect(
 				await exportFiles(upgraded, fixture),
 				`${sdk} SDK with the ${plugin} plugin`
-			).toEqual(before);
+			).toEqual(
+				withVariantOrder(before, variantOrderChanges[fixture.dir] ?? {})
+			);
 			await upgraded.close();
 		}
 	});
