@@ -38,10 +38,14 @@ export function selectorMatches(name: string, declarations: Declaration[], local
     const type = option?.value.type === "literal" && option.value.value === "ordinal" ? "ordinal" : "cardinal";
     const ruleOptions: Intl.PluralRulesOptions = { type };
     const numericOptions = ["minimumIntegerDigits", "minimumFractionDigits", "maximumFractionDigits", "minimumSignificantDigits", "maximumSignificantDigits"];
+    // ICU `offset` shifts the number before category selection; the category set stays the same.
+    let offset = 0;
     for (const option of resolver.options.filter(value => value.name !== "type")) {
-      if (numericOptions.includes(option.name) && option.value.type === "literal" && option.value.value.trim() && Number.isFinite(Number(option.value.value))) {
-        Object.assign(ruleOptions, { [option.name]: Number(option.value.value) });
-      } else knownType = false;
+      const literal = option.value.type === "literal" && option.value.value.trim() && Number.isFinite(Number(option.value.value)) ? Number(option.value.value) : undefined;
+      if (literal === undefined) knownType = false;
+      else if (option.name === "offset") offset = literal;
+      else if (numericOptions.includes(option.name)) Object.assign(ruleOptions, { [option.name]: literal });
+      else knownType = false;
     }
     let rules: Intl.PluralRules | undefined;
     try {
@@ -52,11 +56,11 @@ export function selectorMatches(name: string, declarations: Declaration[], local
     if (rules) for (const number of [...Array.from({ length: 201 }, (_, index) => index), 0.1, 0.2, 1.5, 2.5, 1000, 1000000]) {
       const category = rules.select(number);
       const examples = samples.get(category) ?? [];
-      if (examples.length < 3) examples.push(number);
+      if (examples.length < 3) examples.push(number + offset);
       samples.set(category, examples);
     }
     const result: SelectorMatches = {
-      label: rules ? `${type === "ordinal" ? "Ordinal" : "Cardinal"} plural · ${locale}` : "Plural · runtime rules",
+      label: rules ? `${type === "ordinal" ? "Ordinal" : "Cardinal"} plural · ${locale}${offset ? ` · offset ${offset}` : ""}` : "Plural · runtime rules",
       allowed: rules ? [...values, "*"] : undefined,
       suggestions: [...values.map(value => ({ value, description: samples.get(value)?.length ? `e.g. ${samples.get(value)!.join(", ")}` : "Plural category" })), fallback],
     };
