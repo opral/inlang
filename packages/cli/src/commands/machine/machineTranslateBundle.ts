@@ -33,6 +33,12 @@ export type MachineTranslateResult = {
   unavailableCount?: number;
   /** Number of translations added to `data`. `0` means `data` equals the input. */
   translated?: number;
+  /**
+   * Ids of variants of `bundle` that `data` has with a new id, to take the
+   * order of the source message (see `orderLikeSource`). Delete them after
+   * writing `data`.
+   */
+  replacedVariantIds?: string[];
 };
 
 /**
@@ -61,6 +67,11 @@ export async function machineTranslateBundle(
     let unavailableError: string | undefined;
     let unavailableCount = 0;
     let translated = 0;
+    /** variants added to messages that existed, by message */
+    const addedVariants = new Map<
+      BundleNested["messages"][number],
+      Set<VariantRow>
+    >();
 
     const sourceMessage = copy.messages.find(
       (message) => message.locale === args.sourceLocale,
@@ -142,12 +153,16 @@ export async function machineTranslateBundle(
           ) {
             existingVariant.pattern = pattern;
           } else {
-            targetMessage.variants.push({
+            const variant = {
               id: randomUUID(),
               message_id: targetMessage.id,
               matches: sourceVariant.matches,
               pattern,
-            } satisfies VariantRow);
+            } satisfies VariantRow;
+            targetMessage.variants.push(variant);
+            const added = addedVariants.get(targetMessage) ?? new Set();
+            added.add(variant);
+            addedVariants.set(targetMessage, added);
           }
         } else {
           const newMessageId = randomUUID();
@@ -168,6 +183,15 @@ export async function machineTranslateBundle(
       }
     }
 
+    const replacedVariantIds: string[] = [];
+    for (const [message, added] of addedVariants) {
+      replacedVariantIds.push(
+        ...orderLikeSource(message, sourceMessage.variants, added),
+      );
+    }
+    const replaced =
+      replacedVariantIds.length > 0 ? { replacedVariantIds } : {};
+
     if (unavailableError) {
       return {
         data: copy,
@@ -175,11 +199,73 @@ export async function machineTranslateBundle(
         unavailable: true,
         unavailableCount,
         translated,
+        ...replaced,
       };
     }
 
-    return { data: copy, translated };
+    return { data: copy, translated, ...replaced };
   } catch (error) {
     return { error: error?.toString() ?? "unknown error" };
   }
+}
+
+const UUID_V7 =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
+/**
+ * Puts the variants of a message that existed in the order of the source
+ * message, after `added` were appended to it.
+ *
+ * Runtimes like Paraglide JS select the first variant that matches, so a
+ * translated `one` must not end up after an existing catch-all. Variants are
+ * ordered by id (uuid v7) in the project, so the variants from the first one
+ * whose place changes on get new ids in the new order; the ids they had are
+ * returned, to be deleted. Existing variants keep their matches and pattern,
+ * and are put in the order of the source too.
+ * A variant the source doesn't have (e.g. a plural category of the target
+ * language) stays after the variant it followed. Messages whose order doesn't
+ * change keep every id.
+ */
+export function orderLikeSource(
+  message: { variants: VariantRow[] },
+  sourceVariants: VariantRow[],
+  added: Set<VariantRow>,
+): string[] {
+  const sourceIndex = (variant: VariantRow) =>
+    sourceVariants.findIndex(
+      (source) => findMatchingVariant([variant], source.matches) !== undefined,
+    );
+  let previous = -1;
+  const keyed = message.variants.map((variant, position) => {
+    let key = sourceIndex(variant);
+    if (key === -1) key = previous;
+    if (!added.has(variant)) previous = key;
+    return { variant, key, position };
+  });
+  const ordered = [...keyed]
+    .sort((a, b) => a.key - b.key || a.position - b.position)
+    .map(({ variant }) => variant);
+  // the first variant whose place changes, or whose id doesn't sort after
+  // the variant before it (e.g. an added variant after a non-v7 id)
+  let start = ordered.findIndex(
+    (variant, index) =>
+      variant !== message.variants[index] ||
+      (index > 0 && !(ordered[index - 1]!.id < variant.id)),
+  );
+  if (start === -1) return [];
+  // the variants before keep their ids: a new id must sort after them
+  const newId = randomUUID();
+  while (
+    start > 0 &&
+    !(UUID_V7.test(ordered[start - 1]!.id) && ordered[start - 1]!.id < newId)
+  ) {
+    start--;
+  }
+  const replaced: string[] = [];
+  for (const variant of ordered.slice(start)) {
+    if (!added.has(variant)) replaced.push(variant.id);
+    variant.id = randomUUID();
+  }
+  message.variants = ordered;
+  return replaced;
 }
