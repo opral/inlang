@@ -5,6 +5,7 @@ import {
 	$getRoot,
 	$getSelection,
 	$isElementNode,
+	$setCompositionKey,
 	$setSelection,
 	TextNode,
 	createEditor,
@@ -22,7 +23,7 @@ import {
 	$readPattern,
 	$setCaretOffset,
 	$setPattern,
-	$transformVariableText,
+	registerVariableText,
 	PatternTokenNode,
 	tokenText,
 	tokenTitle,
@@ -35,7 +36,7 @@ const setup = () => {
 			throw e;
 		},
 	});
-	editor.registerNodeTransform(TextNode, $transformVariableText);
+	registerVariableText(editor);
 	return editor;
 };
 const update = (editor: LexicalEditor, fn: () => void) =>
@@ -167,6 +168,93 @@ it("turns only the typed {name} into a token next to stored braces", () => {
 	]);
 	// the caret stays behind the pasted text
 	read(editor, () => expect($getCaretOffset()).toBe("{a} {x} and {y} ".length));
+});
+
+const text = (value: string) => ({ type: "text", value }) as const;
+const variable = (name: string) =>
+	({ type: "expression", arg: { type: "variable-reference", name } }) as const;
+
+it("keeps stored braces as text when Lexical splits or merges their text", () => {
+	const editor = setup();
+	// Enter in the middle of the stored text
+	update(editor, () => $setPattern([text("Hello {lit} world")]));
+	update(editor, () => caretAt(0, 2).insertLineBreak());
+	expect(read(editor, $readPattern)).toEqual([text("He\nllo {lit} world")]);
+	// a variable picked from the suggestions in the middle of the text
+	update(editor, () => $setPattern([text("Hi {lit} there")]));
+	update(editor, () => {
+		const key = (children()[0] as TextNode).getKey();
+		$insertVariableAt({ key, from: 2, to: 2 }, "x");
+	});
+	expect(read(editor, $readPattern)).toEqual([text("Hi"), variable("x"), text(" {lit} there")]);
+	// bold around a word before the braces
+	update(editor, () => $setPattern([text("Hello {lit}")]));
+	update(editor, () => {
+		const selection = caretAt(0, 5);
+		selection.anchor.offset = 0;
+		$wrapSelection({ type: "markup-start", name: "b" });
+	});
+	expect(read(editor, $readPattern)).toEqual([
+		{ type: "markup-start", name: "b" },
+		text("Hello"),
+		{ type: "markup-end", name: "b" },
+		text(" {lit}"),
+	]);
+	// a removed token merges the stored texts around it
+	update(editor, () => $setPattern([text("{a} "), variable("n"), text(" {b}")]));
+	update(editor, () => children().find($isPatternTokenNode)!.remove());
+	expect(read(editor, $readPattern)).toEqual([text("{a}  {b}")]);
+});
+
+it("tells typed braces from stored ones by their text, not by their node", () => {
+	const editor = setup();
+	// two texts converted in one update
+	update(editor, () => $setPattern([text("a {s1} b"), variable("n"), text("c {s2} d")]));
+	update(editor, () => {
+		const [first, , last] = children() as TextNode[];
+		first!.setTextContent("{t1} a {s1} b");
+		last!.setTextContent("c {s2} d {t2}");
+	});
+	expect(read(editor, $readPattern)).toEqual([
+		variable("t1"),
+		text(" a {s1} b"),
+		variable("n"),
+		text("c {s2} d "),
+		variable("t2"),
+	]);
+	// "{" typed before stored braces, then the rest of the name
+	update(editor, () => $setPattern([text("a {lit}")]));
+	update(editor, () => caretAt(0, 2).insertText("{"));
+	expect(read(editor, $readPattern)).toEqual([text("a {{lit}")]);
+	update(editor, () => caretAt(0, 3).insertText("name}"));
+	expect(read(editor, $readPattern)).toEqual([text("a "), variable("name"), text("{lit}")]);
+	// the same {x} pasted before a stored one: the pasted one (before the caret) is the variable
+	update(editor, () => $setPattern([text("{x}")]));
+	update(editor, () => caretAt(0, 0).insertText("{x}"));
+	expect(read(editor, $readPattern)).toEqual([variable("x"), text("{x}")]);
+	// editing inside stored braces keeps them text
+	update(editor, () => $setPattern([text("It's {literal}")]));
+	update(editor, () => {
+		const selection = caretAt(0, 13);
+		selection.anchor.offset = 12;
+		selection.removeText();
+	});
+	expect(read(editor, $readPattern)).toEqual([text("It's {litera}")]);
+});
+
+it("turns a {name} an IME composed into a token when the composition ends", () => {
+	const editor = setup();
+	update(editor, () => $setPattern([text("Hi ")]));
+	update(editor, () => {
+		$setCompositionKey((children()[0] as TextNode).getKey());
+		caretAt(0, 3).insertText("{name}");
+	});
+	expect(read(editor, $readPattern)).toEqual([text("Hi {name}")]);
+	update(editor, () => {
+		$setCompositionKey(null);
+		(children()[0] as TextNode).markDirty();
+	});
+	expect(read(editor, $readPattern)).toEqual([text("Hi "), variable("name")]);
 });
 
 it("removes a token as a whole", () => {

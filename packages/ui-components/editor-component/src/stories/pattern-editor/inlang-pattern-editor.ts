@@ -14,7 +14,6 @@ import {
 	$isRangeSelection,
 	COMMAND_PRIORITY_LOW,
 	SELECTION_CHANGE_COMMAND,
-	TextNode,
 	createEditor,
 	type RangeSelection,
 } from "lexical";
@@ -39,7 +38,7 @@ import {
 	$setCaretOffset,
 	$setPattern,
 	$syncMarkupFormats,
-	$transformVariableText,
+	registerVariableText,
 	PatternTokenNode,
 	tokenTitle,
 } from "./patternNodes.js";
@@ -338,7 +337,7 @@ export default class InlangPatternEditor extends LitElement {
 		if (this._unregister) return;
 		this._unregister = mergeRegister(
 			registerPlainText(this.editor),
-			this.editor.registerNodeTransform(TextNode, $transformVariableText),
+			registerVariableText(this.editor),
 			this.editor.registerCommand(
 				SELECTION_CHANGE_COMMAND,
 				() => {
