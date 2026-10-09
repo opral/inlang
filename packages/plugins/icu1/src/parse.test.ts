@@ -143,6 +143,7 @@ describe("parseMessage", () => {
       ),
     )?.pattern as Pattern;
 
+    // `#` displays count - offset, so the offset is kept on the expression
     expect(pattern).toEqual([
       {
         type: "expression",
@@ -150,10 +151,59 @@ describe("parseMessage", () => {
         annotation: {
           type: "function-reference",
           name: "icu:pound",
-          options: [],
+          options: [{ name: "offset", value: { type: "literal", value: "1" } }],
         },
       },
       { type: "text", value: " item" },
+    ]);
+  });
+
+  it("keeps the offset of the innermost plural on #", () => {
+    const pounds = (messageSource: string) =>
+      parseMessage({ ...baseArgs, messageSource }).variants.flatMap((variant) =>
+        (variant.pattern ?? []).flatMap((part) =>
+          part.type === "expression" &&
+          part.annotation?.name === "icu:pound" &&
+          part.arg.type === "variable-reference"
+            ? [
+                {
+                  arg: part.arg.name,
+                  options: part.annotation.options,
+                },
+              ]
+            : [],
+        ),
+      );
+    const offset = (value: string) => [
+      { name: "offset", value: { type: "literal", value } },
+    ];
+
+    // no offset: no options, as before
+    expect(pounds("{count, plural, one {# item} other {# items}}")).toEqual([
+      { arg: "count", options: [] },
+      { arg: "count", options: [] },
+    ]);
+    // offset:0 is no offset
+    expect(pounds("{count, plural, offset:0 other {# items}}")).toEqual([
+      { arg: "count", options: [] },
+    ]);
+    // a select inside the plural keeps the plural's offset
+    expect(
+      pounds(
+        "{count, plural, offset:1 other {{gender, select, male {He and # others} other {They and # others}}}}",
+      ),
+    ).toEqual([
+      { arg: "count", options: offset("1") },
+      { arg: "count", options: offset("1") },
+    ]);
+    // a nested plural on another argument has its own offset
+    expect(
+      pounds(
+        "{count, plural, offset:2 other {# and {guests, plural, other {# guests}}}}",
+      ),
+    ).toEqual([
+      { arg: "count", options: offset("2") },
+      { arg: "guests", options: [] },
     ]);
   });
 
