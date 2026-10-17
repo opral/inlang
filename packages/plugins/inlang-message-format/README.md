@@ -127,7 +127,7 @@ The merged result for locale `en` will be:
 This lets you modularize and override translations while keeping a shared base.
 
 > [!WARNING]
-> When exporting, all messages are written to the **last** path pattern in the array. Messages are not split back across multiple files. This means multiple path patterns are a one-way merge — useful for importing from shared base files, but the original file structure is not preserved on export.
+> The SDK's directory save API writes the merged messages for each locale to every path resolved from the array. Messages are not split back into their original files, so saving can copy messages from one catalog into the others even when no messages were edited.
 
 ### `sort`
 
