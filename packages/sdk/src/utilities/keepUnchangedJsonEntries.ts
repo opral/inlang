@@ -1145,6 +1145,83 @@ export function rowsFromImport(imported: {
 	};
 }
 
+/** A repeated property in the same JSON object, compared by its decoded key. */
+export type DuplicateJsonProperty = {
+	key: string;
+	/** Zero-based UTF-16 offset of the first key's opening quote. */
+	firstOffset: number;
+	/** Zero-based UTF-16 offset of this repeated key's opening quote. */
+	duplicateOffset: number;
+};
+
+/**
+ * Finds repeated properties in strict JSON text before an import loses them.
+ *
+ * Returns one diagnostic for each occurrence after the first, in source order.
+ * Keys are compared after decoding JSON escapes, separately for each object,
+ * including objects inside arrays and values that a later property overwrites.
+ * This does not compare flattened message IDs or keys across files.
+ *
+ * Uses `JSON.parse` to validate syntax and throws its native `SyntaxError` for
+ * malformed input. It does not accept JSONC or strip a byte order mark. The
+ * scanner then reads the original text; the parsed value is not used.
+ *
+ * This helper neither changes the text nor rejects duplicate properties. Call
+ * it on each file before `importFiles` and decide whether to report or reject
+ * the diagnostics. Existing imports still use the last value by default.
+ *
+ * @example
+ *   import { findDuplicateJsonProperties } from "@inlang/sdk/json-formatting";
+ *
+ *   const diagnostics = files.flatMap((file, fileIndex) =>
+ *     findDuplicateJsonProperties(new TextDecoder().decode(file.content))
+ *       .map((diagnostic) => ({ fileIndex, ...diagnostic }))
+ *   );
+ *   // Report diagnostics here, or reject according to the caller's policy.
+ *   const imported = await plugin.importFiles({ files, settings });
+ */
+export function findDuplicateJsonProperties(
+	text: string
+): DuplicateJsonProperty[] {
+	JSON.parse(text);
+	const duplicates: DuplicateJsonProperty[] = [];
+	const scanner = new Scanner(text);
+	// Keep container scopes on the heap, not the call stack. Array frames
+	// have no keys, but must still separate the objects they contain.
+	const scopes: Array<Map<string, number> | undefined> = [];
+	while (scanner.pos < text.length) {
+		scanner.skipWhitespace();
+		const char = text[scanner.pos];
+		if (char === "{" || char === "[") {
+			scopes.push(char === "{" ? new Map() : undefined);
+			scanner.pos++;
+		} else if (char === "}" || char === "]") {
+			scopes.pop();
+			scanner.pos++;
+		} else if (char === '"') {
+			const keyStart = scanner.pos;
+			scanner.string();
+			const keyEnd = scanner.pos;
+			scanner.skipWhitespace();
+			// JSON.parse already validated the syntax: only an object's
+			// property name can be followed by a colon.
+			if (text[scanner.pos] !== ":") continue;
+			const key = JSON.parse(text.slice(keyStart, keyEnd)) as string;
+			const keys = scopes[scopes.length - 1]!;
+			const firstOffset = keys.get(key);
+			if (firstOffset === undefined) {
+				keys.set(key, keyStart);
+			} else {
+				duplicates.push({ key, firstOffset, duplicateOffset: keyStart });
+			}
+		} else {
+			// Separators and primitive values have no property names.
+			scanner.pos++;
+		}
+	}
+	return duplicates;
+}
+
 type ValueNode = ObjectNode | { kind: "other"; start: number; end: number };
 
 type ObjectNode = {
