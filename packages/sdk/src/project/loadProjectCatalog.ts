@@ -154,11 +154,11 @@ export async function loadProjectCatalog(
 		if (
 			importExportPlugins.length === 1 &&
 			loadSavePlugins.length === 0 &&
-			selected.tryImportCatalog
+			selected.importFilesV2
 		) {
 			const stream = createCatalogStream();
 			try {
-				const handled = await selected.tryImportCatalog({
+				const handled = await selected.importFilesV2({
 					files,
 					settings: structuredClone(rawSettings),
 					sink: stream.sink,

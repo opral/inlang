@@ -5,9 +5,10 @@ import type { InlangPlugin } from "@inlang/sdk";
  * The entire import is checked before the first sink callback. Unsupported
  * syntax returns undefined so the unchanged plugin importer can handle it.
  */
-export const tryImportCatalog: NonNullable<
-	InlangPlugin["tryImportCatalog"]
-> = ({ files, sink }) => {
+export const importFilesV2: NonNullable<InlangPlugin["importFilesV2"]> = ({
+	files,
+	sink,
+}) => {
 	const parsedFiles: Array<{
 		locale: string;
 		entries: Array<[string, string]>;

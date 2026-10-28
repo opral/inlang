@@ -5,10 +5,10 @@ import type {
 	MessageImport,
 	VariantImport,
 } from "@inlang/sdk";
-import { tryImportCatalog } from "./tryImportCatalog.js";
+import { importFilesV2 } from "./importFilesV2.js";
 import { importFiles } from "./importFiles.js";
 
-type Args = Parameters<NonNullable<InlangPlugin["tryImportCatalog"]>>[0];
+type Args = Parameters<NonNullable<InlangPlugin["importFilesV2"]>>[0];
 const settings = { baseLocale: "en", locales: ["en", "de"], modules: [] };
 const file = (locale: string, value: unknown) => ({
 	locale,
@@ -75,7 +75,7 @@ test("scalar imports preserve ordinary parser rows, input order and text boundar
 		file("de", { repeated: "{c}{a}", plain: "Hallo" }),
 	];
 	const { sink, rows } = collector();
-	expect(await tryImportCatalog({ files, settings, sink })).toBe(true);
+	expect(await importFilesV2({ files, settings, sink })).toBe(true);
 	expect(rows).toEqual(await importFiles({ files, settings }));
 	expect(sink.addMessage).toHaveBeenCalledWith("empty", "en", [""]);
 	expect(sink.addMessage).toHaveBeenCalledWith("repeated", "en", [
@@ -113,7 +113,7 @@ test.each([
 	async (value) => {
 		const { sink } = collector();
 		expect(
-			await tryImportCatalog({
+			await importFilesV2({
 				files: [file("en", { first: "Hi {name}" }), file("de", value)],
 				settings,
 				sink,
@@ -130,7 +130,7 @@ test("mixed entries and repeated locale resources fall back atomically", async (
 		[file("en", { first: "first" }), file("en", { different: "second" })],
 	]) {
 		const { sink } = collector();
-		expect(await tryImportCatalog({ files, settings, sink })).toBeUndefined();
+		expect(await importFilesV2({ files, settings, sink })).toBeUndefined();
 		expect(sink.addMessage).not.toHaveBeenCalled();
 	}
 });
@@ -145,7 +145,7 @@ test("malformed JSON still rejects without prior sink emissions", async () => {
 		settings,
 		sink,
 	};
-	await expect(async () => tryImportCatalog(args)).rejects.toThrow(SyntaxError);
+	await expect(async () => importFilesV2(args)).rejects.toThrow(SyntaxError);
 	expect(sink.addMessage).not.toHaveBeenCalled();
 });
 
@@ -156,7 +156,7 @@ test("empty and schema-only catalogs are handled without creating messages", asy
 		[file("en", { $schema: "https://example.test/schema" })],
 	]) {
 		const { sink, rows } = collector();
-		expect(await tryImportCatalog({ files, settings, sink })).toBe(true);
+		expect(await importFilesV2({ files, settings, sink })).toBe(true);
 		expect(rows).toEqual(await importFiles({ files, settings }));
 		expect(sink.addMessage).not.toHaveBeenCalled();
 	}
@@ -170,7 +170,7 @@ test("sink validation failures propagate instead of invoking the fallback import
 		}),
 	};
 	await expect(async () =>
-		tryImportCatalog({
+		importFilesV2({
 			files: [file("en", { simple: "Hello" })],
 			settings,
 			sink,

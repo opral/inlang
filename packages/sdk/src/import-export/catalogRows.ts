@@ -9,7 +9,7 @@ import type {
 	MessageRow,
 	VariantRow,
 } from "../database/schema.js";
-import type { CatalogSink, InlangPlugin } from "../plugin/schema.js";
+import type { ImportFilesV2Sink, InlangPlugin } from "../plugin/schema.js";
 
 type PluginResult = Awaited<
 	ReturnType<NonNullable<InlangPlugin["importFiles"]>>
@@ -48,7 +48,7 @@ const referenceKey = (bundle: string, locale: string) =>
 
 /** Builds private AST nodes from validated scalar parts, without plugin aliases. */
 export function createCatalogStream(): {
-	sink: CatalogSink;
+	sink: ImportFilesV2Sink;
 	takeBundles(): BundleNested[];
 	close(): void;
 } {
@@ -62,7 +62,7 @@ export function createCatalogStream(): {
 	function available(): void {
 		if (!active) fail("The catalog sink is closed");
 	}
-	const sink: CatalogSink = Object.freeze({
+	const sink: ImportFilesV2Sink = Object.freeze({
 		addMessage(bundleId: string, locale: string, parts: readonly string[]) {
 			available();
 			text(bundleId, "bundle.id");

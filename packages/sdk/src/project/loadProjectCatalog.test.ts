@@ -6,7 +6,7 @@ import {
 	ResourceFileImportError,
 	WarningDeprecatedLintRule,
 } from "./directoryPlugins.js";
-import type { CatalogSink, InlangPlugin } from "../plugin/schema.js";
+import type { ImportFilesV2Sink, InlangPlugin } from "../plugin/schema.js";
 import { pluginCachePath } from "../plugin/cache.js";
 import { createMessageV1 } from "../migrations/v2/createMessageV1.js";
 
@@ -75,7 +75,7 @@ const pluginSource = (key: string) =>
 	`export default {key:${JSON.stringify(key)},importFiles(){return {bundles:[{id:${JSON.stringify(key)}}],messages:[],variants:[]}}}`;
 
 test("uses optional scalar catalog imports and seals retained callbacks before returning", async () => {
-	let retained: CatalogSink | undefined;
+	let retained: ImportFilesV2Sink | undefined;
 	const ordinary = vi.fn(() => empty());
 	const snapshot = await loadProjectCatalog({
 		path: "/project.inlang",
@@ -84,7 +84,7 @@ test("uses optional scalar catalog imports and seals retained callbacks before r
 			{
 				key: "scalar",
 				importFiles: ordinary,
-				tryImportCatalog({ sink }) {
+				importFilesV2({ sink }) {
 					retained = sink;
 					sink.addMessage("greeting", "en", ["Hi ", "name", "!"]);
 					return true;
@@ -105,7 +105,7 @@ test("uses optional scalar catalog imports and seals retained callbacks before r
 		path: "/project.inlang",
 		fs: filesystem(),
 		providePlugins: [
-			{ key: "empty", importFiles: ordinary, tryImportCatalog: () => true },
+			{ key: "empty", importFiles: ordinary, importFilesV2: () => true },
 		],
 	});
 	expect(emptySnapshot.bundles).toEqual([]);
@@ -114,11 +114,11 @@ test("uses optional scalar catalog imports and seals retained callbacks before r
 
 test("discards declined scalar imports and closes callbacks on fallback and exceptions", async () => {
 	for (const declined of [false, undefined]) {
-		let retained: CatalogSink | undefined;
+		let retained: ImportFilesV2Sink | undefined;
 		const plugin = importer();
 		const ordinary = vi.fn(plugin.importFiles!);
 		plugin.importFiles = ordinary;
-		plugin.tryImportCatalog = ({ sink }) => {
+		plugin.importFilesV2 = ({ sink }) => {
 			retained = sink;
 			// Even a misbehaving hook cannot leak its partial graph into fallback.
 			sink.addMessage("discarded", "en", ["partial"]);
@@ -135,7 +135,7 @@ test("discards declined scalar imports and closes callbacks on fallback and exce
 			/closed/
 		);
 	}
-	let retained: CatalogSink | undefined;
+	let retained: ImportFilesV2Sink | undefined;
 	const failure = new Error("hook failed");
 	const ordinary = vi.fn(() => empty());
 	await expect(
@@ -146,7 +146,7 @@ test("discards declined scalar imports and closes callbacks on fallback and exce
 				{
 					key: "failed",
 					importFiles: ordinary,
-					tryImportCatalog({ sink }) {
+					importFilesV2({ sink }) {
 						retained = sink;
 						sink.addMessage("discarded", "en", ["partial"]);
 						throw failure;
@@ -166,7 +166,7 @@ test("scalar shortcut is bypassed for sequential or legacy importers", async () 
 	const modern: InlangPlugin = {
 		key: "first",
 		importFiles: () => empty(),
-		tryImportCatalog: shortcut,
+		importFilesV2: shortcut,
 	};
 	for (const additional of [
 		{ key: "second", importFiles: () => empty() },

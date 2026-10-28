@@ -70,10 +70,10 @@ export type InlangPlugin<
 	 * The SDK validates scalar values and owns every constructed AST node.
 	 * Other hosts and older SDK versions continue to call importFiles.
 	 */
-	tryImportCatalog?: (args: {
+	importFilesV2?: (args: {
 		files: ImportFile[];
 		settings: ProjectSettings & ExternalSettings;
-		sink: CatalogSink;
+		sink: ImportFilesV2Sink;
 	}) => MaybePromise<boolean | undefined>;
 	/**
 	 * Files that should be written by the inlang SDK.
@@ -124,7 +124,7 @@ export type InlangPlugin<
 };
 
 /** A write-only builder whose values cannot expose or mutate the SDK's AST. */
-export type CatalogSink = {
+export type ImportFilesV2Sink = {
 	/**
 	 * Add one unique bundle/locale message. Parts alternate text and input names:
 	 * [text, inputName, text, ...]. Include empty text slots between adjacent

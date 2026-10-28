@@ -168,6 +168,30 @@ const myPlugin: InlangPlugin = {
 };
 ```
 
+#### Import Files V2
+
+Plugins can optionally implement `importFilesV2({ files, settings, sink })` for
+read-only catalog loading. This version accepts plain text and input references
+through an SDK-owned builder, avoiding temporary import rows and a second copy of
+the pattern AST:
+
+```ts
+// Within importFilesV2, after checking all files use supported syntax:
+sink.addMessage("greeting", "en", ["Hello ", "username", "!"]);
+// Represents "Hello {username}!". Parts alternate text and input names.
+return true;
+```
+
+Return `true` only when the complete import is handled. Return `false` or
+`undefined` for unsupported inputs; the SDK discards partial output and calls
+`importFiles` instead. Throwing rejects the load. The sink validates strings,
+builds private AST nodes, and closes when the hook returns; retaining it cannot
+mutate the completed catalog.
+
+Keep `importFiles` for complex patterns, editable projects, older SDKs, and other
+hosts. The catalog loader currently invokes V2 only for a single modern importer
+without legacy load/save plugins. The resulting catalog shape is unchanged.
+
 #### Deploying a plugin 
 
 > [!NOTE]  
