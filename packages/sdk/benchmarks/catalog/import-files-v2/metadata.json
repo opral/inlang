@@ -1,0 +1,33 @@
+{
+  "node": "v22.21.1",
+  "timingScope": "Preloaded modules, inputs and settings; import plus catalog assembly only. No directory filesystem, plugin discovery, config reading, codegen or output writing.",
+  "originalCohort": {
+    "rows": 70,
+    "batches": [
+      "v1,v2",
+      "shared-scalar,shared-ast-copy,shared-ast-owned,queued-scalar,queued-ast-copy"
+    ],
+    "note": "Historical tryImportCatalog name; optimized plugin bundle unchanged from published benchmark artifact. AST prototype omitted lifecycle and duplicate-locale bookkeeping; exploratory only."
+  },
+  "matchedCohort": {
+    "node": "v22.21.1",
+    "execPath": "/opt/homebrew/Cellar/node@22/22.21.1_4/bin/node",
+    "sdk": "/Users/samuel/git-repos/workspace-1/inlang-sdk-project-catalog/packages/sdk",
+    "plugin": "/Users/samuel/git-repos/workspace-1/artifacts/catalog-import-ablation/frozen/plugin.mjs",
+    "rounds": 5,
+    "variants": [
+      "shared-scalar",
+      "shared-ast-copy",
+      "shared-ast-owned"
+    ],
+    "catalogRowsSha256": "96570a131d201c18a691481fbf080b2f424b4c108fe6d15a00f3a443f2587367",
+    "variantSemanticsSha256": "dd6aadb512d44113771160745f0007a5ac9e150f082c98035f2f2ed73cced023",
+    "pluginSha256": "9274091ca2d0570270294bafc201286132232e1b52263b02c76ac714a721ba57"
+  },
+  "frozenPluginSha256": "9274091ca2d0570270294bafc201286132232e1b52263b02c76ac714a721ba57",
+  "profiles": {
+    "scope": "Start AFTER fixture construction, stop BEFORE logical verification; single fresh 13300 trial per variant; diagnosticProfile rows excluded from medians.",
+    "rawPath": "artifacts/catalog-import-ablation/*-13300.cpuprofile"
+  },
+  "portableRefactorNote": "Recorded original cohort used the same measured operations in a local runner; portable env-based wrapper and optional profiling were added afterward. Matched cohort and profiles used this portable runner; formatting afterward changes no behavior."
+}
