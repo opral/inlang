@@ -1,0 +1,18 @@
+[
+  {
+    "size": 6400,
+    "project": 3204.29425,
+    "catalog": 250.50737500000002,
+    "reductionPercent": 92.18213573862637,
+    "speedup": 12.791217224642587,
+    "hash": "97fce176f92d8581d1663c15e31e1120456090797c7d8aef6da0c8e253c15bbf"
+  },
+  {
+    "size": 13300,
+    "project": 5963.909791,
+    "catalog": 510.29983400000003,
+    "reductionPercent": 91.44353533364837,
+    "speedup": 11.687069823738174,
+    "hash": "531f9bf61bf56a7eaef3f090426273b508413104ec646666f32f644a799ef3ce"
+  }
+]

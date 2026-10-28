@@ -101,6 +101,38 @@ const project = await loadProjectFromDirectory({
 });
 ```
 
+### Loading a read-only catalog
+
+Use `loadProjectCatalog()` when a compiler or other consumer only needs settings
+and nested messages. It reads the same configured translation plugins without
+opening Lix or creating a database.
+
+```ts
+import fs from "node:fs";
+import { loadProjectCatalog } from "@inlang/sdk";
+
+const catalog = await loadProjectCatalog({
+  path: "./project.inlang",
+  fs,
+});
+
+catalog.settings;
+catalog.bundles;
+catalog.diagnostics; // plugin-loading and resource-file errors
+```
+
+The result is a detached snapshot: there is no `db`, watcher, persistence API, or
+`close()` method. The loader does not write project metadata. Plugin caches are read-only by default.
+Pass `writePluginCache: true` to save downloaded remote plugins for later offline
+loads; cache-write failures reject the call.
+Remote plugins use the network with the existing directory cache as a fallback.
+Missing translation files are skipped; other read errors are returned in
+`diagnostics`, while importer failures reject the call. Consumers must inspect
+these diagnostics before publishing output.
+
+Use `loadProjectFromDirectory()` for an editable project with queries, history,
+and persistence. This API currently leaves package dependencies unchanged.
+
 ### Next steps
 
 Go to the [API reference](#api-reference) to learn how to query messages, changes, and save the project.
