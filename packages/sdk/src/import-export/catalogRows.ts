@@ -1,4 +1,3 @@
-import { v7 } from "uuid";
 import {
 	findExistingVariant,
 	variantIdsToReorder,
@@ -10,7 +9,7 @@ import type {
 	MessageRow,
 	VariantRow,
 } from "../database/schema.js";
-import type { InlangPlugin } from "../plugin/schema.js";
+import type { CatalogSink, InlangPlugin } from "../plugin/schema.js";
 
 type PluginResult = Awaited<
 	ReturnType<NonNullable<InlangPlugin["importFiles"]>>
@@ -32,25 +31,277 @@ export class CatalogImportError extends Error {
 function fail(message: string): never {
 	throw new CatalogImportError(message);
 }
+const bundleColumns = ["id", "declarations"];
+const messageColumns = ["id", "bundleId", "locale", "selectors"];
+const variantColumns = [
+	"id",
+	"messageId",
+	"messageBundleId",
+	"messageLocale",
+	"matches",
+	"pattern",
+];
+const surrogate = /[\uD800-\uDFFF]/;
+
 const referenceKey = (bundle: string, locale: string) =>
 	JSON.stringify([bundle, locale]);
+
+/** Builds private AST nodes from validated scalar parts, without plugin aliases. */
+export function createCatalogStream(): {
+	sink: CatalogSink;
+	takeBundles(): BundleNested[];
+	close(): void;
+} {
+	let active = true;
+	let messageIndex = 0;
+	let variantIndex = 0;
+	const groups = new Map<
+		string,
+		{ bundle: BundleNested; names: Set<string>; locales: Set<string> }
+	>();
+	function available(): void {
+		if (!active) fail("The catalog sink is closed");
+	}
+	const sink: CatalogSink = Object.freeze({
+		addMessage(bundleId: string, locale: string, parts: readonly string[]) {
+			available();
+			text(bundleId, "bundle.id");
+			text(locale, "message.locale");
+			if (!Array.isArray(parts)) fail("Catalog parts must be an array");
+			// Read once: getters/custom iterators cannot replace checked strings
+			// with mutable objects between validation and AST construction.
+			const scalars: string[] = [];
+			for (const part of parts) scalars.push(text(part, "catalog.part"));
+			if (scalars.length % 2 !== 1)
+				fail("Catalog parts must alternate text and input strings");
+			let group = groups.get(bundleId);
+			if (!group) {
+				group = {
+					bundle: { id: bundleId, declarations: [], messages: [] },
+					names: new Set(),
+					locales: new Set(),
+				};
+				groups.set(bundleId, group);
+			}
+			if (group.locales.has(locale)) fail("Duplicate catalog message locale");
+			group.locales.add(locale);
+			const pattern: VariantRow["pattern"] = [];
+			for (let index = 0; index < scalars.length; index++) {
+				const part = scalars[index]!;
+				if (index % 2) {
+					if (!group.names.has(part)) {
+						group.names.add(part);
+						group.bundle.declarations.push({
+							name: part,
+							type: "input-variable",
+						});
+					}
+					pattern.push({
+						arg: { name: part, type: "variable-reference" },
+						type: "expression",
+					});
+				} else if (part !== "") pattern.push({ type: "text", value: part });
+			}
+			const id = `catalog-message-${String(messageIndex++).padStart(12, "0")}`;
+			group.bundle.messages.push({
+				id,
+				bundle_id: bundleId,
+				locale,
+				selectors: [],
+				variants: [
+					{
+						id: `catalog-variant-${String(variantIndex++).padStart(12, "0")}`,
+						message_id: id,
+						matches: [],
+						pattern,
+					},
+				],
+			});
+		},
+	});
+	return {
+		sink,
+		takeBundles() {
+			available();
+			active = false;
+			const bundles = [...groups.values()].map((group) => group.bundle);
+			groups.clear();
+			return bundles.sort((a, b) => compareIdentity(a.id, b.id));
+		},
+		close() {
+			active = false;
+			groups.clear();
+		},
+	};
+}
+
+/**
+ * Constructs the common fresh, single-importer catalog directly in its nested
+ * shape. Unsupported imports return undefined without changing their input;
+ * callers must use the general store for merges and identity-based imports.
+ */
+export function createFreshCatalog(
+	result: PluginResult
+): BundleNested[] | undefined {
+	if (
+		!result ||
+		!Array.isArray(result.bundles) ||
+		!Array.isArray(result.messages) ||
+		!Array.isArray(result.variants) ||
+		result.messages.length !== result.variants.length
+	)
+		return undefined;
+	type Entry = {
+		row: PluginResult["messages"][number];
+		variant?: PluginResult["variants"][number];
+		node?: BundleNested["messages"][number];
+	};
+	type Group = {
+		row: PluginResult["bundles"][number];
+		locales: Map<string, Entry>;
+		node?: BundleNested;
+	};
+	const groups = new Map<string, Group>();
+	for (const row of result.bundles) {
+		if (!row || typeof row.id !== "string" || groups.has(row.id))
+			return undefined;
+		groups.set(row.id, { row, locales: new Map() });
+	}
+	for (const row of result.messages) {
+		if (
+			!row ||
+			row.id !== undefined ||
+			typeof row.bundleId !== "string" ||
+			typeof row.locale !== "string" ||
+			(row.selectors !== undefined &&
+				(!Array.isArray(row.selectors) || row.selectors.length !== 0))
+		)
+			return undefined;
+		const group = groups.get(row.bundleId);
+		if (!group || group.locales.has(row.locale)) return undefined;
+		group.locales.set(row.locale, { row });
+	}
+	for (const row of result.variants) {
+		if (
+			!row ||
+			row.id !== undefined ||
+			row.messageId !== undefined ||
+			typeof row.messageBundleId !== "string" ||
+			typeof row.messageLocale !== "string" ||
+			(row.matches !== undefined &&
+				(!Array.isArray(row.matches) || row.matches.length !== 0))
+		)
+			return undefined;
+		const entry = groups
+			.get(row.messageBundleId)
+			?.locales.get(row.messageLocale);
+		if (!entry || entry.variant !== undefined) return undefined;
+		entry.variant = row;
+	}
+
+	// All eligibility checks finished before validation/copying. Retain the same
+	// column/default/JSON boundary as the general importer, in its import order.
+	// These IDs are private to this detached snapshot. Eligibility excludes all
+	// explicit identities and merges; padded counters preserve UUIDv7 import
+	// ordering without generating persistent identities or random bytes.
+	let messageIndex = 0;
+	let variantIndex = 0;
+	const bundles: BundleNested[] = [];
+	for (const group of groups.values()) {
+		const row = group.row;
+		columns(row, bundleColumns, "bundle");
+		group.node = {
+			id: text(row.id, "bundle.id"),
+			declarations:
+				row.declarations === undefined
+					? []
+					: jsonColumn(row.declarations, "bundle.declarations"),
+			messages: [],
+		};
+		bundles.push(group.node);
+	}
+	for (const row of result.messages) {
+		columns(row, messageColumns, "message");
+		const bundle_id = text(row.bundleId, "message.bundleId"),
+			locale = text(row.locale, "message.locale");
+		const group = groups.get(bundle_id)!;
+		const entry = group.locales.get(locale)!;
+		entry.node = {
+			id: `catalog-message-${String(messageIndex++).padStart(12, "0")}`,
+			bundle_id,
+			locale,
+			selectors:
+				row.selectors === undefined
+					? []
+					: jsonColumn(row.selectors, "message.selectors"),
+			variants: [],
+		};
+		group.node!.messages.push(entry.node);
+	}
+	for (const row of result.variants) {
+		columns(row, variantColumns, "variant");
+		// Validate references even though matching strings passed eligibility.
+		const bundle = text(row.messageBundleId, "variant.messageBundleId"),
+			locale = text(row.messageLocale, "variant.messageLocale");
+		const message = groups.get(bundle)!.locales.get(locale)!.node!;
+		message.variants.push({
+			id: `catalog-variant-${String(variantIndex++).padStart(12, "0")}`,
+			message_id: message.id,
+			matches:
+				row.matches === undefined
+					? []
+					: jsonColumn(row.matches, "variant.matches"),
+			pattern:
+				row.pattern === undefined
+					? []
+					: jsonColumn(row.pattern, "variant.pattern"),
+		});
+	}
+	return bundles.sort((a, b) => compareIdentity(a.id, b.id));
+}
 
 /**
  * The fresh compiler catalog uses the same sequential property/identity upserts
  * as importFiles, without opening a project database. Each import is atomic.
  * JSON values and selected catalogs are defensively copied as with database IO.
  */
-export function createCatalogStore(): {
+export function createCatalogStore(createId: () => string): {
 	import(result: PluginResult): void;
 	bundles(): BundleNested[];
+	/** Transfer the validated rows once; the store cannot be used afterward. */
+	takeBundles(): BundleNested[];
 } {
 	let state: Rows = {
 		bundles: new Map(),
 		messages: new Map(),
 		variants: new Map(),
 	};
+	let consumed = false;
+	function available(): void {
+		if (consumed) fail("The catalog store has already transferred its bundles");
+	}
+	function nested(): BundleNested[] {
+		const bundles = new Map<string, BundleNested>();
+		const messages = new Map<string, BundleNested["messages"][number]>();
+		for (const row of state.bundles.values())
+			bundles.set(row.id, { ...row, messages: [] });
+		for (const row of state.messages.values()) {
+			const message = { ...row, variants: [] as VariantRow[] };
+			messages.set(row.id, message);
+			bundles.get(row.bundle_id)!.messages.push(message);
+		}
+		for (const row of state.variants.values())
+			messages.get(row.message_id)!.variants.push({ ...row });
+		for (const bundle of bundles.values()) {
+			bundle.messages.sort((a, b) => compareIdentity(a.id, b.id));
+			for (const message of bundle.messages)
+				message.variants.sort((a, b) => compareIdentity(a.id, b.id));
+		}
+		return [...bundles.values()].sort((a, b) => compareIdentity(a.id, b.id));
+	}
 	return {
 		import(result) {
+			available();
 			if (
 				!result ||
 				!Array.isArray(result.bundles) ||
@@ -119,8 +370,9 @@ export function createCatalogStore(): {
 				add(variantsByMessage, variant.message_id, variant.id);
 			};
 			for (const row of result.bundles) {
-				columns(row, ["id", "declarations"], "bundle");
-				const id = row.id === undefined ? v7() : text(row.id, "bundle.id");
+				columns(row, bundleColumns, "bundle");
+				const id =
+					row.id === undefined ? createId() : text(row.id, "bundle.id");
 				const previous = next.bundles.get(id);
 				next.bundles.set(id, {
 					id,
@@ -131,12 +383,12 @@ export function createCatalogStore(): {
 				});
 			}
 			for (const row of result.messages) {
-				columns(row, ["id", "bundleId", "locale", "selectors"], "message");
+				columns(row, messageColumns, "message");
 				const bundle_id = text(row.bundleId, "message.bundleId");
 				const locale = text(row.locale, "message.locale");
 				const id =
 					row.id === undefined
-						? (firstMessage(bundle_id, locale)?.id ?? v7())
+						? (firstMessage(bundle_id, locale)?.id ?? createId())
 						: text(row.id, "message.id");
 				const previous = next.messages.get(id);
 				ensureBundle(bundle_id);
@@ -153,18 +405,7 @@ export function createCatalogStore(): {
 			const importedIds = new Map<string, string[]>();
 			const explicitMessages = new Set<string>();
 			for (const row of result.variants) {
-				columns(
-					row,
-					[
-						"id",
-						"messageId",
-						"messageBundleId",
-						"messageLocale",
-						"matches",
-						"pattern",
-					],
-					"variant"
-				);
+				columns(row, variantColumns, "variant");
 				const incomingMatches =
 					row.matches === undefined
 						? undefined
@@ -189,7 +430,12 @@ export function createCatalogStore(): {
 					let message = firstMessage(bundle, locale);
 					if (!message) {
 						ensureBundle(bundle);
-						message = { id: v7(), bundle_id: bundle, locale, selectors: [] };
+						message = {
+							id: createId(),
+							bundle_id: bundle,
+							locale,
+							selectors: [],
+						};
 						putMessage(message);
 					}
 					message_id = message.id;
@@ -202,7 +448,7 @@ export function createCatalogStore(): {
 					id = existing?.id;
 					for (const duplicate of duplicates) deleteVariant(duplicate.id);
 				}
-				id ??= v7();
+				id ??= createId();
 				const previous = next.variants.get(id);
 				putVariant({
 					id,
@@ -225,34 +471,26 @@ export function createCatalogStore(): {
 			}
 			for (const [message, imported] of importedIds) {
 				if (explicitMessages.has(message)) continue;
-				const moved = variantIdsToReorder(imported, v7)
+				const moved = variantIdsToReorder(imported, createId)
 					.map((id) => next.variants.get(id))
 					.filter((row): row is VariantRow => row !== undefined);
 				for (const row of moved) deleteVariant(row.id);
-				for (const row of moved) putVariant({ ...row, id: v7() });
+				for (const row of moved) putVariant({ ...row, id: createId() });
 			}
 			state = next;
 		},
 		bundles() {
-			const bundles = new Map<string, BundleNested>();
-			const messages = new Map<string, BundleNested["messages"][number]>();
-			for (const row of state.bundles.values())
-				bundles.set(row.id, { ...row, messages: [] });
-			for (const row of state.messages.values()) {
-				const message = { ...row, variants: [] as VariantRow[] };
-				messages.set(row.id, message);
-				bundles.get(row.bundle_id)!.messages.push(message);
-			}
-			for (const row of state.variants.values())
-				messages.get(row.message_id)!.variants.push({ ...row });
-			for (const bundle of bundles.values()) {
-				bundle.messages.sort((a, b) => compareIdentity(a.id, b.id));
-				for (const message of bundle.messages)
-					message.variants.sort((a, b) => compareIdentity(a.id, b.id));
-			}
-			return structuredClone(
-				[...bundles.values()].sort((a, b) => compareIdentity(a.id, b.id))
-			);
+			available();
+			return structuredClone(nested());
+		},
+		takeBundles() {
+			available();
+			const result = nested();
+			// JSON was copied and validated on import. Transfer that private data
+			// instead of copying it again, and prevent every future store access.
+			consumed = true;
+			state = { bundles: new Map(), messages: new Map(), variants: new Map() };
+			return result;
 		},
 	};
 }
@@ -273,6 +511,7 @@ function text(value: unknown, column: string): string {
 	return value;
 }
 function wellFormed(value: string): void {
+	if (!surrogate.test(value)) return;
 	for (let i = 0; i < value.length; i++) {
 		const code = value.charCodeAt(i);
 		if (code >= 0xd800 && code <= 0xdbff) {
@@ -286,9 +525,9 @@ function wellFormed(value: string): void {
 function jsonColumn<T>(value: T, column: string): T {
 	if (value === null || typeof value !== "object")
 		fail(`${column} must be non-null JSON`);
-	return jsonCopy(value, new WeakSet()) as T;
+	return jsonCopy(value, []) as T;
 }
-function jsonCopy(value: unknown, seen: WeakSet<object>): unknown {
+function jsonCopy(value: unknown, ancestors: object[]): unknown {
 	if (value === null || typeof value === "boolean") return value;
 	if (typeof value === "string") {
 		wellFormed(value);
@@ -309,19 +548,74 @@ function jsonCopy(value: unknown, seen: WeakSet<object>): unknown {
 		Object.getPrototypeOf(value) !== null
 	)
 		fail("JSON values must be plain objects or arrays");
-	if (seen.has(value)) fail("JSON values cannot contain circular references");
-	seen.add(value);
-	const copy = Array.isArray(value)
-		? Array.from(value, (item) => jsonCopy(item, seen))
-		: Object.fromEntries(
-				Object.keys(value)
-					.sort()
-					.map((key) => [
-						key,
-						jsonCopy((value as Record<string, unknown>)[key], seen),
-					])
-			);
-	seen.delete(value);
+	if (ancestors.includes(value))
+		fail("JSON values cannot contain circular references");
+	ancestors.push(value);
+	let copy: unknown;
+	if (Array.isArray(value)) {
+		const array: unknown[] = [];
+		// Preserve iterator semantics for custom arrays; ordinary plugin arrays
+		// need neither an iterator nor one callback allocation per element.
+		if (value[Symbol.iterator] === Array.prototype[Symbol.iterator]) {
+			for (let i = 0; i < value.length; i++)
+				array.push(jsonCopy(value[i], ancestors));
+		} else {
+			for (const item of value) array.push(jsonCopy(item, ancestors));
+		}
+		copy = array;
+	} else {
+		const keys = Object.keys(value);
+		// Common declaration/reference and text nodes have these exact key sets.
+		// Literal construction avoids sorting and inherited setters. Copy values
+		// in the same sorted order, with every generic JSON check still applied.
+		if (keys.length === 2) {
+			if (
+				(keys[0] === "name" && keys[1] === "type") ||
+				(keys[0] === "type" && keys[1] === "name")
+			) {
+				const name = jsonCopy(
+					(value as Record<string, unknown>).name,
+					ancestors
+				);
+				const type = jsonCopy(
+					(value as Record<string, unknown>).type,
+					ancestors
+				);
+				ancestors.pop();
+				return { name, type };
+			}
+			if (
+				(keys[0] === "type" && keys[1] === "value") ||
+				(keys[0] === "value" && keys[1] === "type")
+			) {
+				const type = jsonCopy(
+					(value as Record<string, unknown>).type,
+					ancestors
+				);
+				const item = jsonCopy(
+					(value as Record<string, unknown>).value,
+					ancestors
+				);
+				ancestors.pop();
+				return { type, value: item };
+			}
+		}
+		const object: Record<string, unknown> = {};
+		for (const key of keys.sort()) {
+			const item = jsonCopy((value as Record<string, unknown>)[key], ancestors);
+			// Defining an own property avoids __proto__ and inherited setters.
+			if (key in Object.prototype)
+				Object.defineProperty(object, key, {
+					value: item,
+					enumerable: true,
+					configurable: true,
+					writable: true,
+				});
+			else object[key] = item;
+		}
+		copy = object;
+	}
+	ancestors.pop();
 	return copy;
 }
 function identity(id: string): string {

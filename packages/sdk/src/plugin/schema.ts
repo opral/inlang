@@ -63,6 +63,19 @@ export type InlangPlugin<
 		variants: VariantImport[];
 	}>;
 	/**
+	 * Optional read-only catalog shortcut for plain text and input references.
+	 * Called only for a single modern importer without legacy plugins. Check
+	 * the entire import before emitting; return true when fully handled, or
+	 * false/undefined to use importFiles. Throwing rejects the catalog load.
+	 * The SDK validates scalar values and owns every constructed AST node.
+	 * Other hosts and older SDK versions continue to call importFiles.
+	 */
+	tryImportCatalog?: (args: {
+		files: ImportFile[];
+		settings: ProjectSettings & ExternalSettings;
+		sink: CatalogSink;
+	}) => MaybePromise<boolean | undefined>;
+	/**
 	 * Files that should be written by the inlang SDK.
 	 *
 	 * - `files` are the current contents of the files that the export
@@ -108,6 +121,19 @@ export type InlangPlugin<
 	 * }
 	 */
 	meta?: Record<string, Record<string, unknown>>;
+};
+
+/** A write-only builder whose values cannot expose or mutate the SDK's AST. */
+export type CatalogSink = {
+	/**
+	 * Add one unique bundle/locale message. Parts alternate text and input names:
+	 * [text, inputName, text, ...]. Include empty text slots between adjacent
+	 * inputs; empty text nodes are omitted. Input declarations are deduplicated
+	 * across all locales of a bundle in first-seen order. Strings must be valid
+	 * UTF-16. Values are copied immediately; retaining this sink after the hook
+	 * returns cannot modify the catalog, and later calls throw.
+	 */
+	addMessage(bundleId: string, locale: string, parts: readonly string[]): void;
 };
 
 /**

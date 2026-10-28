@@ -1,10 +1,15 @@
 import { describe, expect, test } from "vitest";
+import { v7 } from "uuid";
 import { openLix, Value } from "@lix-js/sdk";
 import { initDb } from "../database/initDb.js";
 import { registerInlangSchemas } from "../database/registerSchemas.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import { importFiles } from "./importFiles.js";
-import { createCatalogStore } from "./catalogRows.js";
+import {
+	createCatalogStore,
+	createFreshCatalog,
+	createCatalogStream,
+} from "./catalogRows.js";
 import type { BundleNested } from "../database/schema.js";
 import type { InlangPlugin } from "../plugin/schema.js";
 
@@ -21,7 +26,7 @@ const result = (value: Partial<Result>): Result => ({
 });
 
 async function differential(sequence: Result[]) {
-	const store = createCatalogStore();
+	const store = createCatalogStore(v7);
 	const lix = await openLix();
 	await registerInlangSchemas(lix);
 	const db = initDb({ lix });
@@ -35,8 +40,12 @@ async function differential(sequence: Result[]) {
 			r.variants.flatMap((v) => (v.id === undefined ? [] : [v.id]))
 		)
 	);
-	const canonical = (bundles: BundleNested[]) =>
-		bundles.map((bundle) => ({
+	const canonical = (bundles: BundleNested[]) => {
+		for (const bundle of bundles)
+			for (const message of bundle.messages)
+				for (const variant of message.variants)
+					expect(variant.message_id).toBe(message.id);
+		return bundles.map((bundle) => ({
 			...bundle,
 			messages: bundle.messages.map((message) => ({
 				...message,
@@ -54,6 +63,7 @@ async function differential(sequence: Result[]) {
 				})),
 			})),
 		}));
+	};
 	try {
 		for (const input of sequence) {
 			const plugin: InlangPlugin = {
@@ -68,9 +78,12 @@ async function differential(sequence: Result[]) {
 				plugins: [plugin],
 				settings: {} as any,
 			});
-			expect(canonical(store.bundles())).toEqual(
-				canonical(await selectBundleNested(db).execute())
-			);
+			const selected = canonical(await selectBundleNested(db).execute());
+			expect(canonical(store.bundles())).toEqual(selected);
+			if (sequence.length === 1) {
+				const fresh = createFreshCatalog(input);
+				if (fresh !== undefined) expect(canonical(fresh)).toEqual(selected);
+			}
 		}
 		return store.bundles();
 	} finally {
@@ -80,6 +93,376 @@ async function differential(sequence: Result[]) {
 }
 
 describe("compiler catalog import semantics", () => {
+	test("scalar stream matches database imports with input unions, Unicode ordering and empty patterns", async () => {
+		const stream = createCatalogStream();
+		stream.sink.addMessage("__proto__", "en", [
+			"Hi ",
+			"b",
+			"",
+			"a",
+			"",
+			"b",
+			"!",
+		]);
+		stream.sink.addMessage("\0", "en", [""]);
+		stream.sink.addMessage("__proto__", "de", ["", "c", " ", "b", ""]);
+		stream.sink.addMessage("😀", "en", ["Unicode 名字"]);
+		stream.sink.addMessage("\uE000", "en", ["", "", "", "__proto__", ""]);
+		const expression = (name: string) => ({
+			type: "expression" as const,
+			arg: { type: "variable-reference" as const, name },
+		});
+		const rows = result({
+			bundles: [
+				{
+					id: "__proto__",
+					declarations: ["b", "a", "c"].map((name) => ({
+						type: "input-variable" as const,
+						name,
+					})),
+				},
+				{ id: "\0" },
+				{ id: "😀" },
+				{
+					id: "\uE000",
+					declarations: ["", "__proto__"].map((name) => ({
+						type: "input-variable" as const,
+						name,
+					})),
+				},
+			],
+			messages: [
+				{ bundleId: "__proto__", locale: "en" },
+				{ bundleId: "\0", locale: "en" },
+				{ bundleId: "__proto__", locale: "de" },
+				{ bundleId: "😀", locale: "en" },
+				{ bundleId: "\uE000", locale: "en" },
+			],
+			variants: [
+				{
+					messageBundleId: "__proto__",
+					messageLocale: "en",
+					pattern: [
+						...text("Hi "),
+						expression("b"),
+						expression("a"),
+						expression("b"),
+						...text("!"),
+					],
+				},
+				{ messageBundleId: "\0", messageLocale: "en", pattern: [] },
+				{
+					messageBundleId: "__proto__",
+					messageLocale: "de",
+					pattern: [expression("c"), ...text(" "), expression("b")],
+				},
+				{
+					messageBundleId: "😀",
+					messageLocale: "en",
+					pattern: text("Unicode 名字"),
+				},
+				{
+					messageBundleId: "\uE000",
+					messageLocale: "en",
+					pattern: [expression(""), expression("__proto__")],
+				},
+			],
+		});
+		const expected = await differential([rows]);
+		const actual = stream.takeBundles();
+		for (let b = 0; b < expected.length; b++)
+			for (let m = 0; m < expected[b]!.messages.length; m++) {
+				const source = actual[b]!.messages[m]!,
+					target = expected[b]!.messages[m]!;
+				target.id = source.id;
+				target.variants[0]!.id = source.variants[0]!.id;
+				target.variants[0]!.message_id = source.id;
+			}
+		expect(actual).toEqual(expected);
+	});
+
+	test("scalar stream validates and detaches each scalar once and closes retained callbacks", () => {
+		const stream = createCatalogStream();
+		for (const parts of [
+			[],
+			["a", "input"],
+			[undefined],
+			[new Date()],
+			["\uD800"],
+			["", "\uD800", ""],
+		])
+			expect(() => stream.sink.addMessage("bad", "en", parts as any)).toThrow();
+		expect(() => stream.sink.addMessage("\uD800", "en", ["valid"])).toThrow();
+		expect(() => stream.sink.addMessage("bad", "\uD800", ["valid"])).toThrow();
+		let reads = 0;
+		const parts = ["placeholder"];
+		Object.defineProperty(parts, "0", {
+			get() {
+				return ++reads === 1 ? "original" : { mutable: true };
+			},
+		});
+		stream.sink.addMessage("valid", "en", parts);
+		expect(reads).toBe(1);
+		expect(() => stream.sink.addMessage("valid", "en", ["duplicate"])).toThrow(
+			/Duplicate/
+		);
+		const retained = stream.sink.addMessage;
+		const bundles = stream.takeBundles();
+		expect(bundles.map((bundle) => bundle.id)).toEqual(["valid"]);
+		expect(bundles[0]!.messages[0]!.variants[0]!.pattern).toEqual(
+			text("original")
+		);
+		expect(Object.isFrozen(stream.sink)).toBe(true);
+		expect(() => retained("late", "en", ["changed"])).toThrow(/closed/);
+		expect(() => stream.takeBundles()).toThrow(/closed/);
+		stream.close();
+		expect(bundles[0]!.messages[0]!.variants[0]!.pattern).toEqual(
+			text("original")
+		);
+		const aborted = createCatalogStream();
+		aborted.sink.addMessage("discarded", "en", ["text"]);
+		aborted.close();
+		expect(() => aborted.sink.addMessage("late", "en", ["text"])).toThrow(
+			/closed/
+		);
+		expect(() => aborted.takeBundles()).toThrow(/closed/);
+	});
+	test("fresh snapshot identities preserve import order, uniqueness and references across interleaved bundles", () => {
+		const input = result({
+			bundles: [{ id: "z" }, { id: "a" }],
+			messages: Array.from({ length: 30 }, (_, index) => ({
+				bundleId: index % 2 ? "a" : "z",
+				locale: `locale-${index}`,
+			})),
+		});
+		input.variants = input.messages
+			.slice()
+			.reverse()
+			.map((message) => ({
+				messageBundleId: message.bundleId,
+				messageLocale: message.locale,
+				pattern: text(`message ${message.locale}`),
+			}));
+		const fresh = createFreshCatalog(input)!;
+		expect(fresh.map((bundle) => bundle.id)).toEqual(["a", "z"]);
+		const messageIds: string[] = [],
+			variantIds: string[] = [];
+		for (const bundle of fresh) {
+			expect(bundle.messages.map((message) => message.locale)).toEqual(
+				input.messages
+					.filter((message) => message.bundleId === bundle.id)
+					.map((message) => message.locale)
+			);
+			const ids = bundle.messages.map((message) => message.id);
+			expect(ids).toEqual(ids.slice().sort());
+			for (const message of bundle.messages) {
+				messageIds.push(message.id);
+				expect(message.bundle_id).toBe(bundle.id);
+				expect(message.variants).toHaveLength(1);
+				const variant = message.variants[0]!;
+				variantIds.push(variant.id);
+				expect(variant.message_id).toBe(message.id);
+				expect(variant.pattern).toEqual(text(`message ${message.locale}`));
+			}
+		}
+		expect(new Set(messageIds).size).toBe(input.messages.length);
+		expect(new Set(variantIds).size).toBe(input.variants.length);
+	});
+
+	test("general imports retain UUIDv7 generation and explicit plugin identities", () => {
+		const store = createCatalogStore(v7);
+		store.import(
+			result({
+				bundles: [{ id: "b" }],
+				messages: [{ bundleId: "b", locale: "en" }],
+				variants: [{ messageBundleId: "b", messageLocale: "en" }],
+			})
+		);
+		const generated = store.bundles()[0]!.messages[0]!;
+		const uuid =
+			/^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+		expect(generated.id).toMatch(uuid);
+		expect(generated.variants[0]!.id).toMatch(uuid);
+		const explicit = result({
+			bundles: [{ id: "explicit" }],
+			messages: [
+				{
+					id: "catalog-message-000000000000",
+					bundleId: "explicit",
+					locale: "en",
+				},
+			],
+			variants: [
+				{
+					id: "catalog-variant-000000000000",
+					messageId: "catalog-message-000000000000",
+				},
+			],
+		});
+		expect(createFreshCatalog(explicit)).toBeUndefined();
+		store.import(explicit);
+		const message = store
+			.takeBundles()
+			.find((bundle) => bundle.id === "explicit")!.messages[0]!;
+		expect(message.id).toBe("catalog-message-000000000000");
+		expect(message.variants[0]!.id).toBe("catalog-variant-000000000000");
+		expect(message.variants[0]!.message_id).toBe(message.id);
+	});
+
+	test("constructs plain, input and markup catalogs directly with SDK-equivalent defaults and missing locales", async () => {
+		const ids = ["z", "a", "with.dot", "\0", "lixid1:literal", "😀", "\uE000"];
+		const input = result({
+			bundles: ids.map((id) => ({
+				id,
+				declarations: [{ type: "input-variable", name: "username" }],
+			})),
+			messages: ids.flatMap((bundleId, index) =>
+				(index % 2 ? ["fr", "en"] : ["fr", "en", "de"]).map((locale, i) => ({
+					bundleId,
+					locale,
+					...(i % 2 ? {} : { selectors: [] }),
+				}))
+			),
+		});
+		input.variants = input.messages
+			.slice()
+			.reverse()
+			.map((message, index) => ({
+				messageBundleId: message.bundleId,
+				messageLocale: message.locale,
+				...(index % 2 ? {} : { matches: [] }),
+				pattern:
+					index % 3 === 0
+						? text("plain")
+						: index % 3 === 1
+							? [
+									{
+										type: "expression",
+										arg: { type: "variable-reference", name: "username" },
+									},
+								]
+							: [
+									{
+										type: "markup-start",
+										name: "strong",
+										attributes: [
+											{
+												name: "class",
+												value: { type: "literal", value: "highlight" },
+											},
+										],
+									},
+									{ type: "text", value: "markup" },
+									{ type: "markup-end", name: "strong" },
+								],
+			}));
+		expect(createFreshCatalog(input)).toBeDefined();
+		await differential([input]);
+	});
+
+	test("leaves unsupported merge, selector, identity and reference inputs untouched for the general importer", () => {
+		const base = result({
+			bundles: [{ id: "b" }],
+			messages: [{ bundleId: "b", locale: "en" }],
+			variants: [
+				{
+					messageBundleId: "b",
+					messageLocale: "en",
+					pattern: text("original"),
+				},
+			],
+		});
+		const variants = [
+			result({ ...base, bundles: [{ id: "b" }, { id: "b" }] }),
+			result({
+				...base,
+				messages: [{ id: "m", bundleId: "b", locale: "en" }],
+				variants: [{ id: "v", messageId: "m" }],
+			}),
+			result({
+				...base,
+				messages: [
+					{
+						bundleId: "b",
+						locale: "en",
+						selectors: [{ type: "variable-reference", name: "choice" }],
+					},
+				],
+			}),
+			result({
+				...base,
+				variants: [
+					{ messageBundleId: "b", messageLocale: "en", matches: match("a") },
+				],
+			}),
+			result({
+				...base,
+				variants: [
+					...base.variants,
+					{ messageBundleId: "b", messageLocale: "en", matches: match("b") },
+				],
+			}),
+			result({
+				...base,
+				variants: [{ messageBundleId: "implicit", messageLocale: "fr" }],
+			}),
+		];
+		for (const input of variants) {
+			const before = structuredClone(input);
+			expect(createFreshCatalog(input)).toBeUndefined();
+			expect(input).toEqual(before);
+			const store = createCatalogStore(v7);
+			expect(() => store.import(input)).not.toThrow();
+			expect(store.takeBundles()).toBeDefined();
+		}
+	});
+
+	test("direct fresh construction still validates JSON/columns and detaches every plugin value", () => {
+		const input = result({
+			bundles: [
+				{
+					id: "b",
+					declarations: [{ type: "input-variable", name: "username" }],
+				},
+			],
+			messages: [{ bundleId: "b", locale: "en" }],
+			variants: [
+				{
+					messageBundleId: "b",
+					messageLocale: "en",
+					pattern: text("original"),
+				},
+			],
+		});
+		const fresh = createFreshCatalog(input)!;
+		(input.bundles[0]!.declarations![0] as any).name = "plugin mutation";
+		(input.variants[0]!.pattern![0] as any).value = "plugin mutation";
+		expect(fresh[0]!.declarations).toEqual([
+			{ type: "input-variable", name: "username" },
+		]);
+		expect(fresh[0]!.messages[0]!.variants[0]!.pattern).toEqual(
+			text("original")
+		);
+		for (const invalid of [
+			undefined,
+			NaN,
+			Infinity,
+			Number.MAX_SAFE_INTEGER + 1,
+			1n,
+			new Date(),
+			new Map(),
+			new Uint8Array([1]),
+			"\uD800",
+		]) {
+			const invalidInput = structuredClone(input);
+			invalidInput.variants[0]!.pattern = [{ invalid }] as any;
+			expect(() => createFreshCatalog(invalidInput)).toThrow();
+		}
+		const extra = structuredClone(input);
+		(extra.variants[0] as any).unknownColumn = "invalid";
+		expect(() => createFreshCatalog(extra)).toThrow(/Unknown variant column/);
+	});
+
 	test("matches sequential property upserts, duplicate messages/matches, omitted columns and variant priority", async () => {
 		await differential([
 			result({
@@ -263,7 +646,7 @@ describe("compiler catalog import semantics", () => {
 	});
 
 	test("rejects dangling explicit foreign keys atomically, retaining previous imports", async () => {
-		const store = createCatalogStore();
+		const store = createCatalogStore(v7);
 		store.import(result({ bundles: [{ id: "prior" }] }));
 		const before = store.bundles();
 		expect(() =>
@@ -278,7 +661,7 @@ describe("compiler catalog import semantics", () => {
 	});
 
 	test("copies plugin JSON on import and returns independent query snapshots", () => {
-		const store = createCatalogStore();
+		const store = createCatalogStore(v7);
 		const input = result({
 			bundles: [
 				{
@@ -294,6 +677,85 @@ describe("compiler catalog import semantics", () => {
 		expect(store.bundles()[0]!.declarations).toEqual([
 			{ type: "input-variable", name: "original" },
 		]);
+	});
+
+	test("transfers validated rows once without exposing store or plugin aliases", () => {
+		const store = createCatalogStore(v7);
+		const declarations = [
+			{ type: "input-variable" as const, name: "original" },
+		];
+		store.import(result({ bundles: [{ id: "b", declarations }] }));
+		const snapshot = store.bundles();
+		const transferred = store.takeBundles();
+		declarations[0]!.name = "plugin mutation";
+		expect(transferred[0]!.declarations).toEqual([
+			{ type: "input-variable", name: "original" },
+		]);
+		(transferred[0]!.declarations[0] as any).name = "consumer mutation";
+		expect(snapshot[0]!.declarations).toEqual([
+			{ type: "input-variable", name: "original" },
+		]);
+		expect(() => store.import(result({ bundles: [{ id: "new" }] }))).toThrow(
+			/transferred/
+		);
+		expect(() => store.bundles()).toThrow(/transferred/);
+		expect(() => store.takeBundles()).toThrow(/transferred/);
+	});
+
+	test("preserves own prototype-named JSON keys without invoking inherited setters", () => {
+		const setter = Object.getOwnPropertyDescriptor(
+			Object.prototype,
+			"catalogTestSetter"
+		);
+		let calls = 0;
+		Object.defineProperty(Object.prototype, "catalogTestSetter", {
+			configurable: true,
+			set() {
+				calls++;
+			},
+		});
+		try {
+			const store = createCatalogStore(v7);
+			const declaration = JSON.parse(
+				'{"__proto__":{"polluted":true},"constructor":"own","catalogTestSetter":"own"}'
+			);
+			store.import(
+				result({ bundles: [{ id: "b", declarations: [declaration] }] })
+			);
+			const copied = store.takeBundles()[0]!.declarations[0]!;
+			expect(calls).toBe(0);
+			expect(Object.getPrototypeOf(copied)).toBe(Object.prototype);
+			expect(Object.hasOwn(copied, "__proto__")).toBe(true);
+			expect((copied as any).__proto__).toEqual({ polluted: true });
+			expect(({} as any).polluted).toBeUndefined();
+			expect((copied as any).catalogTestSetter).toBe("own");
+		} finally {
+			if (setter)
+				Object.defineProperty(Object.prototype, "catalogTestSetter", setter);
+			else delete (Object.prototype as any).catalogTestSetter;
+		}
+	});
+
+	test("copies shared JSON branches independently while rejecting cycles atomically before transfer", () => {
+		const store = createCatalogStore(v7);
+		const branch = { type: "input-variable", name: "shared" };
+		store.import(
+			result({
+				bundles: [{ id: "prior", declarations: [branch, branch] as any }],
+			})
+		);
+		const cycle: any = { child: {} };
+		cycle.child.back = cycle;
+		expect(() =>
+			store.import(result({ bundles: [{ id: "bad", declarations: [cycle] }] }))
+		).toThrow(/circular/);
+		const transferred = store.takeBundles();
+		expect(transferred.map((bundle) => bundle.id)).toEqual(["prior"]);
+		expect(transferred[0]!.declarations[0]).not.toBe(
+			transferred[0]!.declarations[1]
+		);
+		(transferred[0]!.declarations[0] as any).name = "changed";
+		expect((transferred[0]!.declarations[1] as any).name).toBe("shared");
 	});
 
 	test("enforces the same JSON parameter constraints as Value.jsonb without accepting non-JSON plugin values", () => {
@@ -314,7 +776,7 @@ describe("compiler catalog import semantics", () => {
 			const json = [{ invalid }];
 			expect(() => Value.jsonb(json as any)).toThrow();
 			expect(() =>
-				createCatalogStore().import(
+				createCatalogStore(v7).import(
 					result({ bundles: [{ id: "b", declarations: json as any }] })
 				)
 			).toThrow();
@@ -322,9 +784,111 @@ describe("compiler catalog import semantics", () => {
 		const sparse = new Array(1);
 		expect(() => Value.jsonb(sparse)).toThrow();
 		expect(() =>
-			createCatalogStore().import(
+			createCatalogStore(v7).import(
 				result({ bundles: [{ id: "b", declarations: sparse }] })
 			)
 		).toThrow();
+	});
+
+	test("copies exact common node keys in sorted order without dropping additional JSON fields", () => {
+		const reads: string[] = [];
+		const node = {
+			get value() {
+				reads.push("value");
+				return "hello";
+			},
+			get type() {
+				reads.push("type");
+				return "text";
+			},
+		};
+		const reference = Object.assign(Object.create(null), {
+			type: "variable-reference",
+			name: "input",
+		});
+		const extra = {
+			value: "hello",
+			type: "text",
+			annotation: { retained: true },
+		};
+		const store = createCatalogStore(v7);
+		store.import(
+			result({
+				bundles: [{ id: "b", declarations: [node, reference, extra] as any }],
+			})
+		);
+		const copied = store.takeBundles()[0]!.declarations as any[];
+		expect(reads).toEqual(["type", "value"]);
+		expect(Object.keys(copied[0])).toEqual(["type", "value"]);
+		expect(Object.keys(copied[1])).toEqual(["name", "type"]);
+		expect(Object.getPrototypeOf(copied[1])).toBe(Object.prototype);
+		expect(copied[2]).toEqual(extra);
+		extra.annotation.retained = false;
+		expect(copied[2].annotation.retained).toBe(true);
+	});
+
+	test("retains strict JSON checks for specialized node keys including nested values and cycles", () => {
+		const cycle: any = { name: "cycle" };
+		cycle.type = cycle;
+		for (const node of [
+			{ type: "text", value: undefined },
+			{ type: NaN, value: "hello" },
+			{ name: "\uD800", type: "input-variable" },
+			{ type: "text", value: new Date() },
+			{ name: "input", type: { invalid: 1n } },
+			cycle,
+		]) {
+			expect(() => Value.jsonb([node] as any)).toThrow();
+			expect(() =>
+				createCatalogStore(v7).import(
+					result({ bundles: [{ id: "b", declarations: [node] as any }] })
+				)
+			).toThrow();
+		}
+		const store = createCatalogStore(v7);
+		const shared = { type: "text", value: "original" };
+		store.import(
+			result({
+				bundles: [
+					{ id: "b", declarations: [{ name: shared, type: shared }] as any },
+				],
+			})
+		);
+		const copied = store.takeBundles()[0]!.declarations[0] as any;
+		expect(copied.name).toEqual(shared);
+		expect(copied.name).not.toBe(copied.type);
+		shared.value = "changed";
+		expect(copied.name.value).toBe("original");
+	});
+
+	test("specialized literal copies do not invoke inherited node-key setters", () => {
+		const prior = Object.getOwnPropertyDescriptor(Object.prototype, "name");
+		let calls = 0;
+		let copied: unknown;
+		Object.defineProperty(Object.prototype, "name", {
+			configurable: true,
+			set() {
+				calls++;
+			},
+		});
+		try {
+			const store = createCatalogStore(v7);
+			store.import(
+				result({
+					bundles: [
+						{
+							id: "b",
+							declarations: [{ name: "input", type: "input-variable" }],
+						},
+					],
+				})
+			);
+			copied = store.takeBundles()[0]!.declarations[0];
+		} finally {
+			if (prior) Object.defineProperty(Object.prototype, "name", prior);
+			else delete (Object.prototype as any).name;
+		}
+		expect(calls).toBe(0);
+		expect(copied).toEqual({ name: "input", type: "input-variable" });
 	});
 });

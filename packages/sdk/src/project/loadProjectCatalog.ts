@@ -8,7 +8,11 @@ import type {
 } from "../plugin/schema.js";
 import type { PreprocessPluginBeforeImportFunction } from "../plugin/importPlugins.js";
 import type { ImportFile } from "./api.js";
-import { createCatalogStore } from "../import-export/catalogRows.js";
+import {
+	createCatalogStore,
+	createFreshCatalog,
+	createCatalogStream,
+} from "../import-export/catalogRows.js";
 import { withLanguageTagToLocaleMigration } from "../migrations/v2/withLanguageTagToLocaleMigration.js";
 import { fromMessageV1 } from "../json-schema/old-v1-message/fromMessageV1.js";
 import { pluginCachePath } from "../plugin/cache.js";
@@ -47,6 +51,11 @@ export type LoadProjectCatalogArgs = {
  * the same order as directory project loading; row identities, property-based
  * upserts, and variant priority are resolved in memory. The result has no live
  * project, storage handle, watchers, or close operation.
+ *
+ * Generated message and variant IDs are opaque, ephemeral snapshot identities.
+ * Use them only for references within this result; their format and stability
+ * across loads or compared with a live project are not guaranteed. Explicit
+ * plugin identities are retained, and bundle IDs remain the translation keys.
  *
  * Remote plugins use network-first loading with the directory's existing plugin
  * cache as a fallback. By default this API performs no filesystem writes.
@@ -90,7 +99,14 @@ export async function loadProjectCatalog(
 		);
 	}
 
-	const store = createCatalogStore();
+	let store: ReturnType<typeof createCatalogStore> | undefined;
+	async function getStore() {
+		if (!store) {
+			const { v7 } = await import("uuid");
+			store = createCatalogStore(v7);
+		}
+		return store;
+	}
 	for (const plugin of importExportPlugins) {
 		const requested = plugin.toBeImportedFiles
 			? await plugin.toBeImportedFiles({ settings: structuredClone(settings) })
@@ -135,12 +151,34 @@ export async function loadProjectCatalog(
 				function: "importFiles",
 			});
 		}
-		store.import(
-			await selected.importFiles({
-				files,
-				settings: structuredClone(rawSettings),
-			})
-		);
+		if (
+			importExportPlugins.length === 1 &&
+			loadSavePlugins.length === 0 &&
+			selected.tryImportCatalog
+		) {
+			const stream = createCatalogStream();
+			try {
+				const handled = await selected.tryImportCatalog({
+					files,
+					settings: structuredClone(rawSettings),
+					sink: stream.sink,
+				});
+				if (handled === true)
+					return { settings, bundles: stream.takeBundles(), diagnostics };
+			} finally {
+				// Close retained callbacks on success, fallback, and rejection.
+				stream.close();
+			}
+		}
+		const imported = await selected.importFiles({
+			files,
+			settings: structuredClone(rawSettings),
+		});
+		if (importExportPlugins.length === 1 && loadSavePlugins.length === 0) {
+			const bundles = createFreshCatalog(imported);
+			if (bundles) return { settings, bundles, diagnostics };
+		}
+		(store ?? (await getStore())).import(imported);
 	}
 
 	for (const plugin of loadSavePlugins) {
@@ -173,7 +211,7 @@ export async function loadProjectCatalog(
 			const bundle = fromMessageV1(message);
 			// The legacy project API matches by locale and matches, ignoring the
 			// converter's synthetic IDs. Reuse the same property-based semantics.
-			store.import({
+			(store ?? (await getStore())).import({
 				bundles: [{ id: bundle.id, declarations: bundle.declarations }],
 				messages: bundle.messages.map((value) => ({
 					bundleId: bundle.id,
@@ -191,7 +229,7 @@ export async function loadProjectCatalog(
 			});
 		}
 	}
-	return { settings, bundles: store.bundles(), diagnostics };
+	return { settings, bundles: store?.takeBundles() ?? [], diagnostics };
 }
 
 async function importRemotePlugins(

@@ -38,7 +38,15 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 
 	for (const file of files) {
 		const json = JSON.parse(new TextDecoder().decode(file.content));
-		const flattened = flattenMessageKeys(json);
+		// A flat string catalog already has exactly the flattened iteration order.
+		// Keep nested/legacy shapes on the full flattener.
+		const entries =
+			json !== null && typeof json === "object" && !Array.isArray(json)
+				? Object.entries(json)
+				: undefined;
+		const flattened = entries?.every(([, value]) => typeof value === "string")
+			? entries
+			: flattenMessageKeys(json);
 
 		for (const [key, value] of flattened) {
 			if (key === "$schema") {
@@ -52,12 +60,15 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 			messages.push(result.message);
 			const start = variants.length;
 			variants.push(...result.variants);
-			ranges.push({ message: result.message, start, end: variants.length });
+			if (result.variants.length > 1) {
+				ranges.push({ message: result.message, start, end: variants.length });
+			}
 			const inputs = typeof value === "string" ? plainInputs : declaredInputs;
 			for (const declaration of result.bundle.declarations) {
 				if (declaration.type !== "input-variable") continue;
-				if (!inputs.has(key)) inputs.set(key, new Set());
-				inputs.get(key)!.add(declaration.name);
+				let names = inputs.get(key);
+				if (!names) inputs.set(key, (names = new Set()));
+				names.add(declaration.name);
 			}
 
 			const existingBundle = bundlesById.get(result.bundle.id);
@@ -66,10 +77,10 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				bundlesById.set(result.bundle.id, result.bundle);
 			} else {
 				// merge declarations without duplicates
-				existingBundle.declarations = unique([
-					...existingBundle.declarations,
-					...result.bundle.declarations,
-				]);
+				existingBundle.declarations = mergeDeclarations(
+					existingBundle.declarations,
+					result.bundle.declarations
+				);
 			}
 		}
 	}
@@ -78,6 +89,12 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	// declares a local of that name, e.g. `local formattedAmount = amount:
 	// number`, the placeholder is that local, not an input.
 	for (const bundle of bundles) {
+		if (
+			!bundle.declarations.some(
+				(declaration) => declaration.type === "local-variable"
+			)
+		)
+			continue;
 		const locals = new Set(
 			bundle.declarations
 				.filter((declaration) => declaration.type === "local-variable")
@@ -126,6 +143,33 @@ function parseBundle(
 	message: MessageImport;
 	variants: VariantImport[];
 } {
+	if (typeof value === "string") {
+		const parsed = parsePattern(value);
+		// Plain patterns only infer input declarations. Preserve first occurrence
+		// order without serializing fresh parser nodes through JSON.
+		const names =
+			parsed.declarations.length < 2 ? undefined : new Set<string>();
+		const declarations =
+			parsed.declarations.length < 2
+				? parsed.declarations
+				: parsed.declarations.filter((declaration) => {
+						if (names!.has(declaration.name)) return false;
+						names!.add(declaration.name);
+						return true;
+					});
+		return {
+			bundle: { id: key, declarations },
+			message: { bundleId: key, selectors: [], locale },
+			variants: [
+				{
+					messageBundleId: key,
+					messageLocale: locale,
+					matches: [],
+					pattern: parsed.pattern,
+				},
+			],
+		};
+	}
 	const parsed = parseVariants(key, locale, value);
 	const declarations = unique(parsed.declarations);
 	addInputDeclarationsForLocalReferences(declarations);
@@ -320,6 +364,8 @@ function parsePattern(value: string): {
 			pattern: value.length === 0 ? [] : [{ type: "text", value }],
 		};
 	}
+	const simple = parseSimplePattern(value);
+	if (simple) return simple;
 	const pattern: Variant["pattern"] = [];
 	const declarations: Declaration[] = [];
 	let buffer = "";
@@ -396,6 +442,46 @@ function parsePattern(value: string): {
 		declarations,
 		pattern,
 	};
+}
+
+/**
+ * Scan ordinary input placeholders in chunks. Escapes, annotations, markup,
+ * quotes, and malformed/nested braces retain the full parser's semantics.
+ */
+function parseSimplePattern(
+	value: string
+): { declarations: Declaration[]; pattern: Pattern } | undefined {
+	if (typeof value !== "string" || value.includes("\\")) return undefined;
+	const pattern: Pattern = [];
+	const declarations: Declaration[] = [];
+	let cursor = 0;
+	while (cursor < value.length) {
+		const opening = value.indexOf("{", cursor);
+		if (opening === -1) {
+			pattern.push({ type: "text", value: value.slice(cursor) });
+			break;
+		}
+		const closing = value.indexOf("}", opening + 1);
+		if (closing === -1) return undefined;
+		const name = value.slice(opening + 1, closing);
+		if (
+			name.includes("{") ||
+			name.includes("|") ||
+			name.includes(":") ||
+			name.startsWith("#") ||
+			name.startsWith("/")
+		)
+			return undefined;
+		if (opening > cursor)
+			pattern.push({ type: "text", value: value.slice(cursor, opening) });
+		pattern.push({
+			type: "expression",
+			arg: { type: "variable-reference", name },
+		});
+		declarations.push({ type: "input-variable", name });
+		cursor = closing + 1;
+	}
+	return { declarations, pattern };
 }
 
 /**
@@ -747,10 +833,43 @@ function parseMatches(value: string): {
 	return { matches, selectors };
 }
 
-const unique = (arr: Array<any>) =>
-	[...new Set(arr.map((item) => JSON.stringify(item)))].map((item) =>
-		JSON.parse(item)
-	);
+function mergeDeclarations(
+	existing: Declaration[],
+	incoming: Declaration[]
+): Declaration[] {
+	if (incoming.length === 0) return existing;
+	if (existing.length === 0) return incoming;
+	if (
+		existing.length === 1 &&
+		incoming.length === 1 &&
+		existing[0]!.type === "input-variable" &&
+		incoming[0]!.type === "input-variable" &&
+		existing[0]!.name === incoming[0]!.name
+	)
+		return existing;
+	const declarations = [...existing, ...incoming];
+	if (
+		declarations.every((declaration) => declaration.type === "input-variable")
+	) {
+		const names = new Set<string>();
+		return declarations.filter((declaration) => {
+			if (names.has(declaration.name)) return false;
+			names.add(declaration.name);
+			return true;
+		});
+	}
+	return unique(declarations);
+}
+
+function unique<T>(items: T[]): T[] {
+	const keys = new Set<string>();
+	return items.filter((item) => {
+		const key = JSON.stringify(item);
+		if (keys.has(key)) return false;
+		keys.add(key);
+		return true;
+	});
+}
 
 function parseDeclaration(value: string): Declaration {
 	if (value.startsWith("input")) {
