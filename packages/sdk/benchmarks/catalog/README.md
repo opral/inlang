@@ -1,5 +1,8 @@
 # Directory catalog loading
 
+Latest measurements and implementation details are in [round2](./round2/README.md).
+The measurements below record the initial catalog implementation.
+
 Measured on 2026-10-28 with Node22.21.1 on macOS. Both paths use this PR's SDK
 build (base main6cf0158a7d, SDK4.0.4, Lix0.20.1), the same message-format4.5.5
 plugin, and fresh copies of the same generated JSON files. Three locales
