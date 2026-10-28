@@ -1,5 +1,12 @@
 # Optimized read-only catalog loading
 
+> Historical measurements: the updated-plugin column used an experimental scalar
+> hook that has since been removed. The ordinary `project` and frozen-plugin
+> `catalog` controls use the existing `importFiles()` API. These results do not
+> describe the current updated-plugin path; see the post-removal measurements in
+> the Paraglide PR's `benchmark/project-catalog/round3/no-v2` report.
+
+
 Local macOS arm64, Node 22.21.1, 2026-10-28. Three serial fresh processes per
 backend and size, rotated order. Inputs contain three locales (en/de/fr), flat
 keys, and one username input per message. Files are created immediately before
@@ -39,6 +46,6 @@ are not claims about every plugin, cold disks, complete CLI startup, or browser
 runtime performance.
 
 Use `import { loadProjectCatalog } from '@inlang/sdk/catalog'` for the lightweight
-entry point. The scalar and fresh catalog paths load neither Lix nor UUID; the
+entry point. The fresh ordinary-importer catalog path loads neither Lix nor UUID; the
 generic importer loads UUID lazily and retains its existing UUIDv7 identities.
 This changes runtime loading, not installed dependency requirements.

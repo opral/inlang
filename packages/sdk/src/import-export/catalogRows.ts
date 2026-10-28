@@ -9,7 +9,7 @@ import type {
 	MessageRow,
 	VariantRow,
 } from "../database/schema.js";
-import type { ImportFilesV2Sink, InlangPlugin } from "../plugin/schema.js";
+import type { InlangPlugin } from "../plugin/schema.js";
 
 type PluginResult = Awaited<
 	ReturnType<NonNullable<InlangPlugin["importFiles"]>>
@@ -45,95 +45,6 @@ const surrogate = /[\uD800-\uDFFF]/;
 
 const referenceKey = (bundle: string, locale: string) =>
 	JSON.stringify([bundle, locale]);
-
-/** Builds private AST nodes from validated scalar parts, without plugin aliases. */
-export function createCatalogStream(): {
-	sink: ImportFilesV2Sink;
-	takeBundles(): BundleNested[];
-	close(): void;
-} {
-	let active = true;
-	let messageIndex = 0;
-	let variantIndex = 0;
-	const groups = new Map<
-		string,
-		{ bundle: BundleNested; names: Set<string>; locales: Set<string> }
-	>();
-	function available(): void {
-		if (!active) fail("The catalog sink is closed");
-	}
-	const sink: ImportFilesV2Sink = Object.freeze({
-		addMessage(bundleId: string, locale: string, parts: readonly string[]) {
-			available();
-			text(bundleId, "bundle.id");
-			text(locale, "message.locale");
-			if (!Array.isArray(parts)) fail("Catalog parts must be an array");
-			// Read once: getters/custom iterators cannot replace checked strings
-			// with mutable objects between validation and AST construction.
-			const scalars: string[] = [];
-			for (const part of parts) scalars.push(text(part, "catalog.part"));
-			if (scalars.length % 2 !== 1)
-				fail("Catalog parts must alternate text and input strings");
-			let group = groups.get(bundleId);
-			if (!group) {
-				group = {
-					bundle: { id: bundleId, declarations: [], messages: [] },
-					names: new Set(),
-					locales: new Set(),
-				};
-				groups.set(bundleId, group);
-			}
-			if (group.locales.has(locale)) fail("Duplicate catalog message locale");
-			group.locales.add(locale);
-			const pattern: VariantRow["pattern"] = [];
-			for (let index = 0; index < scalars.length; index++) {
-				const part = scalars[index]!;
-				if (index % 2) {
-					if (!group.names.has(part)) {
-						group.names.add(part);
-						group.bundle.declarations.push({
-							name: part,
-							type: "input-variable",
-						});
-					}
-					pattern.push({
-						arg: { name: part, type: "variable-reference" },
-						type: "expression",
-					});
-				} else if (part !== "") pattern.push({ type: "text", value: part });
-			}
-			const id = `catalog-message-${String(messageIndex++).padStart(12, "0")}`;
-			group.bundle.messages.push({
-				id,
-				bundle_id: bundleId,
-				locale,
-				selectors: [],
-				variants: [
-					{
-						id: `catalog-variant-${String(variantIndex++).padStart(12, "0")}`,
-						message_id: id,
-						matches: [],
-						pattern,
-					},
-				],
-			});
-		},
-	});
-	return {
-		sink,
-		takeBundles() {
-			available();
-			active = false;
-			const bundles = [...groups.values()].map((group) => group.bundle);
-			groups.clear();
-			return bundles.sort((a, b) => compareIdentity(a.id, b.id));
-		},
-		close() {
-			active = false;
-			groups.clear();
-		},
-	};
-}
 
 /**
  * Constructs the common fresh, single-importer catalog directly in its nested

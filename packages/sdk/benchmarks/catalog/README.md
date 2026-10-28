@@ -1,6 +1,7 @@
 # Directory catalog loading
 
-Latest measurements and implementation details are in [round2](./round2/README.md).
+Current ordinary-importer measurements are in [round3/no-v2](./round3/no-v2/README.md).
+[Round2](./round2/README.md) contains historical controls and a removed experimental path.
 The measurements below record the initial catalog implementation.
 
 Measured on 2026-10-28 with Node22.21.1 on macOS. Both paths use this PR's SDK

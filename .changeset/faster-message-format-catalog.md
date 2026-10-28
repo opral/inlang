@@ -2,8 +2,6 @@
 "@inlang/plugin-message-format": patch
 ---
 
-Import ordinary flat text and input placeholders directly into the SDK's validated read-only catalog. The optional `importFilesV2` hook avoids temporary rows and duplicated AST construction; complex syntax, nested catalogs, repeated locale paths, and older SDKs retain the ordinary importer. Also reduce redundant parsing and declaration allocations in that importer.
+Speed up the existing `importFiles()` implementation by avoiding redundant pattern serialization and parsing, flattening of already-flat catalogs, and unnecessary declaration and variant allocations. The plugin API and support for complex messages remain unchanged.
 
-With the same unreleased SDK build, local three-locale catalog loading fell from 101 ms to 32 ms for 6,400 keys and from 186 ms to 56 ms for 13,300 keys when using the updated plugin (68–70% less time). These are three-trial fresh-process medians with module imports excluded. Logical catalog hashes matched; results depend on the project and machine. See `packages/sdk/benchmarks/catalog/round2`.
-
-A separate five-trial ablation holds the updated plugin constant: `importFilesV2` reduced import plus catalog assembly from 57 ms to 28 ms for 6,400 keys and from 111 ms to 45 ms for 13,300 keys (50–59% less time). This isolates the new path from earlier parser improvements and excludes filesystem reads, plugin loading, code generation, and output writes. The final catalog still contains the full pattern AST. See `packages/sdk/benchmarks/catalog/import-files-v2` for payload controls, CPU profiles, and limitations.
+In a local three-locale benchmark using the same read-only SDK loader, loading with the updated ordinary importer took 66 ms instead of 113 ms for 6,400 keys and 145 ms instead of 258 ms for 13,300 keys (42–44% less loading time). These are five-trial fresh-process medians with SDK module imports, code generation, and output writes excluded. See `packages/sdk/benchmarks/catalog/round3/no-v2` for raw data and scope.

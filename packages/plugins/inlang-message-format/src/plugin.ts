@@ -3,7 +3,6 @@ import { plugin as pluginV2 } from "./v2/plugin.js";
 import { PluginSettings } from "./settings.js";
 import { toBeImportedFiles } from "./import-export/toBeImportedFiles.js";
 import { importFiles } from "./import-export/importFiles.js";
-import { importFilesV2 } from "./import-export/importFilesV2.js";
 import { exportFiles } from "./import-export/exportFiles.js";
 import { PLUGIN_KEY } from "./pluginKey.js";
 
@@ -26,6 +25,5 @@ export const plugin: InlangPlugin<{
 	settingsSchema: PluginSettings,
 	toBeImportedFiles,
 	importFiles,
-	importFilesV2,
 	exportFiles,
 };

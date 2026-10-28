@@ -32,7 +32,6 @@ export { executeLixBatch } from "./database/lixBatch.js";
 export type { ImportFile, ExportFile, ExistingFile } from "./project/api.js";
 export type {
 	InlangPlugin,
-	ImportFilesV2Sink,
 	BundleImport,
 	MessageImport,
 	VariantImport,

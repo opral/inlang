@@ -11,7 +11,6 @@ import type { ImportFile } from "./api.js";
 import {
 	createCatalogStore,
 	createFreshCatalog,
-	createCatalogStream,
 } from "../import-export/catalogRows.js";
 import { withLanguageTagToLocaleMigration } from "../migrations/v2/withLanguageTagToLocaleMigration.js";
 import { fromMessageV1 } from "../json-schema/old-v1-message/fromMessageV1.js";
@@ -150,25 +149,6 @@ export async function loadProjectCatalog(
 				plugin: plugin.key,
 				function: "importFiles",
 			});
-		}
-		if (
-			importExportPlugins.length === 1 &&
-			loadSavePlugins.length === 0 &&
-			selected.importFilesV2
-		) {
-			const stream = createCatalogStream();
-			try {
-				const handled = await selected.importFilesV2({
-					files,
-					settings: structuredClone(rawSettings),
-					sink: stream.sink,
-				});
-				if (handled === true)
-					return { settings, bundles: stream.takeBundles(), diagnostics };
-			} finally {
-				// Close retained callbacks on success, fallback, and rejection.
-				stream.close();
-			}
 		}
 		const imported = await selected.importFiles({
 			files,
