@@ -1,0 +1,56 @@
+[
+  {
+    "size": 6400,
+    "backend": "project",
+    "trials": 3,
+    "medianMs": 3075.332625,
+    "minMs": 3072.2444579999997,
+    "maxMs": 3119.411833,
+    "hash": "97fce176f92d8581d1663c15e31e1120456090797c7d8aef6da0c8e253c15bbf"
+  },
+  {
+    "size": 6400,
+    "backend": "catalog",
+    "trials": 3,
+    "medianMs": 101.369,
+    "minMs": 100.391458,
+    "maxMs": 103.96583399999999,
+    "hash": "97fce176f92d8581d1663c15e31e1120456090797c7d8aef6da0c8e253c15bbf"
+  },
+  {
+    "size": 6400,
+    "backend": "catalog-optimized",
+    "trials": 3,
+    "medianMs": 32.10429199999999,
+    "minMs": 31.493124999999992,
+    "maxMs": 32.270624999999995,
+    "hash": "97fce176f92d8581d1663c15e31e1120456090797c7d8aef6da0c8e253c15bbf"
+  },
+  {
+    "size": 13300,
+    "backend": "project",
+    "trials": 3,
+    "medianMs": 5969.074375,
+    "minMs": 5953.408083,
+    "maxMs": 5972.576666,
+    "hash": "531f9bf61bf56a7eaef3f090426273b508413104ec646666f32f644a799ef3ce"
+  },
+  {
+    "size": 13300,
+    "backend": "catalog",
+    "trials": 3,
+    "medianMs": 185.675084,
+    "minMs": 180.25108300000002,
+    "maxMs": 186.853291,
+    "hash": "531f9bf61bf56a7eaef3f090426273b508413104ec646666f32f644a799ef3ce"
+  },
+  {
+    "size": 13300,
+    "backend": "catalog-optimized",
+    "trials": 3,
+    "medianMs": 56.446083,
+    "minMs": 55.78874999999998,
+    "maxMs": 56.48504100000001,
+    "hash": "531f9bf61bf56a7eaef3f090426273b508413104ec646666f32f644a799ef3ce"
+  }
+]

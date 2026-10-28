@@ -14,12 +14,16 @@ function escape(url: string) {
 	return hash.toString(36);
 }
 
+/** The directory-project cache path used by network-first plugin loading. */
+export function pluginCachePath(moduleURI: string): string {
+	return `/cache/plugins/${escape(moduleURI)}`;
+}
+
 async function readModuleFromCache(
 	moduleURI: string,
 	lix: Lix
 ): Promise<string | undefined> {
-	const moduleHash = escape(moduleURI);
-	const filePath = `/cache/plugins/${moduleHash}`;
+	const filePath = pluginCachePath(moduleURI);
 
 	const file = await lix.queryOne<{ content: Uint8Array }>(
 		"SELECT content FROM lix_file WHERE path = $1",
@@ -37,8 +41,7 @@ async function writeModuleToCache(
 	moduleContent: string,
 	lix: Lix
 ): Promise<void> {
-	const moduleHash = escape(moduleURI);
-	const filePath = `/cache/plugins/${moduleHash}`;
+	const filePath = pluginCachePath(moduleURI);
 
 	await lix.execute(
 		"INSERT INTO lix_file (path, content) VALUES ($1, $2) ON CONFLICT (path) DO UPDATE SET content = excluded.content",

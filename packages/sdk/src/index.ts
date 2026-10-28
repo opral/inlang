@@ -1,3 +1,12 @@
+export {
+	loadProjectCatalog,
+	type LoadProjectCatalogArgs,
+	type ProjectCatalog,
+} from "./project/loadProjectCatalog.js";
+export {
+	ResourceFileImportError,
+	WarningDeprecatedLintRule,
+} from "./project/directoryPlugins.js";
 export { newProject } from "./project/newProject.js";
 export { openProject, type OpenProjectArgs } from "./project/openProject.js";
 export { loadProjectInMemory } from "./project/loadProjectInMemory.js";

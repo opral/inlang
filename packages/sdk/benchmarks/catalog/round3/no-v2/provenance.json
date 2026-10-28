@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-28T21:41:57.075Z",
+  "node": "v22.21.1",
+  "execPath": "/opt/homebrew/Cellar/node@22/22.21.1_4/bin/node",
+  "candidate": "/Users/samuel/git-repos/workspace-1/paraglide-project-catalog",
+  "sdk": "/Users/samuel/git-repos/workspace-1/inlang-sdk-project-catalog/packages/sdk",
+  "baseline": "/Users/samuel/git-repos/workspace-1/paraglide-direct-declarations-pr",
+  "grai": "/Users/samuel/git-repos/workspace-1/artifacts/grai-latest-reference",
+  "frozenPlugin": "/Users/samuel/git-repos/workspace-1/inlang-sdk-loading-profile/packages/plugins/inlang-message-format/dist/index.js",
+  "optimizedPlugin": "/Users/samuel/git-repos/workspace-1/artifacts/catalog-speed-round3.noindex/no-v2/optimized-plugin.mjs",
+  "candidateCommit": "ea297ac0c0b0178f91dcf14344d3c828ab361c81",
+  "sdkCommit": "d425d99800c1aba13e79a96de79e5114eab4aef3",
+  "baselineCommit": "7a72c0cf95b5f3e527ecfc3350903ba559e4a797",
+  "graiCommit": "8af924a6b513d178b8e6d67694bdfb490c7e697f",
+  "candidateDirty": false,
+  "sdkDirty": true,
+  "candidateDistJsSha256": "27df1b1e83e581ede95db7c483479ccac077b52874e4d713b03e42e9a8ccef47",
+  "sdkDistJsSha256": "7eb7551a50ab10a5cb941ae63afc7115a8065f48d869f73d046f97990b55d1f0",
+  "optimizedPluginSha256": "0aff1308418564264a713be0c0351f84f81678c0c615d23577074f2c304a6d6b",
+  "frozenPluginSha256": "d06d2899349517f0a7010ea1e47350c3f0f7f45dd4579cb7fd2c64ccd25a926c",
+  "checks": {
+    "optimizedImportFiles": true,
+    "optimizedNoImportFilesV2": true,
+    "optimizedNoTryImportCatalog": true,
+    "frozenImportFiles": true,
+    "frozenNoImportFilesV2": true,
+    "frozenNoTryImportCatalog": true,
+    "sdkLoaderNoHookReferences": true,
+    "baselineSdkVersion": "4.0.4",
+    "baselineSdkNoCatalog": true
+  },
+  "scope": "All current candidate paths use ordinary importFiles only; no V2 hook. Full API and preloaded-SDK phases are separate cohorts."
+}

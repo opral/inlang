@@ -1,0 +1,14 @@
+{
+  "node": "v22.21.1",
+  "platform": "macOS arm64",
+  "date": "2026-10-28",
+  "candidateBaseCommit": "1691bd3dde2fc003b8eb163dc411fe7b089b1b16",
+  "sdkBaseCommit": "1102ccee29024d0598f46007cbaddbf7797efce5",
+  "measuredWorkingTreesDirty": true,
+  "note": "Measured the source changes included in this PR before committing the benchmark data; base commits alone are not the optimized implementation.",
+  "graiCommit": "8af924a6b513d178b8e6d67694bdfb490c7e697f",
+  "candidateDistJsSha256": "3de95c62caa26f9dafd645a5a16addf52a8bcc8636ae22d9703905386ca3a5d2",
+  "sdkDistJsSha256": "3d21261878bfcf9ecd7a106b7678c2cf8e3f9f87f1bf7db1abc0f31a9496b5a7",
+  "frozenPluginSha256": "d06d2899349517f0a7010ea1e47350c3f0f7f45dd4579cb7fd2c64ccd25a926c",
+  "optimizedPluginSha256": "9274091ca2d0570270294bafc201286132232e1b52263b02c76ac714a721ba57"
+}

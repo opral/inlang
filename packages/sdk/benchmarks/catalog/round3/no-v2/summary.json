@@ -1,0 +1,34 @@
+[
+  {
+    "size": 6400,
+    "variant": "frozen",
+    "trials": 5,
+    "medianMs": 112.58275,
+    "minMs": 94.94558300000001,
+    "maxMs": 153.07162500000004
+  },
+  {
+    "size": 6400,
+    "variant": "updated",
+    "trials": 5,
+    "medianMs": 65.58479200000001,
+    "minMs": 62.06087500000001,
+    "maxMs": 74.05037499999999
+  },
+  {
+    "size": 13300,
+    "variant": "frozen",
+    "trials": 5,
+    "medianMs": 258.011541,
+    "minMs": 190.94700000000003,
+    "maxMs": 295.442959
+  },
+  {
+    "size": 13300,
+    "variant": "updated",
+    "trials": 5,
+    "medianMs": 144.88179200000002,
+    "minMs": 115.682584,
+    "maxMs": 193.758375
+  }
+]
