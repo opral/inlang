@@ -1,0 +1,7 @@
+{
+  "title": "Welcome",
+  "nav": { "home": "Home", "legacy": "Old link" },
+  "item_one": "{{count}} item",
+  "item_other": "{{count}} items",
+  "unused_banner": "Banner"
+}

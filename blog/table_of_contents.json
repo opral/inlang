@@ -1,5 +1,11 @@
 [
   {
+    "path": "./inlang-check/index.md",
+    "slug": "inlang-check",
+    "date": "2026-10-28",
+    "authors": ["samuelstroschein"]
+  },
+  {
     "path": "./official-i18next-inlang-init/index.md",
     "slug": "official-i18next-inlang-init",
     "date": "2026-06-11",

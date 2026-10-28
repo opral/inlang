@@ -82,6 +82,11 @@ const USAGE_PLUGINS: readonly {
     name: "@inlang/plugin-next-intl",
     version: "2.4.0",
   },
+  {
+    key: "plugin.inlang.i18next",
+    name: "@inlang/plugin-i18next",
+    version: "6.5.0",
+  },
 ];
 
 /** Invalid input, such as an unknown locale. Reported without a stack trace. */
@@ -193,7 +198,7 @@ export async function runCheck(args: {
           : errors.length
             ? {}
             : {
-                hint: "Paraglide projects can add @inlang/plugin-m-function-matcher ≥ 2.3.0 to the modules in settings.json.",
+                hint: "Add a plugin that reads your source code to the modules in settings.json: @inlang/plugin-m-function-matcher ≥ 2.3.0 (Paraglide JS), @inlang/plugin-next-intl ≥ 2.4.0 (next-intl) or @inlang/plugin-i18next ≥ 6.5.0 (i18next).",
               }),
       };
     } else {

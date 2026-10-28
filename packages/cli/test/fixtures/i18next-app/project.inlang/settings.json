@@ -1,0 +1,12 @@
+{
+  "$schema": "https://inlang.com/schema/project-settings",
+  "baseLocale": "en",
+  "locales": ["en", "de"],
+  "modules": ["./project.inlang/plugins/plugin-i18next.js"],
+  "plugin.inlang.i18next": {
+    "pathPattern": {
+      "common": "./locales/{locale}/common.json",
+      "admin": "./locales/{locale}/admin.json"
+    }
+  }
+}
