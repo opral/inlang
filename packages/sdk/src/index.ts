@@ -1,8 +1,9 @@
 export {
-	loadProjectCatalog,
-	type LoadProjectCatalogArgs,
-	type ProjectCatalog,
-} from "./project/loadProjectCatalog.js";
+	createCatalogLoader,
+	type CreateCatalogLoaderArgs,
+	type CatalogLoader,
+	type CatalogUpdate,
+} from "./project/createCatalogLoader.js";
 export {
 	ResourceFileImportError,
 	WarningDeprecatedLintRule,

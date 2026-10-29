@@ -62,7 +62,7 @@ if (process.argv[2] === "--worker") {
 		const start = performance.now();
 		let project, catalog;
 		if (backend === "catalog")
-			catalog = await sdk.loadProjectCatalog({ path: projectPath, fs });
+			catalog = await sdk.createCatalogLoader({ path: projectPath, fs }).load();
 		else {
 			project = await sdk.loadProjectFromDirectory({ path: projectPath, fs });
 			catalog = {

@@ -1,0 +1,29 @@
+{
+  "node": "v24.22.1",
+  "locales": [
+    "en",
+    "de",
+    "fr"
+  ],
+  "rounds": 5,
+  "baselineSourceSha256": "79c870e5062ac0f1642761701006fcf46a7a61109a3e91dd7f18ec0ac3fc8bff",
+  "pluginSha256": "0aff1308418564264a713be0c0351f84f81678c0c615d23577074f2c304a6d6b",
+  "scope": "SDK loader wall time only, imports/setup excluded; serial rotated fresh processes; final full AST equality verified; existing full importFiles on changed sources; not an incremental compiler or Grai comparison",
+  "baseline": {
+    "entrySourceSha256": "c17e4b7113fb266f29e715ad3f7fe6ec21e88bbab1b9f3fbcd7294ff59fe9554",
+    "sdkSourceCommit": "068061aae29ef3288e1634a053da49733495a77b",
+    "dependencies": "current unchanged SDK dist helpers; same plugin and Node runtime for both"
+  },
+  "implementationSha256": "f8c689657127d9097a36bf44b0fa882ef7b7d1687abff16dcf11e1a64e315cff",
+  "verification": {
+    "sdkTests": 63,
+    "sdkSkipped": 2,
+    "paraglideTests": 914,
+    "paraglideSkipped": 5,
+    "builds": [
+      "SDK TypeScript",
+      "Paraglide TypeScript"
+    ],
+    "scope": "compiler, CLI and bundler suites; SDK loader, catalog semantics and directory compatibility; stateful benchmark final AST equality and separate full-AST/nested stage checks"
+  }
+}

@@ -1,48 +1,26 @@
-import type nodeFs from "node:fs";
+// Frozen pre-refactor loader from SDK commit 068061aae29ef3288e1634a053da49733495a77b.
+// Benchmark fixture only; helpers are unchanged between both implementations.
 import nodePath from "node:path";
-import type { BundleNested } from "../database/schema.js";
-import type { ProjectSettings } from "../json-schema/settings.js";
-import type {
-	InlangPlugin,
-	NodeFsPromisesSubsetLegacy,
-} from "../plugin/schema.js";
-import type { PreprocessPluginBeforeImportFunction } from "../plugin/importPlugins.js";
-import type { ImportFile } from "./api.js";
 import {
 	createCatalogStore,
 	createFreshCatalog,
-} from "../import-export/catalogRows.js";
-import { withLanguageTagToLocaleMigration } from "../migrations/v2/withLanguageTagToLocaleMigration.js";
-import { fromMessageV1 } from "../json-schema/old-v1-message/fromMessageV1.js";
-import { pluginCachePath } from "../plugin/cache.js";
+} from "../../../dist/import-export/catalogRows.js";
+import { withLanguageTagToLocaleMigration } from "../../../dist/migrations/v2/withLanguageTagToLocaleMigration.js";
+import { fromMessageV1 } from "../../../dist/json-schema/old-v1-message/fromMessageV1.js";
+import { pluginCachePath } from "../../../dist/plugin/cache.js";
 import {
 	PluginDoesNotImplementFunctionError,
 	PluginImportError,
-} from "../plugin/errors.js";
+} from "../../../dist/plugin/errors.js";
 import {
 	categorizePlugins,
 	importLocalPlugins,
 	ResourceFileImportError,
-} from "./directoryPlugins.js";
-import { absolutePathFromProject, withAbsolutePaths } from "./path-helpers.js";
-
-/** A detached catalog snapshot for compilers and other read-only consumers. */
-export type ProjectCatalog = {
-	settings: ProjectSettings;
-	bundles: BundleNested[];
-	/** Plugin-loading and resource-file errors, matching directory loading. */
-	diagnostics: Error[];
-};
-
-export type LoadProjectCatalogArgs = {
-	path: string;
-	fs: typeof nodeFs;
-	providePlugins?: readonly InlangPlugin[];
-	preprocessPluginBeforeImport?: PreprocessPluginBeforeImportFunction;
-	/** Populate the remote plugin cache. Defaults to false (no filesystem writes). */
-	writePluginCache?: boolean;
-};
-
+} from "../../../dist/project/directoryPlugins.js";
+import {
+	absolutePathFromProject,
+	withAbsolutePaths,
+} from "../../../dist/project/path-helpers.js";
 /**
  * Reads a directory project's translation catalog without opening a database.
  *
@@ -62,15 +40,13 @@ export type LoadProjectCatalogArgs = {
  * loads; it never updates project metadata. Cache-write failures reject. Resource files that do not exist are skipped; other read errors and
  * plugin-loading errors are returned in `diagnostics`. Importer errors reject.
  */
-export async function loadProjectCatalog(
-	args: LoadProjectCatalogArgs
-): Promise<ProjectCatalog> {
+export async function loadProjectCatalog(args) {
 	const rawSettings = JSON.parse(
 		await args.fs.promises.readFile(
 			nodePath.join(args.path, "settings.json"),
 			"utf8"
 		)
-	) as ProjectSettings;
+	);
 	const settings = withLanguageTagToLocaleMigration(
 		structuredClone(rawSettings)
 	);
@@ -97,8 +73,7 @@ export async function loadProjectCatalog(
 				") are allowed "
 		);
 	}
-
-	let store: ReturnType<typeof createCatalogStore> | undefined;
+	let store;
 	async function getStore() {
 		if (!store) {
 			const { v7 } = await import("uuid");
@@ -121,29 +96,29 @@ export async function loadProjectCatalog(
 								absolutePathFromProject(args.path, file.path)
 							),
 							toBeImportedFilesMetadata: file.metadata,
-						} satisfies ImportFile,
+						},
 					};
 				} catch (error) {
 					return {
 						error:
-							(error as NodeJS.ErrnoException)?.code === "ENOENT"
+							error?.code === "ENOENT"
 								? undefined
 								: new ResourceFileImportError({
-										cause: error as Error,
+										cause: error,
 										path: file.path,
 									}),
 					};
 				}
 			})
 		);
-		const files: ImportFile[] = [];
+		const files = [];
 		for (const read of reads) {
 			if (read.file) files.push(read.file);
 			if (read.error) diagnostics.push(read.error);
 		}
 		// Directory projects select the first plugin with a matching key, even
 		// when more than one configured entry has that key. Preserve precedence.
-		const selected = plugins.find((candidate) => candidate.key === plugin.key)!;
+		const selected = plugins.find((candidate) => candidate.key === plugin.key);
 		if (!selected.importFiles) {
 			throw new PluginDoesNotImplementFunctionError({
 				plugin: plugin.key,
@@ -160,15 +135,12 @@ export async function loadProjectCatalog(
 		}
 		(store ?? (await getStore())).import(imported);
 	}
-
 	for (const plugin of loadSavePlugins) {
 		const readonlyFs = withAbsolutePaths(
 			{
 				// Legacy plugins receive the same Node Buffer/string values as the
 				// directory loader; the historical binary type says ArrayBuffer.
-				readFile: args.fs.promises.readFile.bind(
-					args.fs.promises
-				) as unknown as NodeFsPromisesSubsetLegacy["readFile"],
+				readFile: args.fs.promises.readFile.bind(args.fs.promises),
 				readdir: args.fs.promises.readdir.bind(args.fs.promises),
 				writeFile: async () => {
 					throw new Error(
@@ -183,7 +155,7 @@ export async function loadProjectCatalog(
 			},
 			args.path
 		);
-		const messages = await plugin.loadMessages!({
+		const messages = await plugin.loadMessages({
 			settings: structuredClone(settings),
 			nodeishFs: readonlyFs,
 		});
@@ -211,16 +183,12 @@ export async function loadProjectCatalog(
 	}
 	return { settings, bundles: store?.takeBundles() ?? [], diagnostics };
 }
-
-async function importRemotePlugins(
-	args: LoadProjectCatalogArgs,
-	settings: ProjectSettings
-): Promise<{ plugins: InlangPlugin[]; errors: Error[] }> {
-	const plugins: InlangPlugin[] = [];
-	const errors: Error[] = [];
+async function importRemotePlugins(args, settings) {
+	const plugins = [];
+	const errors = [];
 	for (const uri of settings.modules ?? []) {
 		if (!uri.startsWith("http")) continue;
-		let text: string;
+		let text;
 		let fetched = false;
 		try {
 			try {
@@ -237,9 +205,7 @@ async function importRemotePlugins(
 				}
 			}
 		} catch (error) {
-			errors.push(
-				new PluginImportError({ plugin: uri, cause: error as Error })
-			);
+			errors.push(new PluginImportError({ plugin: uri, cause: error }));
 			continue;
 		}
 		if (fetched && args.writePluginCache) {
@@ -252,7 +218,7 @@ async function importRemotePlugins(
 			} catch (error) {
 				throw new ResourceFileImportError({
 					path: cachePath,
-					cause: error as Error,
+					cause: error,
 				});
 			}
 		}
@@ -270,9 +236,7 @@ async function importRemotePlugins(
 				if (process.versions.bun) URL.revokeObjectURL(url);
 			}
 		} catch (error) {
-			errors.push(
-				new PluginImportError({ plugin: uri, cause: error as Error })
-			);
+			errors.push(new PluginImportError({ plugin: uri, cause: error }));
 		}
 	}
 	return { plugins, errors };

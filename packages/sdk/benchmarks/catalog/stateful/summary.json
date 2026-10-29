@@ -1,0 +1,618 @@
+[
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "first-load",
+    "medianMs": 61.464833000000006,
+    "minMs": 56.979625,
+    "maxMs": 66.358959,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "noop",
+    "medianMs": 40.26391699999999,
+    "minMs": 35.90720900000001,
+    "maxMs": 46.85199999999999,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "translation",
+    "medianMs": 44.070583,
+    "minMs": 42.84575000000001,
+    "maxMs": 47.853083,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "input",
+    "medianMs": 38.676208,
+    "minMs": 33.72341700000001,
+    "maxMs": 48.800167000000016,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "add",
+    "medianMs": 36.47525000000002,
+    "minMs": 34.00570799999997,
+    "maxMs": 41.995834,
+    "returnedBundles": [
+      6401,
+      6401,
+      6401,
+      6401,
+      6401
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "delete",
+    "medianMs": 37.57416700000002,
+    "minMs": 36.43016600000004,
+    "maxMs": 42.38654200000002,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "baseline",
+    "scenario": "format-only",
+    "medianMs": 50.42758300000003,
+    "minMs": 36.745708000000036,
+    "maxMs": 59.74658400000004,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "first-load",
+    "medianMs": 68.476959,
+    "minMs": 65.365208,
+    "maxMs": 74.08879200000001,
+    "returnedBundles": [
+      6400,
+      6400,
+      6400,
+      6400,
+      6400
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "noop",
+    "medianMs": 1.388582999999997,
+    "minMs": 1.2792500000000047,
+    "maxMs": 1.4054590000000076,
+    "returnedBundles": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "translation",
+    "medianMs": 51.87287499999999,
+    "minMs": 49.825666,
+    "maxMs": 53.395292,
+    "returnedBundles": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "input",
+    "medianMs": 55.927583999999996,
+    "minMs": 53.50770800000001,
+    "maxMs": 59.117458,
+    "returnedBundles": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "add",
+    "medianMs": 54.30433399999998,
+    "minMs": 50.09504199999998,
+    "maxMs": 58.688458999999995,
+    "returnedBundles": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "delete",
+    "medianMs": 46.78483299999999,
+    "minMs": 44.526792,
+    "maxMs": 51.475415999999996,
+    "returnedBundles": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "removed": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "size": 6400,
+    "backend": "stateful",
+    "scenario": "format-only",
+    "medianMs": 48.278666999999984,
+    "minMs": 44.225667000000044,
+    "maxMs": 66.28362499999997,
+    "returnedBundles": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "first-load",
+    "medianMs": 112.70333299999999,
+    "minMs": 102.064458,
+    "maxMs": 118.7695,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "noop",
+    "medianMs": 103.17583299999998,
+    "minMs": 98.709416,
+    "maxMs": 108.890792,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "translation",
+    "medianMs": 79.27075000000002,
+    "minMs": 75.0795,
+    "maxMs": 86.38958300000002,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "input",
+    "medianMs": 79.98774999999995,
+    "minMs": 75.51324999999997,
+    "maxMs": 84.585917,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "add",
+    "medianMs": 75.42112499999996,
+    "minMs": 73.18450000000001,
+    "maxMs": 79.53312499999998,
+    "returnedBundles": [
+      13301,
+      13301,
+      13301,
+      13301,
+      13301
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "delete",
+    "medianMs": 74.52074999999996,
+    "minMs": 73.85750000000002,
+    "maxMs": 80.96945800000003,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "baseline",
+    "scenario": "format-only",
+    "medianMs": 90.75120800000002,
+    "minMs": 90.45225000000005,
+    "maxMs": 96.23679099999993,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "first-load",
+    "medianMs": 126.48479099999999,
+    "minMs": 123.46700000000001,
+    "maxMs": 147.47424999999998,
+    "returnedBundles": [
+      13300,
+      13300,
+      13300,
+      13300,
+      13300
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "noop",
+    "medianMs": 2.276707999999985,
+    "minMs": 1.8965829999999926,
+    "maxMs": 2.988625000000013,
+    "returnedBundles": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "translation",
+    "medianMs": 132.550041,
+    "minMs": 126.53475000000003,
+    "maxMs": 167.76183300000002,
+    "returnedBundles": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "input",
+    "medianMs": 94.30395800000002,
+    "minMs": 89.90158299999996,
+    "maxMs": 118.686375,
+    "returnedBundles": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "add",
+    "medianMs": 94.56120900000002,
+    "minMs": 91.909291,
+    "maxMs": 116.48837499999996,
+    "returnedBundles": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "delete",
+    "medianMs": 94.30550000000005,
+    "minMs": 91.43662500000005,
+    "maxMs": 102.84437500000001,
+    "returnedBundles": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "removed": [
+      1,
+      1,
+      1,
+      1,
+      1
+    ]
+  },
+  {
+    "size": 13300,
+    "backend": "stateful",
+    "scenario": "format-only",
+    "medianMs": 96.09566600000005,
+    "minMs": 93.50225,
+    "maxMs": 125.11291700000004,
+    "returnedBundles": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "removed": [
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+]
