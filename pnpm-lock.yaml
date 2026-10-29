@@ -33,6 +33,9 @@ importers:
         specifier: ^0.19.2
         version: 0.19.12
     devDependencies:
+      '@inlang/plugin-i18next':
+        specifier: workspace:*
+        version: link:../plugins/i18next
       '@inlang/plugin-m-function-matcher':
         specifier: workspace:*
         version: link:../plugins/m-function-matcher
@@ -292,6 +295,9 @@ importers:
 
   packages/plugins/i18next:
     dependencies:
+      '@babel/parser':
+        specifier: ^7.28.5
+        version: 7.28.5
       '@inlang/sdk':
         specifier: workspace:*
         version: link:../../sdk

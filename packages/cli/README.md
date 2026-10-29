@@ -1,23 +1,25 @@
 ---
-title: inlang CLI - Localization Automation for CI/CD
-description: Automate translation workflows with machine translation, translation checks, and CI/CD integration. Supports JSON, i18next, next-intl, and more.
+title: inlang CLI - Find Missing and Unused Translations in CI
+description: Check translations for missing keys, wrong variables and unused messages. Machine translate missing messages. Works in CI with i18next, next-intl, Paraglide JS, and more.
 og:image: https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/cli/assets/cli-banner.svg
 ---
 
 # @inlang/cli
 
-Automate localization tasks in your CI/CD pipeline.
+Find missing translations, wrong variables and unused messages. Fail your CI when a translation is broken.
 
 ```bash
-npx @inlang/cli [command]
+npx @inlang/cli check --project ./project.inlang
 ```
+
+Read the announcement: [inlang check: find missing translations and unused keys in CI](https://inlang.com/blog/inlang-check).
 
 ![inlang CLI terminal showing machine translate and check commands](https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/cli/assets/cli-banner.svg)
 
 ## Features
 
 - **Machine Translation** — Translate missing messages automatically via a free, third-party translation service by default, or with your own Google Cloud Translation or DeepL API key
-- **Checks** — Find missing translations, missing variables and unused messages before they ship
+- **Checks** — Find missing translations, missing variables and unused messages before they ship. Exits with `1` on findings, so CI fails. See [`check`](#check)
 - **CI/CD Ready** — Run non-interactively with `--force` for pipelines
 - **Plugin System** — Supports JSON, i18next, next-intl, ICU message format, and more
 
@@ -205,7 +207,7 @@ The translations are performed with the configured provider (`INLANG_MACHINE_TRA
 
 ## `check`
 
-Checks the project's translations and, for Paraglide and next-intl projects, finds messages the source code no longer uses.
+Checks the project's translations and, for Paraglide JS, i18next and next-intl projects, finds messages the source code no longer uses.
 
 ```sh
 npx @inlang/cli check --project ./project.inlang
@@ -247,6 +249,31 @@ All checks run by default. Pass one or more check flags to run only those:
 | `--unused-messages`      | messages the source code doesn't use (needs a usage-analysis plugin)  |
 
 The project's settings and plugin errors are always reported.
+
+### What works with which library
+
+| Check                                                   | i18next | next-intl | Paraglide JS | JSON, ICU and other plugins |
+| ------------------------------------------------------- | :-----: | :-------: | :----------: | :-------------------------: |
+| Missing and empty translations, variables, plural forms |   yes   |    yes    |     yes      |             yes             |
+| Unused messages (`--unused-messages`)                   |   yes   |    yes    |     yes      |             no              |
+
+Unused messages need a plugin that can read your source code. See [Unused messages](#unused-messages).
+
+### Coming from `validate` or `lint`?
+
+`inlang validate` and `inlang lint` are deprecated and hidden from `--help`. Use `inlang check` instead.
+
+- `validate` only reported settings and plugin errors. `check` reports those too, plus translation problems and unused messages.
+- `lint` has done nothing since CLI v3, because the v1 lint rules were removed in the v2 rewrite. It still exits with `0`, so old scripts do not break. `check` replaces it.
+
+Replace the command in your CI:
+
+```diff
+- npx @inlang/cli lint --project ./project.inlang
++ npx @inlang/cli check --project ./project.inlang
+```
+
+`check` exits with `1` on findings. Add `--no-fail` to keep the old behavior while you fix them.
 
 ### Check options
 
@@ -323,6 +350,7 @@ jq '[.diagnostics[] | select(.checkId == "missing-translation") | .locale] | gro
 Unused messages need the source code and a plugin that analyzes message usages:
 
 - [`@inlang/plugin-m-function-matcher`](https://inlang.com/m/632iow21/plugin-inlang-mFunctionMatcher) 2.3.0 or later for Paraglide's `m.message_key()`.
+- [`@inlang/plugin-i18next`](https://inlang.com/m/kl95463j) 6.5.0 or later for i18next's `t("key")` from `useTranslation`, `getFixedT` and `i18next.t`, and `<Trans i18nKey="key">`, in `.ts`, `.tsx`, `.js`, `.jsx` and `.mjs` files. Namespaces, plurals, context and keys written as constants (`t(KEYS.title)`) are resolved. Dynamic keys, `keyPrefix`, `returnObjects`, `fallbackNS`, custom separators, translation files read directly and Vue, Svelte, Astro and CommonJS files that use i18next make the analysis incomplete.
 - [`@inlang/plugin-next-intl`](https://inlang.com/m/193hsyds/plugin-inlang-nextIntl) 2.4.0 or later for next-intl's `useTranslations("Home")` and `getTranslations("Home")` with `t("title")`, `t.rich()` and `t.markup()`, in `.ts`, `.tsx`, `.js`, `.jsx` and `.mdx` files.
 
 With an older version, `check` asks you to update the module URL in `settings.json`.

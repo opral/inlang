@@ -5,6 +5,7 @@ import { importFiles } from "./import-export/importFiles.js";
 import { exportFiles } from "./import-export/exportFiles.js";
 import { toBeImportedFiles } from "./import-export/toBeImportedFiles.js";
 import { PLUGIN_KEY } from "./pluginKey.js";
+import { analyzeUsage } from "./usage/analyzeUsage.js";
 
 export { PLUGIN_KEY };
 
@@ -23,6 +24,7 @@ export const plugin: InlangPlugin<{
 	importFiles,
 	exportFiles,
 	toBeImportedFiles,
+	analyzeUsage,
 	// NOTE: no static `meta` here on purpose. Sherlock only migrates
 	// `addCustomApi({ settings })` into `meta` when `meta` is unset — and the
 	// ide-extension matchers need the plugin settings (pathPattern) baked in

@@ -17,6 +17,10 @@
     "svelte",
     "localization",
     "lint",
+    "check",
+    "missing-translations",
+    "unused-translations",
+    "ci",
     "i18next",
     "react",
     "vue",
@@ -49,6 +53,7 @@
     "esbuild-wasm": "^0.19.2"
   },
   "devDependencies": {
+    "@inlang/plugin-i18next": "workspace:*",
     "@inlang/plugin-m-function-matcher": "workspace:*",
     "@inlang/plugin-message-format": "workspace:*",
     "@inlang/plugin-next-intl": "workspace:*",
