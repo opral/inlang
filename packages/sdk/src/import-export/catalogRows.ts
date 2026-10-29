@@ -1,6 +1,7 @@
 import {
 	findExistingVariant,
 	variantIdsToReorder,
+	variantMatchesKey,
 	compareVariantIds,
 } from "./variantSemantics.js";
 import type {
@@ -58,13 +59,11 @@ export function createFreshCatalog(
 		!result ||
 		!Array.isArray(result.bundles) ||
 		!Array.isArray(result.messages) ||
-		!Array.isArray(result.variants) ||
-		result.messages.length !== result.variants.length
+		!Array.isArray(result.variants)
 	)
 		return undefined;
 	type Entry = {
 		row: PluginResult["messages"][number];
-		variant?: PluginResult["variants"][number];
 		node?: BundleNested["messages"][number];
 	};
 	type Group = {
@@ -84,8 +83,7 @@ export function createFreshCatalog(
 			row.id !== undefined ||
 			typeof row.bundleId !== "string" ||
 			typeof row.locale !== "string" ||
-			(row.selectors !== undefined &&
-				(!Array.isArray(row.selectors) || row.selectors.length !== 0))
+			(row.selectors !== undefined && !Array.isArray(row.selectors))
 		)
 			return undefined;
 		const group = groups.get(row.bundleId);
@@ -99,18 +97,17 @@ export function createFreshCatalog(
 			row.messageId !== undefined ||
 			typeof row.messageBundleId !== "string" ||
 			typeof row.messageLocale !== "string" ||
-			(row.matches !== undefined &&
-				(!Array.isArray(row.matches) || row.matches.length !== 0))
+			(row.matches !== undefined && !Array.isArray(row.matches))
 		)
 			return undefined;
 		const entry = groups
 			.get(row.messageBundleId)
 			?.locales.get(row.messageLocale);
-		if (!entry || entry.variant !== undefined) return undefined;
-		entry.variant = row;
+		if (!entry) return undefined;
 	}
 
-	// All eligibility checks finished before validation/copying. Retain the same
+	// Eligibility checks finish before validation/copying, except for repeated
+	// matches below, which can only be compared as validated JSON. Retain the same
 	// column/default/JSON boundary as the general importer, in its import order.
 	// These IDs are private to this detached snapshot. Eligibility excludes all
 	// explicit identities and merges; padded counters preserve UUIDv7 import
@@ -118,6 +115,7 @@ export function createFreshCatalog(
 	let messageIndex = 0;
 	let variantIndex = 0;
 	const bundles: BundleNested[] = [];
+	const withSeveralVariants: BundleNested["messages"] = [];
 	for (const group of groups.values()) {
 		const row = group.row;
 		columns(row, bundleColumns, "bundle");
@@ -167,6 +165,14 @@ export function createFreshCatalog(
 					? []
 					: jsonColumn(row.pattern, "variant.pattern"),
 		});
+		if (message.variants.length === 2) withSeveralVariants.push(message);
+	}
+	// The general importer merges variants with the same matches into one.
+	for (const message of withSeveralVariants) {
+		const matches = new Set(
+			message.variants.map((variant) => variantMatchesKey(variant.matches))
+		);
+		if (matches.size !== message.variants.length) return undefined;
 	}
 	return bundles.sort((a, b) => compareIdentity(a.id, b.id));
 }
