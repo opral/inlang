@@ -1,6 +1,6 @@
 {
 	"name": "@inlang/sdk",
-	"version": "4.0.4",
+	"version": "4.1.0",
 	"type": "module",
 	"license": "MIT",
 	"publishConfig": {
