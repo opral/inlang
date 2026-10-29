@@ -112,7 +112,7 @@ describe("inlang check", { timeout: 60_000 }, () => {
     const { code, stdout } = await run(app(), ["check", ...project]);
     expect(code).toBe(1);
     expect(stdout).toContain(
-      "Checked project.inlang · 7 messages · locales en-US, pt-BR · 2 source files in ./",
+      "Checked project.inlang · 7 messages · locales en-US, pt-BR · 3 source files in ./",
     );
     expect(stdout).toContain(
       "missing-translation (1)\n  welcome_back  pt-BR  no translation\n",
@@ -136,11 +136,13 @@ describe("inlang check", { timeout: 60_000 }, () => {
       ["check", ...project, "--unused-messages"],
     );
     expect(code).toBe(1);
+    // legacy_banner is used by the fixture's Astro component.
     expect(stdout).toContain(
-      "unused-message (3)\n  email_label\n  legacy_banner\n  password_label\n",
+      "unused-message (2)\n  email_label\n  password_label\n",
     );
     expect(stdout).not.toContain("missing-translation");
-    expect(stdout).toContain("3 findings\n  unused-message  3\n");
+    expect(stdout).not.toContain("Unsupported source format");
+    expect(stdout).toContain("2 findings\n  unused-message  2\n");
   });
 
   test("--source limits the analyzed files", async () => {
@@ -168,15 +170,15 @@ describe("inlang check", { timeout: 60_000 }, () => {
       locales: ["en-US", "pt-BR"],
       baseLocale: "en-US",
       messages: 7,
-      source: { roots: ["./"], files: 1 },
+      source: { roots: ["./"], files: 2 },
       errors: [],
       summary: {
-        findings: 6,
+        findings: 5,
         errors: 0,
         byCheck: {
           "missing-translation": 1,
           "missing-variable": 2,
-          "unused-message": 3,
+          "unused-message": 2,
         },
       },
     });

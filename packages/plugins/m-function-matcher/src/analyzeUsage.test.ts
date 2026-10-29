@@ -555,7 +555,7 @@ test("reports the same unresolved construct once and file-level issues without a
 		{
 			path: "src/b.cjs",
 			reason:
-				"Unsupported source format. Supply ESM JavaScript, TypeScript or Svelte files.",
+				"Unsupported source format. Supply ESM JavaScript, TypeScript, Svelte or Astro files.",
 		},
 	]);
 });

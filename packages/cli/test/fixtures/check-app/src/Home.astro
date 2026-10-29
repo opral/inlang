@@ -1,0 +1,28 @@
+---
+import { m, welcome_back as welcomeBack } from "./generated/paraglide/messages";
+import * as messages from "./generated/paraglide/messages";
+const banner = m.legacy_banner();
+const renderBanner = m.legacy_banner;
+const id = "banner";
+const attributes = { title: m.welcome_back() };
+---
+<h1>{m.welcome_back()}</h1>
+<p>{banner}</p>
+<p title={m.welcome_back()}>{m["legacy_banner"]()}</p>
+<p title=`${m.legacy_banner()}`>{`Hello ${messages.welcome_back()}`}</p>
+<p {...attributes}>{renderBanner()} {welcomeBack()}</p>
+<div set:html={m.legacy_banner()} />
+{[id].map((id) => (
+	<p {id} title=`${m.welcome_back()}`>
+		<!-- Literal {m.email_label()} -->
+		{m.legacy_banner()}
+	</p>
+))}
+<p title="{m.email_label()}">{m.welcome_back()}</p>
+<script>
+	import { m as clientMessages } from "./generated/paraglide/messages";
+	document.title = clientMessages.legacy_banner();
+</script>
+<style define:vars={{ banner: m.legacy_banner() }}>
+	p::after { content: "{m.password_label()}"; }
+</style>

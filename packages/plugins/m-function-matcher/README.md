@@ -50,10 +50,12 @@ Find unused messages with the [inlang CLI](https://inlang.com/m/2qj2w8pu/app-inl
 npx @inlang/cli check --project ./project.inlang --unused-messages
 ```
 
-The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript and Svelte AST analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes. Each issue names the file and, where possible, the location (`start`/`end`) of the construct, e.g. ``m[`${fieldName}_label`]``.
+The plugin exposes `analyzeUsage` for the SDK's `checkProject({ project, files })` API. ESM JavaScript/TypeScript, Svelte and Astro analysis recognizes static message reads, function references, named imports and namespace imports. Dynamic accesses, namespace escapes, parse failures and unsupported formats report incomplete analysis, which withholds unused-message findings and deletion fixes. Each issue names the file and, where possible, the location (`start`/`end`) of the construct, e.g. ``m[`${fieldName}_label`]``.
 
 See the [SDK checks and fixes documentation](../../sdk/docs/checks.md) for source snapshot requirements, supported syntax, limits and programmatic usage. This capability is separate from the existing IDE reference matchers.
 
-Bundle size: the analysis bundles Babel's parser and Svelte's compiler, so `dist/index.js` is about 830 KB minified (28 KB before). It is not lazy-loaded: the SDK imports a plugin module as a single `data:` URL, where a separately loaded chunk can't be resolved.
+Bundle size: the analysis bundles Babel's parser and Svelte's compiler, so `dist/index.js` is about 840 KB minified (28 KB before). It is not lazy-loaded: the SDK imports a plugin module as a single `data:` URL, where a separately loaded chunk can't be resolved.
 
 Svelte analysis covers instance/module scripts (JavaScript or TypeScript) and template expressions, blocks, snippets, components and directives. Include `.svelte` files in the full source snapshot; no extra configuration is required. External scripts and unsupported script languages report incomplete analysis.
+
+Astro analysis covers the frontmatter and inline scripts outside expressions (TypeScript) plus every `{…}` expression in the template and attributes such as `title={m.someKey()}` or `set:html`. Backtick attribute interpolations and nested Astro shorthand attributes are supported, including in templates containing HTML comments. Single- and double-quoted attribute values, known data scripts such as JSON-LD, `<style>` blocks and HTML comments are literal text. Include `.astro` files in the full source snapshot; no extra configuration is required. External scripts, regardless of `src` syntax or self-closing form, scripts nested inside expressions, and malformed input report incomplete analysis.
