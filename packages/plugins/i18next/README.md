@@ -29,8 +29,9 @@ It only reports a key as unused when every usage in your code can be resolved. T
 
 - keys built at runtime, such as ``t(`status.${status}`)``, or constants the analyzer can't follow, such as a barrel re-export (`export * from`)
 - `keyPrefix`, `returnObjects`, `fallbackNS` and custom separators
+- options that aren't an object literal, such as `t("menu", options)`, `{ ...options }` or `tOptions={options}`, because they can hold `returnObjects` or `keyPrefix`
 - translators passed to other functions, such as `render(t)`
-- translation files read directly: `en.title` of an imported `en.json`, `fs.readFileSync("locales/en.json")`, `i18n.store` and `i18n.options.resources`. Handing a file to i18next (`resources: { en: { translation: en } }`, `addResourceBundle`) is fine
+- translation files read directly, including the `sourceLanguageFilePath` file: `en.title` of an imported `en.json`, `fs.readFileSync("locales/en.json")`, `i18n.store` and `i18n.options.resources`. Handing a file to i18next (`resources: { en: { translation: en } }`, `addResourceBundle`) is fine
 - `<Trans>` without `i18nKey`
 - Vue, Svelte, Astro and CommonJS files that use i18next
 

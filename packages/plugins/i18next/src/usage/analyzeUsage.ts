@@ -142,20 +142,25 @@ function projectNamespaces(settings: Record<string, unknown>): string[] {
 /**
  * The paths that end a translation file's path, per locale: `en/common.json` for
  * `./locales/{locale}/common.json`. A string that ends with one of them (after a `/`)
- * names a translation file.
+ * names a translation file. A `sourceLanguageFilePath` without a locale is matched by
+ * its file name.
  */
 function catalogTails(settings: Record<string, unknown>): string[] {
-	const pathPattern = (
-		settings[PLUGIN_KEY] as { pathPattern?: unknown } | undefined
-	)?.pathPattern;
-	const patterns =
-		typeof pathPattern === "string"
-			? [pathPattern]
-			: pathPattern && typeof pathPattern === "object"
-				? Object.values(pathPattern).filter(
-						(value): value is string => typeof value === "string"
+	const pluginSettings = settings[PLUGIN_KEY] as
+		| { pathPattern?: unknown; sourceLanguageFilePath?: unknown }
+		| undefined;
+	const paths = (value: unknown): string[] =>
+		typeof value === "string"
+			? [value]
+			: value && typeof value === "object"
+				? Object.values(value).filter(
+						(path): path is string => typeof path === "string"
 					)
 				: [];
+	const patterns = [
+		...paths(pluginSettings?.pathPattern),
+		...paths(pluginSettings?.sourceLanguageFilePath),
+	];
 	const locales = [
 		settings.baseLocale,
 		...(Array.isArray(settings.locales) ? settings.locales : []),
@@ -167,7 +172,11 @@ function catalogTails(settings: Record<string, unknown>): string[] {
 			.split("/")
 			.filter((segment) => segment && segment !== "." && segment !== "..");
 		const first = segments.findIndex((segment) => placeholder.test(segment));
-		if (first === -1) continue;
+		if (first === -1) {
+			const name = segments.at(-1);
+			if (name) tails.add(name.toLowerCase());
+			continue;
+		}
 		for (const locale of locales)
 			tails.add(
 				segments
@@ -178,6 +187,36 @@ function catalogTails(settings: Record<string, unknown>): string[] {
 			);
 	}
 	return [...tails];
+}
+
+const OPAQUE_OPTIONS =
+	"Options that aren't an object literal can change the keys, e.g. with returnObjects or keyPrefix.";
+
+/**
+ * The part of a `t()` option argument we can't see into: a variable, a call or a
+ * spread can hold `returnObjects`, `keyPrefix` or `ns`. Object literals are checked
+ * property by property elsewhere, and a string is a default value.
+ */
+function opaqueOption(option: Node): Node | undefined {
+	const value = unwrap(option);
+	if (!value) return option;
+	if (value.type === "ObjectExpression") {
+		return (value.properties as Node[]).find(
+			(property) =>
+				property.type === "SpreadElement" ||
+				(property.computed === true && keyName(property) === undefined)
+		);
+	}
+	if (
+		value.type === "StringLiteral" ||
+		value.type === "TemplateLiteral" ||
+		value.type === "NumericLiteral" ||
+		value.type === "BooleanLiteral" ||
+		value.type === "NullLiteral" ||
+		(value.type === "Identifier" && value.name === "undefined")
+	)
+		return undefined;
+	return value;
 }
 
 /** What a reference to an identifier does with it. */
@@ -568,6 +607,11 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 				issue("Dynamic keys can't be resolved.", first);
 				return;
 			}
+			// `t("key", opts)`: `opts` can hold returnObjects, keyPrefix or ns
+			for (const option of args.slice(1)) {
+				const opaque = opaqueOption(option);
+				if (opaque) issue(OPAQUE_OPTIONS, opaque);
+			}
 			// `t("key", { ns: "other" })`
 			let callScope = scope;
 			for (const option of args.slice(1)) {
@@ -631,6 +675,15 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 					};
 					const i18nKey = attribute("i18nKey");
 					const keys = valueOf(i18nKey);
+					const tOptions = attribute("tOptions")?.value as Node | undefined;
+					const opaque =
+						tOptions &&
+						opaqueOption(
+							tOptions.type === "JSXExpressionContainer"
+								? (tOptions.expression as Node)
+								: tOptions
+						);
+					if (opaque) issue(OPAQUE_OPTIONS, opaque);
 					if (
 						(node.attributes as Node[]).some(
 							(entry) => entry.type === "JSXSpreadAttribute"

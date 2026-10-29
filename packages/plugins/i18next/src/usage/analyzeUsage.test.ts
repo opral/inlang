@@ -252,6 +252,36 @@ const incomplete = [
 		`const i18n = require("i18next"); i18n.t("a");`,
 		/CommonJS/,
 	],
+	[
+		"options in a variable",
+		`import { useTranslation } from "react-i18next"; const { t } = useTranslation(); t("menu", props.options);`,
+		/aren't an object literal/,
+	],
+	[
+		"spread options",
+		`import i18n from "i18next"; i18n.t("menu", { ...opts });`,
+		/aren't an object literal/,
+	],
+	[
+		"options from a call",
+		`import i18n from "i18next"; i18n.t("menu", "Menu", options());`,
+		/aren't an object literal/,
+	],
+	[
+		"a spread argument",
+		`import i18n from "i18next"; i18n.t("menu", ...rest);`,
+		/aren't an object literal/,
+	],
+	[
+		"a computed option name",
+		`import i18n from "i18next"; i18n.t("menu", { [name]: true });`,
+		/aren't an object literal/,
+	],
+	[
+		"tOptions in a variable",
+		`import { Trans } from "react-i18next"; const x = <Trans i18nKey="menu" tOptions={opts} />;`,
+		/aren't an object literal/,
+	],
 ] as const;
 test.each(incomplete)(
 	"%s makes the analysis incomplete",
@@ -261,6 +291,20 @@ test.each(incomplete)(
 		expect(result.reasons.join("\n")).toMatch(reason);
 	}
 );
+
+test("literal options, a default value and no options keep the analysis complete", async () => {
+	const result = await analyze(`
+		import { Trans, useTranslation } from "react-i18next";
+		const { t } = useTranslation();
+		t("a", { count, name: user.name, context: "male" });
+		t("b", "Default text");
+		t("c", \`Default \${name}\`, { count: 2 });
+		t("d", undefined);
+		const x = <Trans i18nKey="e" tOptions={{ count }} />;
+	`);
+	expect(result.status).toBe("complete");
+	expect(result.used).toEqual(["a", "b", "c", "d", "e"]);
+});
 
 test("an issue points at the code", async () => {
 	const result = await analyze(`import i18n from "i18next";\n\ni18n.t(key);`);
@@ -565,6 +609,36 @@ test("a namespaced translation file is recognized by its path", async () => {
 		namespaced
 	);
 	expect(result.status).toBe("incomplete");
+});
+
+test("the source language file outside pathPattern is recognized", async () => {
+	const settings = {
+		baseLocale: "en",
+		locales: ["en", "de"],
+		[PLUGIN_KEY]: {
+			pathPattern: "./locales/{locale}.json",
+			sourceLanguageFilePath: "./src/i18n/source.json",
+		},
+	} as unknown as ProjectSettings;
+	const result = await analyze(
+		`import i18n from "i18next"; import source from "../i18n/source.json"; i18n.t("a"); export const title = source.title;`,
+		settings
+	);
+	expect(result.status).toBe("incomplete");
+	expect(result.reasons.join("\n")).toMatch(/read directly/);
+
+	const byNamespace = {
+		...namespaced,
+		[PLUGIN_KEY]: {
+			...(namespaced as Record<string, any>)[PLUGIN_KEY],
+			sourceLanguageFilePath: { common: "./src/source/common.json" },
+		},
+	} as unknown as ProjectSettings;
+	const namespacedResult = await analyze(
+		`import common from "./source/common.json"; export const x = common.title;`,
+		byNamespace
+	);
+	expect(namespacedResult.status).toBe("incomplete");
 });
 
 test("the resource store of i18next holds every translation", async () => {
