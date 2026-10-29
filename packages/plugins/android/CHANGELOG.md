@@ -1,5 +1,12 @@
 # @inlang/plugin-android
 
+## 0.2.13
+
+### Patch Changes
+
+- Updated dependencies [a5c53fa]
+  - @inlang/sdk@4.1.0
+
 ## 0.2.12
 
 ### Patch Changes

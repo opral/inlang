@@ -1,5 +1,12 @@
 # @inlang/plugin-icu1
 
+## 1.3.5
+
+### Patch Changes
+
+- Updated dependencies [a5c53fa]
+  - @inlang/sdk@4.1.0
+
 ## 1.3.4
 
 ### Patch Changes

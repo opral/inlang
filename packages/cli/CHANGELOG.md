@@ -1,5 +1,13 @@
 # @inlang/cli
 
+## 3.4.5
+
+### Patch Changes
+
+- 4354472: `inlang check --unused-messages` supports i18next projects with `@inlang/plugin-i18next` 6.5.0 or later. With an older i18next plugin, it asks to update the plugin's module URL. The docs say which checks work with i18next, next-intl and Paraglide JS, and explain how to move from `validate` and `lint` to `check`.
+- Updated dependencies [a5c53fa]
+  - @inlang/sdk@4.1.0
+
 ## 3.4.4
 
 ### Patch Changes

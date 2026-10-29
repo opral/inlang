@@ -1,5 +1,18 @@
 # @inlang/plugin-m-function-matcher
 
+## 2.4.0
+
+### Minor Changes
+
+- cb8e7ee: Analyze usages in Astro (`.astro`) files: frontmatter and inline scripts outside expressions as TypeScript, plus template and attribute `{…}` expressions, backtick attribute interpolations and nested Astro shorthand attributes, with references located in the original file. Single- and double-quoted attribute values, `<style>` blocks and HTML comments are literal; external scripts (including self-closing tags and expression or unquoted `src` values), scripts nested inside expressions, and input the scanner cannot delimit keep the analysis incomplete.
+
+  Support HTML void elements inside expressions, preserve regex literals when delimiting expressions/frontmatter, and distinguish capitalized Script components and non-executable script data from native JavaScript scripts.
+
+### Patch Changes
+
+- Updated dependencies [a5c53fa]
+  - @inlang/sdk@4.1.0
+
 ## 2.3.4
 
 ### Patch Changes

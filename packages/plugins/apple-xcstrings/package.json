@@ -1,6 +1,6 @@
 {
   "name": "@inlang/plugin-apple-xcstrings",
-  "version": "0.2.12",
+  "version": "0.2.13",
   "type": "module",
   "types": "./dist/index.d.ts",
   "files": [
