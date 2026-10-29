@@ -1,5 +1,6 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { Volume } from "memfs";
+import * as directoryPlugins from "./directoryPlugins.js";
 import type nodeFs from "node:fs";
 import {
 	createCatalogLoader,
@@ -606,4 +607,35 @@ test("insertions do not re-emit bundles whose generated row IDs shifted", async 
 		bundles: [{ id: "a" }],
 		removedBundleIds: [],
 	});
+});
+
+test("fresh imported plugin identities reuse unchanged source and reset on source edits", async () => {
+	const fs = filesystem({ "/en.json": "Hello" });
+	let source = "version one";
+	const imports = vi.fn(importer().importFiles!);
+	vi.spyOn(directoryPlugins, "importLocalPlugins").mockImplementation(
+		async () => ({
+			errors: [],
+			locallyImportedPlugins: [
+				{
+					...importer(),
+					importFiles: (
+						args: Parameters<NonNullable<InlangPlugin["importFiles"]>>[0]
+					) => imports(args),
+				},
+			],
+			pluginSources: [source],
+		})
+	);
+	const loader = createCatalogLoader({ path: "/project.inlang", fs });
+	expect((await loader.load()).type).toBe("reset");
+	expect(await loader.load()).toMatchObject({ type: "update", bundles: [] });
+	expect(imports).toHaveBeenCalledTimes(1);
+	await fs.promises.writeFile("/en.json", "Changed");
+	expect(await loader.load()).toMatchObject({
+		type: "update",
+		bundles: [{ id: "greeting" }],
+	});
+	source = "version two";
+	expect((await loader.load()).type).toBe("reset");
 });

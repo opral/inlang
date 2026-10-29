@@ -225,7 +225,9 @@ async function readCatalog(
 	];
 	const diagnostics = [...local.errors, ...remote.errors];
 	const context = JSON.stringify(rawSettings);
-	const signature = plugins.flatMap((plugin) => [
+	// Imported source is stable across fresh Bun Blob URLs; supplied plugins
+	// have no source text, so retain their object/function identity checks.
+	const signature = (args.providePlugins ?? []).flatMap((plugin) => [
 		plugin,
 		plugin.key,
 		plugin.importFiles,
@@ -234,6 +236,7 @@ async function readCatalog(
 		plugin.loadMessages,
 		plugin.saveMessages,
 	]);
+	signature.push(...local.pluginSources, ...remote.pluginSources);
 	const identity = { context, signature };
 	const { importExportPlugins, loadSavePlugins } = categorizePlugins(plugins);
 	if (loadSavePlugins.length > 1) {
@@ -421,8 +424,13 @@ async function readCatalog(
 async function importRemotePlugins(
 	args: ReadArgs,
 	settings: ProjectSettings
-): Promise<{ plugins: InlangPlugin[]; errors: Error[] }> {
+): Promise<{
+	plugins: InlangPlugin[];
+	errors: Error[];
+	pluginSources: string[];
+}> {
 	const plugins: InlangPlugin[] = [];
+	const pluginSources: string[] = [];
 	const errors: Error[] = [];
 	for (const uri of settings.modules ?? []) {
 		if (!uri.startsWith("http")) continue;
@@ -471,7 +479,10 @@ async function importRemotePlugins(
 				: "data:text/javascript;base64," + btoa(text);
 			try {
 				const { default: plugin } = await import(/* @vite-ignore */ url);
-				if (!plugin.id?.includes("messageLintRule")) plugins.push(plugin);
+				if (!plugin.id?.includes("messageLintRule")) {
+					plugins.push(plugin);
+					pluginSources.push(text);
+				}
 			} finally {
 				if (process.versions.bun) URL.revokeObjectURL(url);
 			}
@@ -481,5 +492,5 @@ async function importRemotePlugins(
 			);
 		}
 	}
-	return { plugins, errors };
+	return { plugins, errors, pluginSources };
 }
