@@ -1,0 +1,1162 @@
+[
+  {
+    "backend": "baseline",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 57.607375000000005,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 36.788583,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 43.26104199999999,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 33.72341700000001,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 36.47525000000002,
+        "type": "snapshot",
+        "bundles": 6401,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 37.57416700000002,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 50.42758300000003,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      }
+    ],
+    "round": 0
+  },
+  {
+    "backend": "stateful",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 65.365208,
+        "type": "reset",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 1.2792500000000047,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 49.825666,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 55.927583999999996,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 51.279708,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 46.78483299999999,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 49.66845799999999,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 0
+  },
+  {
+    "backend": "baseline",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 112.70333299999999,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 98.709416,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 79.27075000000002,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 75.51324999999997,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 73.18450000000001,
+        "type": "snapshot",
+        "bundles": 13301,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 73.85750000000002,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 90.45225000000005,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      }
+    ],
+    "round": 0
+  },
+  {
+    "backend": "stateful",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 125.83866700000002,
+        "type": "reset",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 1.8965829999999926,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 128.18449999999999,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 90.791875,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 94.56120900000002,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 91.43662500000005,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 93.92583300000001,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 0
+  },
+  {
+    "backend": "stateful",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 66.4485,
+        "type": "reset",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 1.34837499999999,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 51.87287499999999,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 53.673417,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 54.30433399999998,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 45.72537500000004,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 66.28362499999997,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 1
+  },
+  {
+    "backend": "baseline",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 63.471625,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 46.85199999999999,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 44.070583,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 48.233416999999974,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 34.00570799999997,
+        "type": "snapshot",
+        "bundles": 6401,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 36.43016600000004,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 36.745708000000036,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      }
+    ],
+    "round": 1
+  },
+  {
+    "backend": "stateful",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 123.46700000000001,
+        "type": "reset",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 2.5691249999999854,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 134.034583,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 101.74120900000003,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 99.81820799999997,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 94.30550000000005,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 99.51312500000006,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 1
+  },
+  {
+    "backend": "baseline",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 118.7695,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 108.890792,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 86.38958300000002,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 84.585917,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 79.53312499999998,
+        "type": "snapshot",
+        "bundles": 13301,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 80.96945800000003,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 96.23679099999993,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      }
+    ],
+    "round": 1
+  },
+  {
+    "backend": "baseline",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 61.464833000000006,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 43.67245799999999,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 44.077708,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 48.800167000000016,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 39.02733299999997,
+        "type": "snapshot",
+        "bundles": 6401,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 42.38466699999998,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 43.051582999999994,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      }
+    ],
+    "round": 2
+  },
+  {
+    "backend": "stateful",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 74.08879200000001,
+        "type": "reset",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 1.388582999999997,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 50.654291999999984,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 53.50770800000001,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 50.09504199999998,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 44.526792,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 44.225667000000044,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 2
+  },
+  {
+    "backend": "baseline",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 105.48429200000001,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 99.713583,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 75.0795,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 80.16308300000003,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 75.42112499999996,
+        "type": "snapshot",
+        "bundles": 13301,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 74.52074999999996,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 90.75120800000002,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      }
+    ],
+    "round": 2
+  },
+  {
+    "backend": "stateful",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 131.091458,
+        "type": "reset",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 2.276707999999985,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 132.550041,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 94.30395800000002,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 92.102125,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 94.2765,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 93.50225,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 2
+  },
+  {
+    "backend": "stateful",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 68.476959,
+        "type": "reset",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 1.4054590000000076,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 52.85187499999999,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 59.117458,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 55.820708999999994,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 46.88345899999996,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 47.06937499999998,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 3
+  },
+  {
+    "backend": "baseline",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 56.979625,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 35.90720900000001,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 42.84575000000001,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 34.76220799999999,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 35.98724999999999,
+        "type": "snapshot",
+        "bundles": 6401,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 36.761540999999994,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 55.855542000000014,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      }
+    ],
+    "round": 3
+  },
+  {
+    "backend": "stateful",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 126.48479099999999,
+        "type": "reset",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 2.1216249999999945,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 126.53475000000003,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 89.90158299999996,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 91.909291,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 99.18991699999998,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 96.09566600000005,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 3
+  },
+  {
+    "backend": "baseline",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 102.064458,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 103.17583299999998,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 75.61170799999996,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 79.131125,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 73.76512500000001,
+        "type": "snapshot",
+        "bundles": 13301,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 74.28445800000003,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 90.65787499999999,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      }
+    ],
+    "round": 3
+  },
+  {
+    "backend": "baseline",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 66.358959,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 40.26391699999999,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 47.853083,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 38.676208,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 41.995834,
+        "type": "snapshot",
+        "bundles": 6401,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 42.38654200000002,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 59.74658400000004,
+        "type": "snapshot",
+        "bundles": 6400,
+        "removed": 0
+      }
+    ],
+    "round": 4
+  },
+  {
+    "backend": "stateful",
+    "size": 6400,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 72.833292,
+        "type": "reset",
+        "bundles": 6400,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 1.401332999999994,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 53.395292,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 57.196916999999985,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 58.688458999999995,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 51.475415999999996,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 48.278666999999984,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 4
+  },
+  {
+    "backend": "baseline",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 118.69375000000001,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 107.01429200000004,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 85.05100000000004,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 79.98774999999995,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 77.38987499999996,
+        "type": "snapshot",
+        "bundles": 13301,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 77.68329199999994,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "format-only",
+        "ms": 92.3007080000001,
+        "type": "snapshot",
+        "bundles": 13300,
+        "removed": 0
+      }
+    ],
+    "round": 4
+  },
+  {
+    "backend": "stateful",
+    "size": 13300,
+    "node": "v24.22.1",
+    "verified": true,
+    "rows": [
+      {
+        "scenario": "first-load",
+        "ms": 147.47424999999998,
+        "type": "reset",
+        "bundles": 13300,
+        "removed": 0
+      },
+      {
+        "scenario": "noop",
+        "ms": 2.988625000000013,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      },
+      {
+        "scenario": "translation",
+        "ms": 167.76183300000002,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "input",
+        "ms": 118.686375,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "add",
+        "ms": 116.48837499999996,
+        "type": "update",
+        "bundles": 1,
+        "removed": 0
+      },
+      {
+        "scenario": "delete",
+        "ms": 102.84437500000001,
+        "type": "update",
+        "bundles": 0,
+        "removed": 1
+      },
+      {
+        "scenario": "format-only",
+        "ms": 125.11291700000004,
+        "type": "update",
+        "bundles": 0,
+        "removed": 0
+      }
+    ],
+    "round": 4
+  }
+]

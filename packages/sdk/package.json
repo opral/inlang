@@ -14,7 +14,7 @@
 	"types": "./dist/index.d.ts",
 	"exports": {
 		".": "./dist/index.js",
-		"./catalog": "./dist/project/loadProjectCatalog.js",
+		"./catalog": "./dist/project/createCatalogLoader.js",
 		"./browser": "./dist/browser.js",
 		"./lix": "./dist/lix/index.js",
 		"./settings-schema": "./src/json-schema/settings.ts",

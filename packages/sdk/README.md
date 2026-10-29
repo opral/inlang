@@ -101,37 +101,47 @@ const project = await loadProjectFromDirectory({
 });
 ```
 
-### Loading a read-only catalog
+### Loading catalog updates
 
-Use `loadProjectCatalog()` when a compiler or other consumer only needs settings
-and nested messages. It reads the same configured translation plugins without
-opening Lix or creating a database.
+Use `createCatalogLoader()` when a compiler needs translation messages without
+opening a database. Each loader owns its cache for one directory project.
 
 ```ts
-import fs from "node:fs";
-import { loadProjectCatalog } from "@inlang/sdk";
+import { createCatalogLoader } from "@inlang/sdk/catalog";
 
-const catalog = await loadProjectCatalog({
-  path: "./project.inlang",
-  fs,
-});
+const loader = createCatalogLoader({ path: "./project.inlang" });
+const initial = await loader.load(); // { type: "reset", settings, bundles, diagnostics }
 
-catalog.settings;
-catalog.bundles;
-catalog.diagnostics; // plugin-loading and resource-file errors
+// After a resource edit:
+const update = await loader.load(); // { type: "update", bundles, removedBundleIds, diagnostics }
 ```
 
-The result is a detached snapshot: there is no `db`, watcher, persistence API, or
-`close()` method. The loader does not write project metadata. Plugin caches are read-only by default.
-Pass `writePluginCache: true` to save downloaded remote plugins for later offline
-loads; cache-write failures reject the call.
-Remote plugins use the network with the existing directory cache as a fallback.
-Missing translation files are skipped; other read errors are returned in
-`diagnostics`, while importer failures reject the call. Consumers must inspect
-these diagnostics before publishing output.
+A reset replaces the complete catalog. Updates contain complete changed bundles,
+including all locales and full pattern ASTs, and IDs of removed bundles. An
+unchanged catalog produces an update with empty arrays. Settings or plugin
+changes reset the catalog. Generated message and variant IDs are opaque bundle
+references; use bundle IDs as the stable translation keys.
+
+Results are detached from the loader's cache. Loads are serialized, and rejected
+loads retain the last successful state. Unreadable resource files reject before
+returning an incomplete catalog; missing files are skipped. Plugin-loading
+errors and deprecation warnings remain in `diagnostics`, which consumers should
+inspect before publishing output. Existing `importFiles()` and legacy plugins
+remain supported, including multiple importers and complete message patterns.
+Importers are treated as transformations of their declared files, metadata and
+settings. A single ordinary importer skips import and normalization when all its input bytes,
+metadata, settings and plugin implementation are unchanged. Changed resources
+still use the plugin's ordinary full import; emitting a small update does not
+imply that only changed messages were parsed internally.
+
+The loader creates no watcher or database and requires no `close()` operation.
+It does not write project metadata. Remote plugins use the network with the
+existing directory cache as an offline fallback. Pass `writePluginCache: true`
+to save downloaded plugins; cache-write failures reject. The optional `fs`
+argument supplies a Node-compatible filesystem for tests or virtual projects.
 
 Use `loadProjectFromDirectory()` for an editable project with queries, history,
-and persistence. This API currently leaves package dependencies unchanged.
+and persistence. This API leaves package dependencies unchanged.
 
 ### Next steps
 

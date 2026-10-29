@@ -1,0 +1,71 @@
+{
+  "backend": "stateful",
+  "size": 200,
+  "node": "v24.22.1",
+  "verified": true,
+  "rows": [
+    {
+      "scenario": "first-load",
+      "ms": 8.104125,
+      "type": "reset",
+      "bundles": 200,
+      "removed": 0
+    },
+    {
+      "scenario": "noop",
+      "ms": 1.0007499999999965,
+      "type": "update",
+      "bundles": 0,
+      "removed": 0
+    },
+    {
+      "scenario": "translation",
+      "ms": 3.8217500000000015,
+      "type": "update",
+      "bundles": 1,
+      "removed": 0
+    },
+    {
+      "scenario": "input",
+      "ms": 2.1642500000000027,
+      "type": "update",
+      "bundles": 1,
+      "removed": 0
+    },
+    {
+      "scenario": "add",
+      "ms": 2.073208000000001,
+      "type": "update",
+      "bundles": 1,
+      "removed": 0
+    },
+    {
+      "scenario": "delete",
+      "ms": 1.6904579999999996,
+      "type": "update",
+      "bundles": 0,
+      "removed": 1
+    },
+    {
+      "scenario": "format-only",
+      "ms": 1.732416999999998,
+      "type": "update",
+      "bundles": 0,
+      "removed": 0
+    },
+    {
+      "scenario": "complex-and-nested",
+      "ms": 9.302292000000001,
+      "type": "update",
+      "bundles": 2,
+      "removed": 0
+    },
+    {
+      "scenario": "remove-namespace",
+      "ms": 4.5417500000000075,
+      "type": "update",
+      "bundles": 0,
+      "removed": 1
+    }
+  ]
+}

@@ -42,6 +42,7 @@ export async function importLocalPlugins(args: {
 }) {
 	const errors: Error[] = [];
 	const locallyImportedPlugins = [];
+	const pluginSources: string[] = [];
 	for (const module of args.settings.modules ?? []) {
 		if (module.startsWith("http")) {
 			continue;
@@ -66,6 +67,7 @@ export async function importLocalPlugins(args: {
 
 			const { default: plugin } = await import(/* @vite-ignore */ pluginAsUrl);
 			locallyImportedPlugins.push(plugin);
+			pluginSources.push(moduleAsText);
 			if (process.versions.bun) URL.revokeObjectURL(pluginAsUrl);
 		} catch (e) {
 			errors.push(new PluginImportError({ plugin: module, cause: e as Error }));
@@ -75,6 +77,7 @@ export async function importLocalPlugins(args: {
 	return {
 		errors,
 		locallyImportedPlugins,
+		pluginSources,
 	};
 }
 
