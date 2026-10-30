@@ -20,6 +20,11 @@ import {
 import type { InlangPlugin } from "../plugin/schema.js";
 import { pluginCachePath } from "../plugin/cache.js";
 import { createMessageV1 } from "../migrations/v2/createMessageV1.js";
+import * as catalogRows from "../import-export/catalogRows.js";
+import { fromMessageV1 } from "../json-schema/old-v1-message/fromMessageV1.js";
+import type { MessageV1 } from "../json-schema/old-v1-message/schemaV1.js";
+import type { BundleNested } from "../database/schema.js";
+import { v7 } from "uuid";
 
 vi.mock("@lix-js/sdk", async () => {
 	const actual =
@@ -277,6 +282,110 @@ test("supports legacy loadMessages through a read-only filesystem", async () => 
 		])
 	);
 	expect(openLix).not.toHaveBeenCalled();
+});
+
+const countMessage = (
+	variants: Array<[string, string, string]>
+): MessageV1 => ({
+	id: "count",
+	alias: {},
+	selectors: [{ type: "VariableReference", name: "count" }],
+	variants: variants.map(([languageTag, match, value]) => ({
+		languageTag,
+		match: [match],
+		pattern: [{ type: "Text", value }],
+	})),
+});
+// Distinct bundles, then repeated ones that upsert onto them.
+const legacyMessages: MessageV1[] = [
+	createMessageV1("a", { en: "A", de: "A de" }),
+	countMessage([
+		["en", "*", "many"],
+		["en", "1", "one"],
+		["de", "1", "eins"],
+	]),
+	createMessageV1("b", { en: "B" }),
+	createMessageV1("a", { en: "A again" }),
+	countMessage([
+		["en", "0", "none"],
+		["en", "1", "just one"],
+		["de", "*", "viele"],
+	]),
+	createMessageV1("c", { de: "C" }),
+];
+const legacyPlugin = (messages: MessageV1[]): InlangPlugin => ({
+	key: "legacy",
+	saveMessages: async () => {},
+	loadMessages: async () => structuredClone(messages),
+});
+/** A catalog without its opaque generated ids. */
+const catalogContent = (bundles: readonly BundleNested[]) =>
+	bundles.map((bundle) => ({
+		id: bundle.id,
+		declarations: bundle.declarations,
+		messages: bundle.messages.map((message) => ({
+			locale: message.locale,
+			selectors: message.selectors,
+			variants: message.variants.map((variant) => ({
+				matches: variant.matches,
+				pattern: variant.pattern,
+			})),
+		})),
+	}));
+
+test("a legacy catalog equals importing its messages one at a time", async () => {
+	const result = await initialCatalog({
+		path: "/project.inlang",
+		fs: filesystem(),
+		providePlugins: [legacyPlugin(legacyMessages)],
+	});
+	const sequential = catalogRows.createCatalogStore(v7);
+	for (const message of legacyMessages) {
+		const bundle = fromMessageV1(message);
+		sequential.import({
+			bundles: [{ id: bundle.id, declarations: bundle.declarations }],
+			messages: bundle.messages.map((value) => ({
+				bundleId: bundle.id,
+				locale: value.locale,
+				selectors: value.selectors,
+			})),
+			variants: bundle.messages.flatMap((value) =>
+				value.variants.map((variant) => ({
+					messageBundleId: bundle.id,
+					messageLocale: value.locale,
+					matches: variant.matches,
+					pattern: variant.pattern,
+				}))
+			),
+		});
+	}
+	expect(catalogContent(result.bundles)).toEqual(
+		catalogContent(sequential.takeBundles())
+	);
+});
+
+test("imports a legacy catalog once per run of distinct bundles", async () => {
+	const imports: string[][] = [];
+	const createStore = catalogRows.createCatalogStore;
+	vi.spyOn(catalogRows, "createCatalogStore").mockImplementation((createId) => {
+		const store = createStore(createId);
+		return {
+			...store,
+			import(rows) {
+				imports.push(rows.bundles.map((bundle) => String(bundle.id)));
+				store.import(rows);
+			},
+		};
+	});
+	await initialCatalog({
+		path: "/project.inlang",
+		fs: filesystem(),
+		providePlugins: [legacyPlugin(legacyMessages)],
+	});
+	expect(imports).toEqual([
+		["a", "count", "b"],
+		["a", "count", "c"],
+	]);
 });
 
 test("rejects importer failures rather than falling back to a database", async () => {
