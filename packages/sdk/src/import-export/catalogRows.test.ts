@@ -222,7 +222,105 @@ describe("compiler catalog import semantics", () => {
 		await differential([input]);
 	});
 
-	test("leaves unsupported merge, selector, identity and reference inputs untouched for the general importer", () => {
+	test("constructs selector and multi-variant catalogs directly in import order", async () => {
+		const selector = (name: string) => ({
+			type: "variable-reference" as const,
+			name,
+		});
+		const plural = (value: string) => [
+			{ type: "literal-match" as const, key: "count", value },
+		];
+		const input = result({
+			bundles: [
+				{
+					id: "items",
+					declarations: [{ type: "input-variable", name: "count" }],
+				},
+				{
+					id: "greeting",
+					declarations: [
+						{ type: "input-variable", name: "count" },
+						{ type: "input-variable", name: "choice" },
+					],
+				},
+				{ id: "empty" },
+			],
+			messages: [
+				{ bundleId: "items", locale: "en", selectors: [selector("count")] },
+				{ bundleId: "items", locale: "ru", selectors: [selector("count")] },
+				{
+					bundleId: "greeting",
+					locale: "en",
+					selectors: [selector("count"), selector("choice")],
+				},
+				{ bundleId: "empty", locale: "en" },
+			],
+			variants: [
+				{
+					messageBundleId: "items",
+					messageLocale: "ru",
+					matches: plural("one"),
+					pattern: text("one ru"),
+				},
+				{
+					messageBundleId: "items",
+					messageLocale: "en",
+					matches: plural("one"),
+					pattern: text("one en"),
+				},
+				...["few", "many"].map((value) => ({
+					messageBundleId: "items",
+					messageLocale: "ru",
+					matches: plural(value),
+					pattern: text(`${value} ru`),
+				})),
+				{
+					messageBundleId: "greeting",
+					messageLocale: "en",
+					matches: [
+						{ key: "choice", value: "a", type: "literal-match" },
+						{ type: "literal-match", key: "count", value: "one" },
+					],
+					pattern: text("one a"),
+				},
+				{
+					messageBundleId: "greeting",
+					messageLocale: "en",
+					matches: [
+						{ type: "literal-match", key: "count", value: "one" },
+						{ type: "catchall-match", key: "choice" },
+					],
+					pattern: text("one other"),
+				},
+				{
+					messageBundleId: "items",
+					messageLocale: "en",
+					matches: [{ type: "catchall-match", key: "count" }],
+					pattern: text("other en"),
+				},
+				{
+					messageBundleId: "items",
+					messageLocale: "ru",
+					matches: plural("other"),
+					pattern: text("other ru"),
+				},
+			],
+		});
+		const items = createFreshCatalog(input)?.find(
+			(bundle) => bundle.id === "items"
+		);
+		expect(
+			items?.messages.map((message) =>
+				message.variants.map((variant) => variant.pattern)
+			)
+		).toEqual([
+			[text("one en"), text("other en")],
+			[text("one ru"), text("few ru"), text("many ru"), text("other ru")],
+		]);
+		await differential([input]);
+	});
+
+	test("leaves unsupported merge, identity and reference inputs untouched for the general importer", () => {
 		const base = result({
 			bundles: [{ id: "b" }],
 			messages: [{ bundleId: "b", locale: "en" }],
@@ -243,25 +341,17 @@ describe("compiler catalog import semantics", () => {
 			}),
 			result({
 				...base,
-				messages: [
-					{
-						bundleId: "b",
-						locale: "en",
-						selectors: [{ type: "variable-reference", name: "choice" }],
-					},
+				variants: [
+					...base.variants,
+					{ messageBundleId: "b", messageLocale: "en", matches: [] },
 				],
 			}),
 			result({
 				...base,
 				variants: [
 					{ messageBundleId: "b", messageLocale: "en", matches: match("a") },
-				],
-			}),
-			result({
-				...base,
-				variants: [
-					...base.variants,
 					{ messageBundleId: "b", messageLocale: "en", matches: match("b") },
+					{ messageBundleId: "b", messageLocale: "en", matches: match("a") },
 				],
 			}),
 			result({
