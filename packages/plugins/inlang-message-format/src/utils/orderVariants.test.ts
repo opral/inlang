@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { Declaration, Match } from "@inlang/sdk";
-import { orderVariants } from "./orderVariants.js";
+import { orderVariants, variantOrders } from "./orderVariants.js";
 
 const plural = (name: string, input: string): Declaration => ({
 	type: "local-variable",
@@ -303,4 +303,99 @@ test("a plural with an offset selects its category after the offset", () => {
 			]
 		)
 	).toStrictEqual(keys);
+});
+
+describe("orders by message shape", () => {
+	const shadowed = ["countPlural=*", "countPlural=one", "count=0"];
+	const shadowedSelectors = ["count", "countPlural"];
+
+	test("a message of a shape seen before gets the order computed for its own variants", () => {
+		const cases: Array<[string[], string[], Declaration[], string]> = [
+			[
+				["countPlural=*", "countPlural=one"],
+				["countPlural"],
+				countPlural,
+				"en",
+			],
+			[
+				shadowed.map((key) => key.replace("count=", "countPluralExact=")),
+				["countPluralExact", "countPlural"],
+				exactPlural,
+				"fr",
+			],
+			[
+				["countPlural=one", "countPlural=*"],
+				["countPlural"],
+				countPlural,
+				"ru",
+			],
+		];
+		for (const [keys, selectors, declarations, locale] of cases) {
+			variantOrders.clear();
+			const fresh = order(keys, selectors, declarations, locale);
+			// Another message of the same shape: the same keys, its own variants.
+			const reused = orderVariants(
+				keys.map((key) => ({ ...variant(key), pattern: [key] })),
+				selectors,
+				declarations,
+				locale
+			);
+			expect(variantOrders.size).toBe(1);
+			expect(reused.map((v) => v.keys)).toEqual(fresh);
+			expect(reused.map((v) => v.pattern)).toEqual(fresh.map((key) => [key]));
+		}
+	});
+
+	test("messages of one shape compute their order once", () => {
+		variantOrders.clear();
+		for (let message = 0; message < 100; message++)
+			order(shadowed, shadowedSelectors, [
+				input("count"),
+				plural("countPlural", "count"),
+			]);
+		expect(variantOrders.size).toBe(1);
+	});
+
+	test("the locale, an exact key, an ordinal or an offset is a different shape", () => {
+		variantOrders.clear();
+		const keys = ["countPlural=one", "countPlural=*"];
+		order(keys, ["countPlural"], countPlural, "en");
+		order(keys, ["countPlural"], countPlural, "fr");
+		order(
+			["countPlural=1", "countPlural=*"],
+			["countPlural"],
+			countPlural,
+			"en"
+		);
+		const withOption = (name: string, value: string): Declaration[] => [
+			input("count"),
+			{
+				type: "local-variable",
+				name: "countPlural",
+				value: {
+					type: "expression",
+					arg: { type: "variable-reference", name: "count" },
+					annotation: {
+						type: "function-reference",
+						name: "plural",
+						options: [{ name, value: { type: "literal", value } }],
+					},
+				},
+			},
+		];
+		order(keys, ["countPlural"], withOption("type", "ordinal"), "en");
+		order(keys, ["countPlural"], withOption("offset", "1"), "en");
+		expect(variantOrders.size).toBe(5);
+	});
+
+	test("keeps at most 1024 orders", () => {
+		variantOrders.clear();
+		for (let shape = 0; shape < 1100; shape++)
+			order(
+				[`countPlural=${shape}`, "countPlural=*"],
+				["countPlural"],
+				countPlural
+			);
+		expect(variantOrders.size).toBe(1024);
+	});
 });

@@ -31,8 +31,46 @@ export function orderVariants<V extends Pick<Variant, "matches">>(
 	const kinds = new Map(
 		selectors.map((selector) => [selector, kindOf(selector, declarations)])
 	);
+	// The order depends only on the keys, what each selector selects by and
+	// the locale's plural rules, which many messages of a catalog share.
+	const shape = JSON.stringify([
+		locale,
+		selectors.map((selector) => [selector, kinds.get(selector)]),
+		variants.map((variant) =>
+			selectors.map((selector) => {
+				const match = keyOf(variant, selector);
+				if (match === undefined) return null;
+				return match.type === "literal-match" ? [match.value] : "*";
+			})
+		),
+	]);
+	let order = variantOrders.get(shape);
+	if (order === undefined) {
+		order = variantOrder(variants, selectors, kinds, locale) ?? "kept";
+		const oldest = variantOrders.keys().next();
+		if (variantOrders.size >= VARIANT_ORDERS_LIMIT && !oldest.done)
+			variantOrders.delete(oldest.value);
+	} else variantOrders.delete(shape);
+	variantOrders.set(shape, order);
+	return order === "kept" ? variants : order.map((index) => variants[index]!);
+}
+
+/**
+ * The orders computed for message shapes (see `orderVariants`), least
+ * recently used first: variant indexes, or "kept" for the file order.
+ */
+export const variantOrders = new Map<string, readonly number[] | "kept">();
+const VARIANT_ORDERS_LIMIT = 1024;
+
+/** The indexes of `variants` in file order, or undefined to keep them as they are. */
+function variantOrder<V extends Pick<Variant, "matches">>(
+	variants: V[],
+	selectors: string[],
+	kinds: Map<string, Kind>,
+	locale: string
+): number[] | undefined {
 	const inputs = selectedVariants(variants, selectors, kinds, locale);
-	if (inputs === undefined) return variants;
+	if (inputs === undefined) return undefined;
 
 	const ranks = variants.map((variant) =>
 		selectors.map((selector) => {
@@ -69,7 +107,7 @@ export function orderVariants<V extends Pick<Variant, "matches">>(
 	const order = variants.map((_, index) => index);
 	for (let step = 0; step < variants.length; step++) {
 		const variant = unreachable(order);
-		if (variant === undefined) return order.map((index) => variants[index]!);
+		if (variant === undefined) return order;
 		const at = order.indexOf(variant);
 		// the earliest place before variants it is preferred over, without
 		// passing a variant that shares an input and is preferred over it
@@ -86,9 +124,8 @@ export function orderVariants<V extends Pick<Variant, "matches">>(
 	}
 	// moving single variants doesn't make all of them selectable
 	return variants
-		.map((variant, index) => ({ variant, index }))
-		.sort((a, b) => compare(a.index, b.index) || a.index - b.index)
-		.map((entry) => entry.variant);
+		.map((_, index) => index)
+		.sort((a, b) => compare(a, b) || a - b);
 }
 
 /**
