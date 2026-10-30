@@ -66,9 +66,33 @@ Configuration happens in `project.inlang/settings.json` under the `"plugin.inlan
 
 ### `pathPattern`
 
-You can define a single `pathPattern` or provide an array of patterns to split your messages across multiple JSON files. Messages from **all matching files will be merged**, and if the same message key appears in multiple files, the **value from the last file in the array will override** earlier ones. The placeholder should be `{locale}` (preferred) or `{languageTag}` (legacy, still supported).
+You can define a single `pathPattern` or provide an array of patterns to split your messages across multiple JSON files. Messages from **all matching files will be merged**, and if the same message key appears in multiple files, the **value from the last file in the array will override** earlier ones. The placeholder should be `{locale}` (preferred), `{language}` (the primary language subtag of the locale, e.g. `en` for `en-US`), or `{languageTag}` (legacy, still supported).
 
 This allows for patterns like having a shared base file and extending or overriding it with domain- or customer-specific files.
+
+#### Placeholder reference
+
+| Configured locale | `{locale}` | `{language}` |
+|---|---|---|
+| `en-US` | `en-US` | `en` |
+| `fr-FR` | `fr-FR` | `fr` |
+| `pt-BR` | `pt-BR` | `pt` |
+| `zh-Hant-TW` | `zh-Hant-TW` | `zh` |
+
+Use `{locale}` when regional variants have their own translation files, and `{language}` when files are organized by base language:
+
+```json
+{
+	"plugin.inlang.messageFormat": {
+		"pathPattern": "./messages/{language}.json"
+	}
+}
+```
+
+With the locales `["en-US", "fr-FR"]` in `project.inlang/settings.json`, the pattern above reads and writes `./messages/en.json` and `./messages/fr.json`.
+
+> [!WARNING]
+> Locales that share a primary language, like `en-US` and `en-GB`, resolve to the **same file** with `{language}`. Use `{locale}` when separate regional translation files are needed.
 
 #### Single path pattern example
 

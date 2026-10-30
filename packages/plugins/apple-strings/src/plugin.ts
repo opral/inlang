@@ -8,6 +8,7 @@ import type {
   VariantImport,
 } from "@inlang/sdk";
 import { PluginSettings } from "./settings.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 import {
   mergeEntries,
   type Comment,
@@ -31,12 +32,24 @@ export const plugin: InlangPlugin<Config> = {
   toBeImportedFiles: ({ settings }) =>
     settings.locales.map((locale) => ({
       locale,
-      path: settings[PLUGIN_KEY].pathPattern.replace("{locale}", locale),
+      path: resolvePathPattern(settings[PLUGIN_KEY].pathPattern, locale),
     })),
   importFiles: ({ files }: ImportArgs) => importAppleStrings(files),
   exportFiles: (args: ExportArgs) =>
     keepUnchangedEntries(exportAppleStrings(args), args),
 };
+
+/**
+ * Replaces the `{locale}` placeholder with the locale and the `{language}`
+ * placeholder with its primary language subtag, e.g. `en` for `en-US`.
+ */
+function resolvePathPattern(pathPattern: string, locale: string): string {
+  return pathPattern.replace(
+    /\{(locale|language)\}/g,
+    (_, placeholder) =>
+      placeholder === "language" ? getPrimaryLanguageSubtag(locale) : locale,
+  );
+}
 
 function importAppleStrings(files: ImportArgs["files"]): {
   bundles: Bundle[];
@@ -266,9 +279,10 @@ function exportAppleStrings({
   }
   return [...files].map(([locale, lines]) => ({
     locale,
-    name:
-      settings[PLUGIN_KEY]?.pathPattern.replace("{locale}", locale) ??
-      `${locale}.lproj/Localizable.strings`,
+    name: resolvePathPattern(
+      settings[PLUGIN_KEY]?.pathPattern ?? "{locale}.lproj/Localizable.strings",
+      locale
+    ),
     content: encode(`${lines.sort().join("\n")}\n`),
   }));
 }

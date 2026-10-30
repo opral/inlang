@@ -1,6 +1,7 @@
 import type { InlangPlugin } from "@inlang/sdk";
 import type { PluginSettings } from "../settings.js";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 
 export const toBeImportedFiles: NonNullable<
 	InlangPlugin<{ [PLUGIN_KEY]: PluginSettings }>["toBeImportedFiles"]
@@ -49,5 +50,9 @@ export const toBeImportedFiles: NonNullable<
 };
 
 function replaceLocale(path: string, locale: string): string {
-	return path.replace(/{(locale|languageTag)}/g, locale);
+	return path.replace(
+		/{(languageTag|locale|language)}/g,
+		(_, placeholder) =>
+			placeholder === "language" ? getPrimaryLanguageSubtag(locale) : locale
+	);
 }

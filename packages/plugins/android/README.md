@@ -30,3 +30,10 @@ Indonesian and Yiddish (`values-iw/`); if both `values-he/` and `values-iw/`
 exist, `values-he/` is read and written. The language is written lowercase. A
 locale with files in two spellings is rejected, because inlang writes all
 messages of a locale to one file.
+
+`{language}` expands to the Android qualifier of the primary language subtag
+of the locale, e.g. `de-DE` uses `-de` and `zh-Hant-TW` uses `-zh`, so that
+files can be organized by base language. Like `{locale}`, the base locale uses
+no suffix, because Android requires default resources in the directory without
+one. Locales that share a primary language, like `en-US` and `en-GB`, resolve
+to the same file with `{language}`.

@@ -9,6 +9,7 @@ import { importFiles } from "./import-export/importFiles.js";
 import { exportFiles } from "./import-export/exportFiles.js";
 import { toBeImportedFiles } from "./import-export/toBeImportedFiles.js";
 import { PLUGIN_KEY } from "./pluginKey.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 import { analyzeUsage } from "./usage/analyzeUsage.js";
 
 // global variable to store the formatting of the file
@@ -160,7 +161,7 @@ async function getFileToParse(
 	pathWithLanguage?: string
 ): Promise<Record<string, string>> {
 	if (typeof pathWithLanguage === "undefined") {
-		pathWithLanguage = path.replace(/\{(languageTag|locale)\}/g, languageTag);
+		pathWithLanguage = replaceLocale(path, languageTag);
 	}
 	// get file, make sure that is not braking when the namespace doesn't exist in every languageTag dir
 	try {
@@ -353,7 +354,11 @@ function assertLegacyStringPathPattern(
 }
 
 function replaceLocale(pathPattern: string, locale: string): string {
-	return pathPattern.replace(/\{(languageTag|locale)\}/g, locale);
+	return pathPattern.replace(
+		/{(languageTag|locale|language)}/g,
+		(_, placeholder) =>
+			placeholder === "language" ? getPrimaryLanguageSubtag(locale) : locale
+	);
 }
 
 /**

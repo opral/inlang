@@ -14,6 +14,33 @@ const settings = {
 };
 
 describe("Android resources plugin", () => {
+  test("resolves the {language} placeholder to the Android qualifier of the primary language subtag", async () => {
+    const androidSettings = {
+      ...settings,
+      baseLocale: "en-US",
+      locales: ["en-US", "pt-BR", "zh-Hant-TW"],
+      [PLUGIN_KEY]: { pathPattern: "./res/values{language}/strings.xml" },
+    };
+    expect(
+      plugin.toBeImportedFiles?.({ settings: androidSettings }),
+    ).toEqual([
+      {
+        locale: "en-US",
+        path: "./res/values/strings.xml",
+        metadata: { path: "./res/values/strings.xml" },
+      },
+      {
+        locale: "pt-BR",
+        path: "./res/values-pt/strings.xml",
+        metadata: { path: "./res/values-pt/strings.xml" },
+      },
+      {
+        locale: "zh-Hant-TW",
+        path: "./res/values-zh/strings.xml",
+        metadata: { path: "./res/values-zh/strings.xml" },
+      },
+    ]);
+  });
   test("round-trips exact keys, escaping, variables, and plurals", async () => {
     const source = `<?xml version="1.0" encoding="utf-8"?>
 <resources>

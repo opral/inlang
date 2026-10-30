@@ -10,6 +10,7 @@ import type {
 import { PluginSettings } from "./settings.js";
 import { parseMessage } from "./parse.js";
 import { serializeMessage } from "./serialize.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 import {
   keepUnchangedJsonEntries,
   stringifyJsonKeepingEntries,
@@ -31,6 +32,18 @@ type ExportFilesArgs = Parameters<
   NonNullable<InlangPlugin<PluginConfig>["exportFiles"]>
 >[0];
 
+/**
+ * Replaces the `{locale}` placeholder with the locale and the `{language}`
+ * placeholder with its primary language subtag, e.g. `en` for `en-US`.
+ */
+function resolvePathPattern(pathPattern: string, locale: string): string {
+  return pathPattern.replace(
+    /\{(locale|language)\}/g,
+    (_, placeholder) =>
+      placeholder === "language" ? getPrimaryLanguageSubtag(locale) : locale,
+  );
+}
+
 export const plugin: InlangPlugin<PluginConfig> = {
   key: PLUGIN_KEY,
   settingsSchema: PluginSettings,
@@ -47,7 +60,7 @@ export const plugin: InlangPlugin<PluginConfig> = {
       for (const locale of settings.locales) {
         files.push({
           locale,
-          path: pathPattern.replace(/{locale}/, locale),
+          path: resolvePathPattern(pathPattern, locale),
         });
       }
     }
@@ -332,7 +345,7 @@ function exportWholeFiles({
   return Object.entries(result).flatMap(([locale, messagesByKey]) =>
     formattedPathPatterns.map((pattern) => ({
       locale,
-      name: pattern.replace(/{locale}/, locale),
+      name: resolvePathPattern(pattern, locale),
       content: encoder.encode(JSON.stringify(messagesByKey, undefined, "\t")),
       // each file to its own path if there are several path patterns
       ...(Array.isArray(pathPattern)

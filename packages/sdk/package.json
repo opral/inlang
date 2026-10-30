@@ -18,7 +18,8 @@
 		"./browser": "./dist/browser.js",
 		"./lix": "./dist/lix/index.js",
 		"./settings-schema": "./src/json-schema/settings.ts",
-		"./json-formatting": "./dist/utilities/detectJsonFormatting.js"
+		"./json-formatting": "./dist/utilities/detectJsonFormatting.js",
+		"./language-subtag": "./dist/utilities/languageSubtag.js"
 	},
 	"files": [
 		"./dist",

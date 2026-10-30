@@ -38,7 +38,7 @@ Configuration happens in `project.inlang/settings.json` under `"plugin.inlang.ic
 
 ### `pathPattern`
 
-You can define a single `pathPattern` or provide an array of patterns. The placeholder should be `{locale}`.
+You can define a single `pathPattern` or provide an array of patterns. The placeholder should be `{locale}`, or `{language}` for the primary language subtag of the locale, e.g. `en` for `en-US`. Locales that share a primary language, like `en-US` and `en-GB`, resolve to the same file with `{language}`; use `{locale}` when separate regional files are needed.
 
 #### Single path pattern example
 

@@ -178,6 +178,92 @@ test("creates exporter target directories from pathPattern", async () => {
 	expect(JSON.parse(exported as string)).toEqual({ greeting: "Hi" });
 });
 
+test("resolves the {language} placeholder to the primary language subtag", async () => {
+	const volume = Volume.fromJSON({});
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		exportFiles: async () => [
+			{
+				locale: "en-US",
+				name: "en-US.json",
+				content: new TextEncoder().encode(JSON.stringify({ greeting: "Hi" })),
+			},
+			{
+				locale: "zh-Hant-TW",
+				name: "zh-Hant-TW.json",
+				content: new TextEncoder().encode(
+					JSON.stringify({ greeting: "Ni hao" })
+				),
+			},
+		],
+	};
+
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: {
+				baseLocale: "en-US",
+				locales: ["en-US", "zh-Hant-TW"],
+				modules: [],
+				mock: {
+					pathPattern: "./messages/{language}.json",
+				},
+			},
+		}),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		fs: volume as any,
+		project,
+		path: "/foo/bar.inlang",
+	});
+
+	const en = await volume.promises.readFile("/foo/messages/en.json", "utf-8");
+	expect(JSON.parse(en as string)).toEqual({ greeting: "Hi" });
+	const zh = await volume.promises.readFile("/foo/messages/zh.json", "utf-8");
+	expect(JSON.parse(zh as string)).toEqual({ greeting: "Ni hao" });
+});
+
+test("resolves the legacy {languageTag} placeholder like {locale}", async () => {
+	const volume = Volume.fromJSON({});
+	const mockPlugin: InlangPlugin = {
+		key: "mock",
+		exportFiles: async () => [
+			{
+				locale: "en-US",
+				name: "en-US.json",
+				content: new TextEncoder().encode(JSON.stringify({ greeting: "Hi" })),
+			},
+		],
+	};
+
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: {
+				baseLocale: "en-US",
+				locales: ["en-US"],
+				modules: [],
+				mock: {
+					pathPattern: "./messages/{languageTag}.json",
+				},
+			},
+		}),
+		providePlugins: [mockPlugin],
+	});
+
+	await saveProjectToDirectory({
+		fs: volume as any,
+		project,
+		path: "/foo/bar.inlang",
+	});
+
+	const exported = await volume.promises.readFile(
+		"/foo/messages/en-US.json",
+		"utf-8"
+	);
+	expect(JSON.parse(exported as string)).toEqual({ greeting: "Hi" });
+});
+
 test("writes exported files to every pattern of a pathPattern array", async () => {
 	const volume = Volume.fromJSON({});
 	const mockPlugin: InlangPlugin = {

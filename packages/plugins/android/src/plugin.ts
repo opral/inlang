@@ -16,6 +16,7 @@ import {
   type EntryText,
 } from "./mergeEntries.js";
 import { isFalse, scanResources, type ScannedEntry } from "./scanResources.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 
 export const PLUGIN_KEY = "plugin.inlang.android";
 type Config = { [PLUGIN_KEY]: PluginSettings };
@@ -38,17 +39,32 @@ export const plugin: InlangPlugin<Config> = {
   settingsSchema: PluginSettings,
   // Every spelling of the qualifier of a locale, the preferred one first
   // (e.g. `values-pt-rBR` and `values-b+pt+BR`). Missing files are skipped.
-  toBeImportedFiles: ({ settings }) =>
-    settings.locales.flatMap((locale) =>
-      androidLocaleSuffixes(locale, settings.baseLocale).map((suffix) => {
-        const path = androidPath(settings[PLUGIN_KEY].pathPattern, suffix);
-        return {
-          locale,
-          path,
-          metadata: { path, ...(legacySuffix(suffix) ? { legacy: true } : {}) },
-        };
-      }),
-    ),
+  // A pattern with `{language}` resolves the spellings of a locale to the
+  // same language-only path, which is listed once.
+  toBeImportedFiles: ({ settings }) => {
+    const seen = new Set<string>();
+    return settings.locales
+      .flatMap((locale) => {
+        const languageSuffix = androidLanguageSuffix(locale, settings.baseLocale);
+        return androidLocaleSuffixes(locale, settings.baseLocale).map(
+          (suffix) => {
+            const path = androidPath(
+              settings[PLUGIN_KEY].pathPattern,
+              suffix,
+              languageSuffix,
+            );
+            return {
+              locale,
+              path,
+              metadata: { path, ...(legacySuffix(suffix) ? { legacy: true } : {}) },
+            };
+          },
+        );
+      })
+      .filter((file) =>
+        seen.has(file.path) ? false : (seen.add(file.path), true),
+      );
+  },
   importFiles: ({ files }: ImportArgs) => {
     // AAPT2 reads `values-iw` and `values-he` as two configurations; of
     // both, the current code wins, as before
@@ -933,6 +949,7 @@ function exportAndroidFiles({
     name: androidPath(
       settings[PLUGIN_KEY]?.pathPattern ?? "res/values{locale}/strings.xml",
       androidLocaleSuffixes(locale, settings.baseLocale)[0]!,
+      androidLanguageSuffix(locale, settings.baseLocale),
     ),
     content: encode(
       `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n${lines.sort().join("\n")}\n</resources>\n`,
@@ -1313,8 +1330,23 @@ function androidLocaleSuffixes(locale: string, baseLocale: string): string[] {
     : suffixes;
 }
 
-function androidPath(pattern: string, suffix: string) {
-  return pattern.replace(/\{(?:locale|languageTag)\}/g, suffix);
+function androidPath(pattern: string, suffix: string, languageSuffix?: string) {
+  // `{language}` resolves to the qualifier of the primary language subtag,
+  // e.g. `-de` for `de-DE`, so that files can be organized by base language
+  return pattern
+    .replace(/\{(?:locale|languageTag)\}/g, suffix)
+    .replace(/\{language\}/g, languageSuffix ?? suffix);
+}
+
+/**
+ * The qualifier of the `{language}` placeholder: the primary language subtag
+ * of the locale, e.g. `-de` for `de-DE` and `-zh` for `zh-Hant-TW`. The base
+ * locale uses no qualifier, like `{locale}`, because Android requires default
+ * resources in the directory without one.
+ */
+function androidLanguageSuffix(locale: string, baseLocale: string): string {
+  if (locale === baseLocale) return "";
+  return androidLocaleSuffixes(getPrimaryLanguageSubtag(locale), baseLocale)[0]!;
 }
 
 /** Names are unique per resource type and product (`product="tablet"`). */

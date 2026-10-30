@@ -1,5 +1,6 @@
 import type { plugin } from "../plugin.js";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 
 export const toBeImportedFiles: NonNullable<
 	(typeof plugin)["toBeImportedFiles"]
@@ -14,7 +15,13 @@ export const toBeImportedFiles: NonNullable<
 		for (const locale of settings.locales) {
 			result.push({
 				locale,
-				path: pathPattern.replace(/{(locale|languageTag)}/g, locale),
+				path: pathPattern.replace(
+					/{(languageTag|locale|language)}/g,
+					(_, placeholder) =>
+						placeholder === "language"
+							? getPrimaryLanguageSubtag(locale)
+							: locale
+				),
 			});
 		}
 	}

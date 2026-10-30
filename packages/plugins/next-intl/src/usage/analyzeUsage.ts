@@ -6,6 +6,7 @@ import type {
 	UsageReference,
 } from "@inlang/sdk";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { getPrimaryLanguageSubtag } from "@inlang/sdk/language-subtag";
 import { extractMdx, type Segment } from "./mdx.js";
 
 /**
@@ -209,7 +210,8 @@ function parseScript(path: string, content: string): Node {
 
 /**
  * How to recognize the message files: the tails of their paths per locale
- * (`en.json` for `./messages/{locale}.json`, `en/home.json` for
+ * (`en.json` for `./messages/{locale}.json` and for
+ * `./messages/{language}.json` if the locale is `en`, `en/home.json` for
  * `./messages/{locale}/home.json`) with the namespace a file of a namespaced
  * `pathPattern` holds, what follows the locale in a pattern (`/home.json`)
  * for paths built at runtime, and the directories that hold them
@@ -239,7 +241,7 @@ function catalogFiles(
 		...(Array.isArray(settings.locales) ? settings.locales : []),
 	].filter((locale): locale is string => typeof locale === "string");
 	const result: CatalogFiles = { files: [], suffixes: [], directories: [] };
-	const placeholder = /\{(?:locale|languageTag)\}/;
+	const placeholder = /\{(?:locale|languageTag|language)\}/;
 	for (const { pattern, namespace } of patterns) {
 		const segments = pattern
 			.split("/")
@@ -251,7 +253,13 @@ function catalogFiles(
 				tail: segments
 					.slice(first)
 					.join("/")
-					.replace(new RegExp(placeholder, "g"), locale)
+					.replace(
+						new RegExp(placeholder.source, "g"),
+						(match) =>
+							match === "{language}"
+								? getPrimaryLanguageSubtag(locale)
+								: locale
+					)
 					.toLowerCase(),
 				namespace,
 			});

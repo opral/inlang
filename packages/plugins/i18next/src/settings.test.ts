@@ -77,6 +77,13 @@ test("if curly brackets {} does to cointain the word languageTag", async () => {
 	expect(isValid).toBe(false);
 });
 
+test("the pathPattern can contain the {language} placeholder", async () => {
+	const isValid = Value.Check(PluginSettings, {
+		pathPattern: "./{language}.json",
+	});
+	expect(isValid).toBe(true);
+});
+
 test("if pathPattern doesn't includes a '*' wildcard. This was deprecated in version 3.0.0.", async () => {
 	const pathPattern = "./{locale}/*.json";
 	const isValid = Value.Check(PluginSettings, {

@@ -31,7 +31,30 @@ test("the file path pattern can contain the {languageTag} placeholder for legacy
 		"./src/i18n/{languageTag}.json",
 		"./translations/{languageTag}.json",
 	];
-	const invalid = ["./messages/messages.json", "./messages/{language}.json"];
+	const invalid = ["./messages/messages.json", "./messages/{invalid}.json"];
+	for (const path of valid) {
+		expect(
+			Value.Check(PluginSettings, {
+				pathPattern: path,
+			} satisfies PluginSettings)
+		).toBe(true);
+	}
+	for (const path of invalid) {
+		expect(
+			Value.Check(PluginSettings, {
+				pathPattern: path,
+			} satisfies PluginSettings)
+		).toBe(false);
+	}
+});
+
+test("the file path pattern can contain the {language} placeholder", () => {
+	const valid = [
+		"./messages/{language}.json",
+		"./src/i18n/{language}.json",
+		"./translations/{language}.json",
+	];
+	const invalid = ["./messages/messages.json", "./messages/{language}.js"];
 	for (const path of valid) {
 		expect(
 			Value.Check(PluginSettings, {

@@ -28,6 +28,7 @@ export * from "./helper.js";
 export * from "./query-utilities/index.js";
 export * from "./plugin/errors.js";
 export { humanId } from "./human-id/human-id.js";
+export { getPrimaryLanguageSubtag } from "./utilities/languageSubtag.js";
 export type { InlangDatabaseSchema } from "./database/schema.js";
 export { executeLixBatch } from "./database/lixBatch.js";
 export type { ImportFile, ExportFile, ExistingFile } from "./project/api.js";

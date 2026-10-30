@@ -168,7 +168,7 @@ ordinal category. The exact `_zero` override applies only to cardinal lookups;
 
 ## `pathPattern`
 
-To use our plugin, you need to provide a path to the directory where your language-specific files are stored. Use the dynamic path syntax `{locale}` to specify the language name.
+To use our plugin, you need to provide a path to the directory where your language-specific files are stored. Use the dynamic path syntax `{locale}` to specify the language name. `{language}` resolves to the primary language subtag of the locale, e.g. `en` for `en-US`, when files are organized by base language instead. Locales that share a primary language, like `en-US` and `en-GB`, resolve to the same file with `{language}`; use `{locale}` when separate regional files are needed.
 
 ### pathPattern without namespaces
 

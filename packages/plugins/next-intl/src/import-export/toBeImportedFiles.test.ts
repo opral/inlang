@@ -25,6 +25,52 @@ test("returns files for a single path pattern", async () => {
 	]);
 });
 
+test("resolves the {language} placeholder to the primary language subtag", async () => {
+	const result = await toBeImportedFiles({
+		settings: {
+			baseLocale: "en-US",
+			locales: ["en-US", "fr-FR", "zh-Hant-TW"],
+			"plugin.inlang.nextIntl": {
+				pathPattern: "/messages/{language}.json",
+			},
+		},
+	} as any);
+
+	expect(result).toEqual([
+		{ locale: "en-US", path: "/messages/en.json" },
+		{ locale: "fr-FR", path: "/messages/fr.json" },
+		{ locale: "zh-Hant-TW", path: "/messages/zh.json" },
+	]);
+});
+
+test("resolves {language} next to {locale} and {languageTag}", async () => {
+	const result = await toBeImportedFiles({
+		settings: {
+			baseLocale: "en-US",
+			locales: ["en-US"],
+			"plugin.inlang.nextIntl": {
+				pathPattern: {
+					About: "/messages/{locale}/{language}/About.json",
+					HomePage: "/messages/{languageTag}/{language}.json",
+				},
+			} satisfies PluginSettings,
+		} as any,
+	});
+
+	expect(result).toEqual([
+		{
+			locale: "en-US",
+			path: "/messages/en-US/en/About.json",
+			metadata: { namespace: "About" },
+		},
+		{
+			locale: "en-US",
+			path: "/messages/en-US/en.json",
+			metadata: { namespace: "HomePage" },
+		},
+	]);
+});
+
 test("returns files for namespace path patterns", async () => {
 	const result = await toBeImportedFiles({
 		settings: {

@@ -12,6 +12,32 @@ const settings = {
 };
 
 describe("Apple strings plugin", () => {
+  test("resolves the {language} placeholder to the primary language subtag", async () => {
+    expect(
+      plugin.toBeImportedFiles?.({
+        settings: {
+          ...settings,
+          locales: ["en-US", "pt-BR", "zh-Hant-TW"],
+          [PLUGIN_KEY]: {
+            pathPattern: "./Localizations/{language}.lproj/Localizable.strings",
+          },
+        },
+      }),
+    ).toEqual([
+      {
+        locale: "en-US",
+        path: "./Localizations/en.lproj/Localizable.strings",
+      },
+      {
+        locale: "pt-BR",
+        path: "./Localizations/pt.lproj/Localizable.strings",
+      },
+      {
+        locale: "zh-Hant-TW",
+        path: "./Localizations/zh.lproj/Localizable.strings",
+      },
+    ]);
+  });
   test("round-trips exact keys, escapes, Unicode, and positional variables", async () => {
     const source = `/* Translator note */
 "ManageSale.PricePlaceholder" = "Hello \\"world\\" %1$@";

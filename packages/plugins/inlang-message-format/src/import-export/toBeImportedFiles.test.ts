@@ -108,6 +108,73 @@ test("toBeImportedFiles should work with languageTag as setting for backward com
 	]);
 });
 
+test("toBeImportedFiles should work with language as setting", async () => {
+	const result = await toBeImportedFiles({
+		settings: {
+			baseLocale: "en",
+			locales: ["en", "de"],
+			"plugin.inlang.messageFormat": {
+				pathPattern: "/translations/{language}.json",
+			},
+		},
+	});
+
+	expect(result).toEqual([
+		{
+			locale: "en",
+			path: "/translations/en.json",
+		},
+		{
+			locale: "de",
+			path: "/translations/de.json",
+		},
+	]);
+});
+
+test.each([
+	["en-US", "/translations/en.json"],
+	["fr-FR", "/translations/fr.json"],
+	["pt-BR", "/translations/pt.json"],
+	["zh-Hant-TW", "/translations/zh.json"],
+])(
+	"toBeImportedFiles resolves {language} from the primary language subtag of %s",
+	async (locale, expectedPath) => {
+		const result = await toBeImportedFiles({
+			settings: {
+				baseLocale: "en-US",
+				locales: [locale],
+				"plugin.inlang.messageFormat": {
+					pathPattern: "/translations/{language}.json",
+				},
+			},
+		});
+
+		expect(result).toEqual([
+			{
+				locale,
+				path: expectedPath,
+			},
+		]);
+	}
+);
+
+test("toBeImportedFiles resolves {language} and {locale} in the same pathPattern", async () => {
+	const result = await toBeImportedFiles({
+		settings: {
+			baseLocale: "en-US",
+			locales: ["en-US", "fr-FR"],
+			"plugin.inlang.messageFormat": {
+				pathPattern: "/translations/{language}/{locale}.json",
+			},
+		},
+	});
+
+	expect(result).toEqual([
+		{ locale: "en-US", path: "/translations/en/en-US.json" },
+		{ locale: "fr-FR", path: "/translations/fr/fr-FR.json" },
+	]);
+});
+
 test("toBeImportedFiles should work with both locale and languageTag and multiple pathPatterns", async () => {
 	const result = await toBeImportedFiles({
 		settings: {

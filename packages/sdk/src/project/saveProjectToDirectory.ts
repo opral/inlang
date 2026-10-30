@@ -5,6 +5,7 @@ import path from "node:path";
 import { toMessageV1 } from "../json-schema/old-v1-message/toMessageV1.js";
 import { absolutePathFromProject, withAbsolutePaths } from "./path-helpers.js";
 import { detectJsonFormatting } from "../utilities/detectJsonFormatting.js";
+import { getPrimaryLanguageSubtag } from "../utilities/languageSubtag.js";
 import { selectBundleNested } from "../query-utilities/selectBundleNested.js";
 import { README_CONTENT } from "./README_CONTENT.js";
 import { selectPluginRows } from "../import-export/pluginRows.js";
@@ -317,7 +318,13 @@ export async function saveProjectToDirectory(args: {
 				const resolvePattern = (pattern: string) =>
 					absolutePathFromProject(
 						args.path,
-						pattern.replace(/\{(languageTag|locale)\}/g, file.locale)
+						pattern.replace(
+							/\{(languageTag|locale|language)\}/g,
+							(placeholder) =>
+								placeholder === "{language}"
+									? getPrimaryLanguageSubtag(file.locale)
+									: file.locale
+						)
 					);
 
 				// pathPattern can be a string, an array of strings, or a record

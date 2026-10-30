@@ -70,7 +70,7 @@ type PluginSettings = {
 
 ## `pathPattern`
 
-To use the plugin, you must provide a path to the directory where your language-specific files are stored. Use the dynamic path syntax `{locale}` to specify the locale name.
+To use the plugin, you must provide a path to the directory where your language-specific files are stored. Use the dynamic path syntax `{locale}` to specify the locale name. `{language}` resolves to the primary language subtag of the locale, e.g. `en` for `en-US`, when files are organized by base language instead. Locales that share a primary language, like `en-US` and `en-GB`, resolve to the same file with `{language}`; use `{locale}` when separate regional files are needed.
 
 `{languageTag}` is still supported for legacy projects, but `{locale}` is recommended for new configurations.
 

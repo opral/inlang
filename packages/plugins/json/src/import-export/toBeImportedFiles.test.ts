@@ -19,6 +19,24 @@ test("discovers modern and legacy locale placeholders", async () => {
 	]);
 });
 
+test("resolves the {language} placeholder to the primary language subtag", async () => {
+	const files = await toBeImportedFiles({
+		settings: {
+			baseLocale: "en-US",
+			locales: ["en-US", "fr-FR", "zh-Hant-TW"],
+			"plugin.inlang.json": {
+				pathPattern: "/messages/{language}.json",
+			} satisfies PluginSettings,
+		} as any,
+	});
+
+	expect(files).toEqual([
+		{ locale: "en-US", path: "/messages/en.json" },
+		{ locale: "fr-FR", path: "/messages/fr.json" },
+		{ locale: "zh-Hant-TW", path: "/messages/zh.json" },
+	]);
+});
+
 test("uses legacy languageTags when locales are unavailable", async () => {
 	const files = await toBeImportedFiles({
 		settings: {

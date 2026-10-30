@@ -61,6 +61,63 @@ it("exports files", async () => {
 	`);
 });
 
+it("toBeImportedFiles replaces the {locale} placeholder in every position", async () => {
+  const files = await plugin.toBeImportedFiles!({
+    settings: {
+      baseLocale: "en",
+      locales: ["en", "de"],
+      [PLUGIN_KEY]: {
+        pathPattern: "./messages/{locale}/{locale}.json",
+      },
+    },
+  });
+  expect(files).toEqual([
+    { locale: "en", path: "./messages/en/en.json" },
+    { locale: "de", path: "./messages/de/de.json" },
+  ]);
+});
+
+it("toBeImportedFiles resolves the {language} placeholder to the primary language subtag", async () => {
+  const files = await plugin.toBeImportedFiles!({
+    settings: {
+      baseLocale: "en-US",
+      locales: ["en-US", "fr-FR", "zh-Hant-TW"],
+      [PLUGIN_KEY]: {
+        pathPattern: "./messages/{language}.json",
+      },
+    },
+  });
+  expect(files).toEqual([
+    { locale: "en-US", path: "./messages/en.json" },
+    { locale: "fr-FR", path: "./messages/fr.json" },
+    { locale: "zh-Hant-TW", path: "./messages/zh.json" },
+  ]);
+});
+
+it("exportFiles resolves the {language} placeholder in the file name", async () => {
+  const { bundle, message: message1, variants: variants1 } = buildMessage(
+    "sad_elephant",
+    "Hello World",
+    "Hallo Welt"
+  );
+  const files = await plugin.exportFiles!({
+    bundles: [bundle],
+    messages: [message1.en, message1.de],
+    variants: [...variants1.en, ...variants1.de],
+    settings: {
+      baseLocale: "en",
+      locales: ["en", "de"],
+      [PLUGIN_KEY]: {
+        pathPattern: "./messages/{language}.json",
+      },
+    },
+  });
+  expect(files.map((file) => file.name)).toEqual([
+    "./messages/en.json",
+    "./messages/de.json",
+  ]);
+});
+
 function buildMessage(
   id: string,
   en: string,

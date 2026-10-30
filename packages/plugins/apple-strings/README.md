@@ -14,3 +14,5 @@ Supported: exact message keys, quoted-string escaping, Unicode, and positional v
   }
 }
 ```
+
+The `{locale}` placeholder expands to the locale. `{language}` expands to the primary language subtag of the locale, e.g. `en` for `en-US`, so that files can be organized by base language. Locales that share a primary language, like `en-US` and `en-GB`, resolve to the same file with `{language}`; use `{locale}` when separate regional files are needed.
