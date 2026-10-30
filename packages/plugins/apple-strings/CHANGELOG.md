@@ -1,5 +1,13 @@
 # @inlang/plugin-apple-strings
 
+## 0.2.14
+
+### Patch Changes
+
+- Updated dependencies [8042b14]
+- Updated dependencies [2d066b5]
+  - @inlang/sdk@4.1.1
+
 ## 0.2.13
 
 ### Patch Changes

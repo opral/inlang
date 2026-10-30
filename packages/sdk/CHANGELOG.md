@@ -1,5 +1,15 @@
 # @inlang/sdk
 
+## 4.1.1
+
+### Patch Changes
+
+- 8042b14: Load catalogs with plural, select and other multi-variant messages through the direct catalog path. Until now a single message with selectors, matches or more than one variant sent the whole import through the general importer, which generates a UUIDv7 for every message and variant and maintains merge indexes. Variants with repeated matches, which that importer merges, still use it. The loaded catalog is unchanged apart from the opaque generated message and variant IDs.
+
+  With 20,000 keys in three locales, 4% of them plurals, `createCatalogLoader().load()` after one edited message fell from 674 ms to 340 ms (medians of six paired rounds on a shared machine).
+
+- 2d066b5: `createCatalogLoader` imports the messages of a legacy `loadMessages` plugin in one import per run of distinct bundles instead of one import per message. Each import copied and re-indexed the whole catalog, so a catalog of 6,366 messages in three locales took 40 s to load; it now takes 0.17 s. A repeated bundle still upserts onto the earlier one in order, so precedence and variant order are unchanged. Plugin versions that only implement `loadMessages`, such as `@inlang/plugin-message-format@2`, `@inlang/plugin-i18next@4`, `@inlang/plugin-json@4` and `@inlang/plugin-next-intl@1`, take this path.
+
 ## 4.1.0
 
 ### Minor Changes
