@@ -68,6 +68,12 @@ type CacheState = {
 type Loaded = Snapshot &
 	Omit<CacheState, "fingerprints"> & { unchanged?: boolean };
 type ReadArgs = CreateCatalogLoaderArgs & { fs: typeof nodeFs };
+type PluginRows = Awaited<ReturnType<NonNullable<InlangPlugin["importFiles"]>>>;
+const emptyRows = (): PluginRows => ({
+	bundles: [],
+	messages: [],
+	variants: [],
+});
 
 /**
  * Creates a stateful, read-only directory loader without opening a database,
@@ -390,27 +396,40 @@ async function readCatalog(
 			settings: structuredClone(settings),
 			nodeishFs: readonlyFs,
 		});
+		// The legacy project API matches by locale and matches, ignoring the
+		// converter's synthetic IDs. Reuse the same property-based semantics.
+		// Each import copies and re-indexes the whole store, so distinct bundles
+		// go in one import; a repeated bundle starts the next one, so that it
+		// still upserts onto the earlier one in order.
+		let batch = emptyRows();
+		const batched = new Set<string>();
+		const flush = async () => {
+			if (batched.size === 0) return;
+			(store ?? (await getStore())).import(batch);
+			batch = emptyRows();
+			batched.clear();
+		};
 		for (const message of messages) {
 			const bundle = fromMessageV1(message);
-			// The legacy project API matches by locale and matches, ignoring the
-			// converter's synthetic IDs. Reuse the same property-based semantics.
-			(store ?? (await getStore())).import({
-				bundles: [{ id: bundle.id, declarations: bundle.declarations }],
-				messages: bundle.messages.map((value) => ({
+			if (batched.has(bundle.id)) await flush();
+			batched.add(bundle.id);
+			batch.bundles.push({ id: bundle.id, declarations: bundle.declarations });
+			for (const value of bundle.messages) {
+				batch.messages.push({
 					bundleId: bundle.id,
 					locale: value.locale,
 					selectors: value.selectors,
-				})),
-				variants: bundle.messages.flatMap((value) =>
-					value.variants.map((variant) => ({
+				});
+				for (const variant of value.variants)
+					batch.variants.push({
 						messageBundleId: bundle.id,
 						messageLocale: value.locale,
 						matches: variant.matches,
 						pattern: variant.pattern,
-					}))
-				),
-			});
+					});
+			}
 		}
+		await flush();
 	}
 	return {
 		settings,
