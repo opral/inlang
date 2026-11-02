@@ -1,0 +1,21 @@
+{
+	"$schema": "https://inlang.com/schema/marketplace-manifest",
+	"id": "app.parrot.figmaPlugin",
+	"displayName": {
+		"en": "Parrot - Figma plugin"
+	},
+	"description": {
+		"en": "Figma plugin to create and manage language versions of a design."
+	},
+	"keywords": [
+		"figma",
+		"plugin",
+		"design",
+		"i18n",
+		"translation",
+		"localization"
+	],
+	"publisherName": "Parrot",
+	"pricing": "free",
+	"website": "https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global"
+}
