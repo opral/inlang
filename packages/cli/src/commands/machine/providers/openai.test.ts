@@ -182,13 +182,18 @@ describe("createOpenAITranslateProvider", () => {
     });
   });
 
-  test("marks a throttled API request as unavailable", async () => {
+  test.each([
+    [429, "Too Many Requests"],
+    [500, "Internal Server Error"],
+    [503, "Service Unavailable"],
+    [599, "Server Error"],
+  ])("marks HTTP %i as unavailable", async (status, statusText) => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: false,
-        status: 429,
-        statusText: "Too Many Requests",
+        status,
+        statusText,
       }),
     );
 
@@ -201,7 +206,7 @@ describe("createOpenAITranslateProvider", () => {
 
     expect(result).toEqual({
       ok: false,
-      error: "429 Too Many Requests: translating from en to de",
+      error: `${status} ${statusText}: translating from en to de`,
       unavailable: true,
     });
   });
