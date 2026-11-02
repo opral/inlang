@@ -141,6 +141,9 @@ importers:
       '@types/node':
         specifier: ^22.5.1
         version: 22.15.33
+      i18next:
+        specifier: 26.4.2
+        version: 26.4.2(typescript@5.9.3)
       prettier:
         specifier: ^3.5.1
         version: 3.6.2
@@ -15604,6 +15607,10 @@ snapshots:
   i18next@26.4.2(typescript@5.7.3):
     optionalDependencies:
       typescript: 5.7.3
+
+  i18next@26.4.2(typescript@5.9.3):
+    optionalDependencies:
+      typescript: 5.9.3
 
   iconv-lite@0.6.3:
     dependencies:

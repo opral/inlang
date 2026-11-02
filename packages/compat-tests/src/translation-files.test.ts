@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import path from "node:path";
 import fs from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import {
 	type Project,
 	type Rows,
@@ -115,10 +116,13 @@ describe.each(fixtures)("$dir", (fixture) => {
 			pluginKey: fixture.key,
 			files: readSourceFiles(fixture),
 		});
-		const expected = withoutBundles(
+		let expected = withoutBundles(
 			contentOf(await selectRows(project)),
 			importChanges[fixture.dir] ?? []
 		);
+		if (fixture.dir === "i18next") {
+			expected = withoutRedundantI18nextZeroAliases(expected);
+		}
 		await project.close();
 		expect(expected.bundles.length).toBeGreaterThan(0);
 
@@ -139,7 +143,7 @@ describe.each(fixtures)("$dir", (fixture) => {
 		}
 	});
 
-	test("files written by the published plugin stay byte-identical when they are imported and exported again after the upgrade", async () => {
+	test("files written by the published plugin keep their bytes except documented full-export ordering changes", async () => {
 		const project = await openProject(fixture, "published", "published");
 		await project.importFiles({
 			pluginKey: fixture.key,
@@ -167,7 +171,35 @@ describe.each(fixtures)("$dir", (fixture) => {
 			expect(
 				await exportFiles(upgraded, fixture),
 				`${sdk} SDK with the ${plugin} plugin`
-			).toEqual(published);
+			).toEqual(
+				fixture.dir === "i18next"
+					? withI18nextZeroKeyOrder(published)
+					: published
+			);
+			if (fixture.dir === "i18next" && sdk === "current") {
+				// SDK 4 supplies the existing files. Their order and formatting
+				// remain byte-identical, including the former zero-key position.
+				const files = await (upgraded.exportFiles as any)({
+					pluginKey: fixture.key,
+					files: published.map((file) => ({
+						path: `./locales/${file.locale}.json`,
+						locale: file.locale,
+						content: new TextEncoder().encode(file.content),
+						imported: true,
+					})),
+				});
+				expect(
+					files
+						.map((file: any) => ({
+							locale: file.locale,
+							name: file.name,
+							content: new TextDecoder().decode(file.content),
+						}))
+						.sort((a: Files[number], b: Files[number]) =>
+							`${a.name}${a.locale}`.localeCompare(`${b.name}${b.locale}`)
+						)
+				).toEqual(published);
+			}
 			await upgraded.close();
 		}
 	});
@@ -217,6 +249,61 @@ describe.each(fixtures)("$dir", (fixture) => {
 		}
 	});
 });
+
+/**
+ * These three fixture entries used to import twice. Remove only their
+ * redundant branch after proving the two branches have the exact old shape
+ * and identical patterns. Every other row, selector and declaration must
+ * remain equal. Runtime and edit/delete parity is checked in i18next-zero.test.ts.
+ */
+function withoutRedundantI18nextZeroAliases(
+	content: ReturnType<typeof contentOf>
+): ReturnType<typeof contentOf> {
+	const removed = new Set<ReturnType<typeof contentOf>["variants"][number]>();
+	for (const locale of ["en", "de", "lv"]) {
+		const matches = [
+			[
+				{ type: "literal-match", key: "count", value: "0" },
+				{ type: "catchall-match", key: "countPlural" },
+			],
+			[
+				{ type: "catchall-match", key: "count" },
+				{ type: "literal-match", key: "countPlural", value: "zero" },
+			],
+		];
+		const forms = matches.map((shape) =>
+			content.variants.filter(
+				(variant) =>
+					variant.message === `item/${locale}` &&
+					isDeepStrictEqual(variant.matches, shape)
+			)
+		);
+		expect(forms.map((form) => form.length)).toEqual([1, 1]);
+		expect(forms[0]![0]!.pattern).toEqual(forms[1]![0]!.pattern);
+		// Latvian's category zero includes both 0 and 10, 11–19, 20, …;
+		// English/German's exact-zero branch covers the source entry alone.
+		removed.add(forms[locale === "lv" ? 0 : 1]![0]!);
+	}
+	return {
+		...content,
+		variants: content.variants.filter((variant) => !removed.has(variant)),
+	};
+}
+
+/**
+ * A full export with no existing text has no prior key-order contract. The
+ * zero branch now occurs once, so only its position moves after the plural
+ * forms in these English/German fixtures. Preserve every other byte.
+ */
+function withI18nextZeroKeyOrder(files: Files): Files {
+	return files.map((file) => {
+		if (!["en", "de"].includes(file.locale)) return file;
+		const block =
+			/(\t"item_zero": [^\n]+\n)(\t"item_one": [^\n]+\n\t"item_other": [^\n]+\n)/g;
+		expect([...file.content.matchAll(block)]).toHaveLength(1);
+		return { ...file, content: file.content.replace(block, "$2$1") };
+	});
+}
 
 function sortById(rows: Rows): Rows {
 	const byId = (a: { id: string }, b: { id: string }) =>

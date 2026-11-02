@@ -20,6 +20,7 @@
 		"@inlang/sdk": "workspace:*",
 		"@inlang/tsconfig": "workspace:*",
 		"@types/node": "^22.5.1",
+		"i18next": "26.4.2",
 		"published-plugin-android": "npm:@inlang/plugin-android@0.2.7",
 		"published-plugin-apple-strings": "npm:@inlang/plugin-apple-strings@0.2.7",
 		"published-plugin-apple-xcstrings": "npm:@inlang/plugin-apple-xcstrings@0.2.7",
