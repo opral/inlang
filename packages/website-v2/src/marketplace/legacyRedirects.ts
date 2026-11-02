@@ -51,6 +51,12 @@ const standaloneSites: StandaloneSite[] = [
     subPages: "same-path",
   },
   {
+    uid: "gkrpgoir",
+    slug: "app-parrot-figmaPlugin",
+    href: "https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global",
+    subPages: {},
+  },
+  {
     uid: "tdozzpar",
     slug: "app-inlang-finkLocalizationEditor",
     href: "https://fink.inlang.com",

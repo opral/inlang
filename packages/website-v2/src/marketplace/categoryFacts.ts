@@ -74,6 +74,10 @@ export const toolFacts: Record<string, ToolFacts> = {
     audience: "developers",
     use: "VS Code extension. See translations inline, edit them and extract new strings.",
   },
+  "app.parrot.figmaPlugin": {
+    audience: "designers",
+    use: "Translate designs with your project's messages.",
+  },
   "app.inlang.finkLocalizationEditor": {
     audience: "translators",
     use: "Web editor. Translators sign in with GitHub and edit side by side. Fink pushes only what changed to a branch for review.",

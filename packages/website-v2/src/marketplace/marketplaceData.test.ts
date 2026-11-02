@@ -163,6 +163,28 @@ describe("loadMarketplacePage standalone sites", () => {
   });
 });
 
+describe("Parrot standalone site", () => {
+  const figmaUrl =
+    "https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global";
+
+  it("redirects the Parrot marketplace root to its Figma page", async () => {
+    await expect(
+      loadMarketplacePage({ uid: "gkrpgoir", slug: "anything" }),
+    ).rejects.toMatchObject({ href: figmaUrl, statusCode: 301 });
+  });
+
+  it("sends every Parrot marketplace path to the Figma page", () => {
+    expect(
+      getStandaloneSiteRedirectForPath("/m/gkrpgoir/app-parrot-figmaPlugin"),
+    ).toEqual({ href: figmaUrl, statusCode: 301 });
+    expect(
+      getStandaloneSiteRedirectForPath(
+        "/m/gkrpgoir/app-parrot-figmaPlugin/anything",
+      ),
+    ).toEqual({ href: figmaUrl, statusCode: 301 });
+  });
+});
+
 describe("getStandaloneSiteRedirectForPath", () => {
   it("redirects Paraglide marketplace paths to the standalone site", () => {
     expect(
