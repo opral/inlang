@@ -5,11 +5,6 @@ import { getGithubStars } from "../github-stars-cache";
 const ecosystemLinks = [
   { label: "Tools", to: "/c/tools" },
   { label: "Plugins", to: "/c/plugins" },
-  {
-    label: "Validation rules",
-    to: "https://github.com/opral/lix/issues/239",
-    external: true,
-  },
 ];
 
 const formatStars = (count: number) => {
@@ -130,31 +125,19 @@ export default function Header() {
             BUILT ON INLANG
           </span>
           <nav className="flex items-center gap-5 text-[13.5px] font-medium">
-            {ecosystemLinks.map((link) =>
-              link.external ? (
-                <a
-                  key={link.label}
-                  href={link.to}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-slate-600 hover:text-slate-900"
-                >
-                  {link.label}
-                </a>
-              ) : (
-                <Link
-                  key={link.label}
-                  to={link.to}
-                  className={
-                    location.pathname === link.to
-                      ? "font-semibold text-cyan-700"
-                      : "text-slate-600 hover:text-slate-900"
-                  }
-                >
-                  {link.label}
-                </Link>
-              ),
-            )}
+            {ecosystemLinks.map((link) => (
+              <Link
+                key={link.label}
+                to={link.to}
+                className={
+                  location.pathname === link.to
+                    ? "font-semibold text-cyan-700"
+                    : "text-slate-600 hover:text-slate-900"
+                }
+              >
+                {link.label}
+              </Link>
+            ))}
           </nav>
         </div>
       </div>
@@ -180,28 +163,16 @@ export default function Header() {
             <span className="px-3 pb-1 font-mono text-[10.5px] font-semibold tracking-[0.12em] text-slate-400">
               BUILT ON INLANG
             </span>
-            {ecosystemLinks.map((link) =>
-              link.external ? (
-                <a
-                  key={link.label}
-                  href={link.to}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-md px-3 py-2 text-slate-700 hover:bg-slate-50"
-                >
-                  {link.label}
-                </a>
-              ) : (
-                <Link
-                  key={link.label}
-                  to={link.to}
-                  className="rounded-md px-3 py-2 text-slate-700 hover:bg-slate-50"
-                  onClick={() => setMobileMenuOpen(false)}
-                >
-                  {link.label}
-                </Link>
-              ),
-            )}
+            {ecosystemLinks.map((link) => (
+              <Link
+                key={link.label}
+                to={link.to}
+                className="rounded-md px-3 py-2 text-slate-700 hover:bg-slate-50"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                {link.label}
+              </Link>
+            ))}
             <div className="mt-3 flex flex-wrap items-center gap-3 px-3">
               <GithubStars count={githubStars} />
               <Link
