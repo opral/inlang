@@ -49,8 +49,8 @@ test("plural, context, ordinal and exact-zero forms share one message", async ()
 			],
 		},
 	]);
-	// Exact zero also has an Intl zero-category variant.
-	expect(imported.variants).toHaveLength(9);
+	// Every resource entry has one editable variant.
+	expect(imported.variants).toHaveLength(8);
 	expect(
 		imported.variants.every(
 			(variant) =>

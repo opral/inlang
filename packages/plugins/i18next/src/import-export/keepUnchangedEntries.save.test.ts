@@ -5,6 +5,7 @@ import nodePath from "node:path";
 import {
 	loadProjectFromDirectory,
 	saveProjectToDirectory,
+	selectBundleNested,
 	type InlangPlugin,
 } from "@inlang/sdk";
 import { plugin } from "../plugin.js";
@@ -60,6 +61,7 @@ async function setup(
 	args: {
 		files: Record<string, string>;
 		pathPattern: string | Record<string, string>;
+		locales?: string[];
 	} = { files, pathPattern }
 ) {
 	const dir = nodeFs.mkdtempSync(
@@ -75,8 +77,8 @@ async function setup(
 	nodeFs.writeFileSync(
 		nodePath.join(dir, "project.inlang/settings.json"),
 		JSON.stringify({
-			baseLocale: "en",
-			locales: ["en", "de"],
+			baseLocale: args.locales?.[0] ?? "en",
+			locales: args.locales ?? ["en", "de"],
 			"plugin.inlang.i18next": { pathPattern: args.pathPattern },
 		})
 	);
@@ -439,4 +441,136 @@ test("namespaces `a` and `a:b`: a new translation of a message of `a` is written
 	} finally {
 		await project.close();
 	}
+});
+
+describe("one editable variant per zero resource entry", () => {
+	test.each(["en", "fr", "ar", "cy", "lv"])(
+		"edits and deletes the zero entry in %s without another variant restoring it",
+		async (locale) => {
+			const filename = `${locale}.json`;
+			const content =
+				'{\n  "item_one": "One",\n  "item_zero": "Zero original",\n  "item_other": "Many"\n}\n';
+			const fixture = await setup({
+				files: { [filename]: content },
+				pathPattern: "./{locale}.json",
+				locales: [locale],
+			});
+			let reloaded:
+				| Awaited<ReturnType<typeof loadProjectFromDirectory>>
+				| undefined;
+			let deleted:
+				| Awaited<ReturnType<typeof loadProjectFromDirectory>>
+				| undefined;
+			try {
+				const original = await selectBundleNested(
+					fixture.project.db
+				).executeTakeFirstOrThrow();
+				const zero = original.messages[0]!.variants.filter((variant) =>
+					variant.pattern.some(
+						(part) => part.type === "text" && part.value === "Zero original"
+					)
+				);
+				expect(zero).toHaveLength(1);
+				await fixture.save();
+				expect(fixture.read()[filename]).toBe(content);
+				await fixture.project.db
+					.updateTable("inlang_variant")
+					.set({ pattern: [{ type: "text", value: "Zero edited" }] })
+					.where("id", "=", zero[0]!.id)
+					.execute();
+				await fixture.save();
+				expect(fixture.read()[filename]).toBe(
+					content.replace("Zero original", "Zero edited")
+				);
+				const projectPath = nodePath.join(fixture.dir, "project.inlang");
+				reloaded = await loadProjectFromDirectory({
+					path: projectPath,
+					fs: nodeFs,
+					providePlugins: [plugin as unknown as InlangPlugin],
+				});
+				const edited = await selectBundleNested(
+					reloaded.db
+				).executeTakeFirstOrThrow();
+				const editable = edited.messages[0]!.variants.filter((variant) =>
+					variant.pattern.some(
+						(part) => part.type === "text" && part.value === "Zero edited"
+					)
+				);
+				expect(editable).toHaveLength(1);
+				// A normal typed-row deletion is sufficient; clients need no alias knowledge.
+				await reloaded.db
+					.deleteFrom("inlang_variant")
+					.where("id", "=", editable[0]!.id)
+					.execute();
+				await saveProjectToDirectory({
+					project: reloaded,
+					path: projectPath,
+					fs: nodeFs,
+				});
+				expect(fixture.read()[filename]).toBe(
+					content.replace('  "item_zero": "Zero original",\n', "")
+				);
+				deleted = await loadProjectFromDirectory({
+					path: projectPath,
+					fs: nodeFs,
+					providePlugins: [plugin as unknown as InlangPlugin],
+				});
+				const remaining = await selectBundleNested(
+					deleted.db
+				).executeTakeFirstOrThrow();
+				expect(remaining.messages[0]!.variants).toHaveLength(2);
+				expect(
+					remaining.messages[0]!.variants.some((variant) =>
+						variant.matches.some(
+							(match) =>
+								match.type === "literal-match" &&
+								(match.value === "zero" || match.key === "count")
+						)
+					)
+				).toBe(false);
+			} finally {
+				await deleted?.close();
+				await reloaded?.close();
+				await fixture.project.close();
+				nodeFs.rmSync(fixture.dir, { recursive: true, force: true });
+			}
+		}
+	);
+
+	test.each(["en", "lv"])(
+		"deleting the final zero entry in %s leaves an empty resource",
+		async (locale) => {
+			const filename = `${locale}.json`;
+			const fixture = await setup({
+				files: { [filename]: '{"item_zero":"Zero"}\n' },
+				pathPattern: "./{locale}.json",
+				locales: [locale],
+			});
+			let reloaded:
+				| Awaited<ReturnType<typeof loadProjectFromDirectory>>
+				| undefined;
+			try {
+				const original = await selectBundleNested(
+					fixture.project.db
+				).executeTakeFirstOrThrow();
+				expect(original.messages[0]!.variants).toHaveLength(1);
+				await fixture.project.db
+					.deleteFrom("inlang_variant")
+					.where("id", "=", original.messages[0]!.variants[0]!.id)
+					.execute();
+				await fixture.save();
+				expect(JSON.parse(fixture.read()[filename]!)).toEqual({});
+				reloaded = await loadProjectFromDirectory({
+					path: nodePath.join(fixture.dir, "project.inlang"),
+					fs: nodeFs,
+					providePlugins: [plugin as unknown as InlangPlugin],
+				});
+				expect(await selectBundleNested(reloaded.db).execute()).toEqual([]);
+			} finally {
+				await reloaded?.close();
+				await fixture.project.close();
+				nodeFs.rmSync(fixture.dir, { recursive: true, force: true });
+			}
+		}
+	);
 });

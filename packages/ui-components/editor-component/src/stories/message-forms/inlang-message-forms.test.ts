@@ -56,6 +56,17 @@ it("shows an explicit `other` (Paraglide's shape) once and does not offer a seco
 	expect(rows).toEqual(["one: # item", "other: # items"]);
 });
 
+it("includes literal expression values in form accessibility labels", async () => {
+	const literal = variant("one", "one", "");
+	literal.pattern = [
+		{ type: "markup-start", name: "b" },
+		{ type: "expression", arg: { type: "literal", value: "One item" } },
+		{ type: "markup-end", name: "b" },
+	];
+	const rows = await mount(plural(), [literal, variant("other", "*", "Other items")]);
+	expect(rows).toEqual(["one: One item", "other: Other items"]);
+});
+
 it("shifts example numbers by an ICU offset and leaves out its exact numbers", async () => {
 	const element = document.createElement("inlang-message-forms");
 	element.message = message;

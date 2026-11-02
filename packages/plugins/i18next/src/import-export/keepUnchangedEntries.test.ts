@@ -194,15 +194,14 @@ describe("data changes are detected", () => {
 		});
 	});
 
-	// English `_zero` imports as the exact form `count = 0` and as the plural
-	// category "zero" with the same text. i18next shows the exact form.
+	// English `_zero` imports once as its exact count=0 override.
 	test("only the exact 0 form of `_zero` changed", async () => {
 		const files = { "en.json": handWritten };
 		const rows = await load(files);
 		const forms = variantsOf(rows, "item", "en").filter((variant) =>
 			textOf(variant).includes("No items")
 		);
-		expect(forms).toHaveLength(2);
+		expect(forms).toHaveLength(1);
 		const exact = forms.find((variant) => hasMatch(variant, "count", "0"))!;
 		exact.pattern = [{ type: "text", value: "Nothing" }];
 		expect(await save(rows, files)).toStrictEqual({
@@ -213,15 +212,13 @@ describe("data changes are detected", () => {
 		});
 	});
 
-	test("only the zero category form of `_zero` changed: as without the previous file, i18next doesn't show it in English", async () => {
-		const files = { "en.json": handWritten };
-		const rows = await load(files);
-		const category = variantsOf(rows, "item", "en").find((variant) =>
-			hasMatch(variant, "countPlural", "zero")
-		)!;
-		category.pattern = [{ type: "text", value: "Category edit" }];
-		expect(await save(rows, files)).toStrictEqual(files);
-		expect(await save(rows)).toStrictEqual(await save(await load(files)));
+	test("the source zero entry has no second category form that could discard edits", async () => {
+		const rows = await load({ "en.json": handWritten });
+		expect(
+			variantsOf(rows, "item", "en").filter((variant) =>
+				hasMatch(variant, "countPlural", "zero")
+			)
+		).toHaveLength(0);
 	});
 
 	test("only whitespace inside a pattern changed", async () => {
@@ -585,7 +582,7 @@ describe("without a usable previous file, the export writes whole files", () => 
 		expect(saved["en.json"]).toBe(handWritten);
 		expect(saved["de.json"]).toBe(whole["de.json"]);
 		expect(saved["de.json"]).toBe(
-			'{\n\t"item_zero": "Keine",\n\t"item_other": "{{count}} Dinge"\n}\n'
+			'{\n\t"item_other": "{{count}} Dinge",\n\t"item_zero": "Keine"\n}\n'
 		);
 	});
 

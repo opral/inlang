@@ -270,9 +270,8 @@ test("keyContextCombinedWithPlurals", async () => {
 			{ type: "input-variable", name: "count" },
 		])
 	);
-	// 8 keys -> 10 variants: each `_zero` key imports as an exact
-	// `count = 0` match plus the Intl "zero" category fallback (#4357)
-	expect(imported.variants).lengthOf(10);
+	// Each of the eight resource entries has one editable variant.
+	expect(imported.variants).lengthOf(8);
 });
 
 // a plural key set can ship a base key as the fallback for calls without a
@@ -476,9 +475,7 @@ test("keyPluralMultipleEgArabic", async () => {
 		])
 	);
 
-	// 6 keys -> 7 variants: `_zero` imports as an exact `count = 0` match
-	// (i18next prefers `_zero` at count 0 in every language) plus the Intl
-	// "zero" category fallback (e.g. Arabic, Latvian)
+	// This fixture uses en-US: its zero entry is one exact count=0 form.
 	expect(
 		imported.variants.map((variant) =>
 			variant.matches
@@ -491,34 +488,17 @@ test("keyPluralMultipleEgArabic", async () => {
 		)
 	).toStrictEqual([
 		"count=0 countPlural=*",
-		"count=* countPlural=zero",
 		"count=* countPlural=one",
 		"count=* countPlural=two",
 		"count=* countPlural=few",
 		"count=* countPlural=many",
 		"count=* countPlural=other",
 	]);
-	expect(imported.variants[0]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 0" },
-	]);
-	expect(imported.variants[1]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 0" },
-	]);
-	expect(imported.variants[2]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 1" },
-	]);
-	expect(imported.variants[3]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 2" },
-	]);
-	expect(imported.variants[4]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 3" },
-	]);
-	expect(imported.variants[5]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 4" },
-	]);
-	expect(imported.variants[6]?.pattern).toStrictEqual([
-		{ type: "text", value: "the plural form 5" },
-	]);
+	for (let index = 0; index < 6; index++) {
+		expect(imported.variants[index]?.pattern).toStrictEqual([
+			{ type: "text", value: `the plural form ${index}` },
+		]);
+	}
 });
 
 // `_zero` is i18next's exact `count === 0` match in every language — not just
@@ -542,16 +522,11 @@ test("keyPluralWithZero", async () => {
 		{ type: "variable-reference", name: "countPlural" },
 	]);
 
-	// the exact `count = 0` variant is the most specific and comes first;
-	// the Intl "zero" category fallback keeps languages like Latvian working
+	// The single exact count=0 form is the most specific and comes first.
 	expect(imported.variants.map((variant) => variant.matches)).toStrictEqual([
 		[
 			{ type: "literal-match", key: "count", value: "0" },
 			{ type: "catchall-match", key: "countPlural" },
-		],
-		[
-			{ type: "catchall-match", key: "count" },
-			{ type: "literal-match", key: "countPlural", value: "zero" },
 		],
 		[
 			{ type: "catchall-match", key: "count" },
