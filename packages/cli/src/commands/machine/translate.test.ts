@@ -54,6 +54,15 @@ test("requires INLANG_DEEPL_API_KEY when provider is deepl", async () => {
   );
 });
 
+test("requires INLANG_OPENAI_API_KEY when provider is openai", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "openai");
+  vi.stubEnv("INLANG_OPENAI_API_KEY", "");
+
+  await expect(translateCommandAction({ project: {} as any })).rejects.toThrow(
+    "INLANG_OPENAI_API_KEY must be set",
+  );
+});
+
 function unavailableResponse() {
   return new Response(null, {
     status: 503,
@@ -183,6 +192,88 @@ test("keeps successful translations and reports a single error when only some fa
   ).toEqual([{ type: "text", value: "Hello (de)" }]);
   expect(goodbye?.messages.map((message) => message.locale)).toEqual(["en"]);
 });
+
+test.each([500, 503])(
+  "fails the command when OpenAI returns HTTP %i for every translation",
+  async (status) => {
+    vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "openai");
+    vi.stubEnv("INLANG_OPENAI_API_KEY", "openai-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response(null, { status })),
+    );
+    const project = await loadProjectInMemory({
+      blob: await newProject({
+        settings: { baseLocale: "en", locales: ["en", "de"] },
+      }),
+    });
+    try {
+      await insertBundleNested(project.db, textBundle("hello", "Hello"));
+      await expect(translateCommandAction({ project })).rejects.toBeInstanceOf(
+        PartialMachineTranslateError,
+      );
+      const [bundle] = await selectBundleNested(project.db).execute();
+      expect(bundle?.messages.map((message) => message.locale)).toEqual(["en"]);
+    } finally {
+      await project.close();
+    }
+  },
+);
+
+test.each([500, 503])(
+  "keeps successful OpenAI translations when another locale returns HTTP %i",
+  async (status) => {
+    vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "openai");
+    vi.stubEnv("INLANG_OPENAI_API_KEY", "openai-key");
+    // German succeeds before French fails within the same bundle.
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          Response.json({
+            status: "completed",
+            output: [
+              {
+                type: "message",
+                status: "completed",
+                content: [{ type: "output_text", text: "Hallo" }],
+              },
+            ],
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status })),
+    );
+    const project = await loadProjectInMemory({
+      blob: await newProject({
+        settings: { baseLocale: "en", locales: ["en", "de", "fr"] },
+      }),
+    });
+    try {
+      await insertBundleNested(project.db, textBundle("hello", "Hello"));
+      const error = await translateCommandAction({ project }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(error).toBeInstanceOf(PartialMachineTranslateError);
+      expect((error as PartialMachineTranslateError).translated).toBe(1);
+      expect((error as Error).message).toContain(
+        "1 translation could not be completed.",
+      );
+      const [bundle] = await selectBundleNested(project.db).execute();
+      expect(bundle?.messages.map((message) => message.locale).sort()).toEqual([
+        "de",
+        "en",
+      ]);
+      expect(
+        bundle?.messages.find((message) => message.locale === "de")?.variants[0]
+          ?.pattern,
+      ).toEqual([{ type: "text", value: "Hallo" }]);
+    } finally {
+      await project.close();
+    }
+  },
+);
 
 test.runIf(process.env.INLANG_GOOGLE_TRANSLATE_API_KEY)(
   "should tanslate the missing languages",

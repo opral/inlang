@@ -1,11 +1,11 @@
 ---
 title: BYOK
-description: Set your own Google Cloud Translation or DeepL API key for machine translations with the inlang CLI.
+description: Set your own Google Cloud Translation, DeepL API, or OpenAI key for machine translations with the inlang CLI.
 ---
 
 # Bring Your Own Translation API Key
 
-By default, the `machine translate` command uses a free, third-party translation service that is not owned, operated, or maintained by inlang. For higher reliability and control, you can bring your own Google Cloud Translation or DeepL API key. Choose a provider with `INLANG_MACHINE_TRANSLATE_PROVIDER` and set the matching API key environment variable before running the command.
+By default, the `machine translate` command uses a free, third-party translation service that is not owned, operated, or maintained by inlang. For higher reliability and control, you can bring your own Google Cloud Translation, DeepL API, or OpenAI key. Choose a provider with `INLANG_MACHINE_TRANSLATE_PROVIDER` and set the matching API key environment variable before running the command.
 
 For many projects, coding agents can produce better translation drafts than generic machine translation because they can use surrounding product and code context. Consider using an agent-driven workflow when translation quality matters more than fully automated CI output.
 
@@ -18,8 +18,9 @@ Set `INLANG_MACHINE_TRANSLATE_PROVIDER` to choose the translation service:
 | Community-operated translation service at translate.demosjarco.dev (default) | `demosjarco` or unset (when no API key is set) | none |
 | Google Translate | `google` | `INLANG_GOOGLE_TRANSLATE_API_KEY` |
 | DeepL | `deepl` | `INLANG_DEEPL_API_KEY` |
+| OpenAI | `openai` | `INLANG_OPENAI_API_KEY` |
 
-When `INLANG_MACHINE_TRANSLATE_PROVIDER` is unset, the CLI uses Google or DeepL if the matching API key is set, and otherwise falls back to the community-operated translation service at translate.demosjarco.dev.
+When `INLANG_MACHINE_TRANSLATE_PROVIDER` is unset, the CLI uses Google, DeepL, or OpenAI if the matching API key is set, and otherwise falls back to the community-operated translation service at translate.demosjarco.dev. If multiple keys are set, Google takes precedence over DeepL, which takes precedence over OpenAI.
 
 ## Community-operated translation service
 
@@ -37,7 +38,7 @@ You can optionally pin a specific model with `DEMOSJARCO_TRANSLATE_MODEL`. When 
 export DEMOSJARCO_TRANSLATE_MODEL="@cf/google/gemma-4-26b-a4b-it"
 ```
 
-You can also opt in to Zero Data Retention (ZDR) with `DEMOSJARCO_TRANSLATE_ZDR`. When set to `true`, the CLI asks the service to process your request without retaining any data. This applies only to the community-operated service and has no effect on the Google or DeepL providers.
+You can also opt in to Zero Data Retention (ZDR) with `DEMOSJARCO_TRANSLATE_ZDR`. When set to `true`, the CLI asks the service to process your request without retaining any data. This applies only to the community-operated service and has no effect on the Google, DeepL, or OpenAI providers.
 
 ```bash
 export DEMOSJARCO_TRANSLATE_ZDR="true"
@@ -106,6 +107,23 @@ source ~/.bashrc
 For CI/CD pipelines, add both variables as secrets in your CI provider's settings.
 
 See the [DeepL API quickstart](https://developers.deepl.com/docs/getting-started/quickstart) for more details.
+
+## OpenAI setup
+
+Set your OpenAI API key. You can optionally choose a model and reasoning effort. If no model is configured, the CLI uses `gpt-6-luna`. If no reasoning effort is configured, the CLI omits the `reasoning` setting and lets the model use its default.
+
+```bash
+export INLANG_MACHINE_TRANSLATE_PROVIDER="openai"
+export INLANG_OPENAI_API_KEY="your-openai-api-key"
+# Optional: defaults to gpt-6-luna
+export INLANG_OPENAI_MODEL="your-model"
+# Optional: supported values depend on the selected model
+export INLANG_OPENAI_REASONING_EFFORT="none"
+```
+
+`INLANG_OPENAI_REASONING_EFFORT` is sent as the Responses API `reasoning.effort` value; supported values depend on the selected model (commonly `none`, `minimal`, `low`, `medium`, or `high`). Only set it to a value supported by your model. The CLI sends requests directly to the OpenAI Responses API using `fetch`; it does not require the OpenAI SDK.
+
+OpenAI throttling (HTTP 429) or an incomplete Responses API result causes the translation command to fail with a non-zero exit code rather than silently reporting success or accepting partial text.
 
 ## Usage
 
