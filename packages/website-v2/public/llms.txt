@@ -31,7 +31,7 @@ Key facts:
 - To add a language: add the locale to `locales` in `project.inlang/settings.json`, create the translation file for it, translate every message with the app's code and glossary file as context, then run the check.
 - Run `npx @inlang/cli check --project ./project.inlang`. Exit code 1 means findings. Use `--format json` for a machine-readable report, and fix every finding. CI runs the same check on the pull request.
 - `--locales de,fr` limits the check to the languages that ship. `--unused-messages --source ./src` reports keys no code uses.
-- Prefer your own translations over `npx @inlang/cli machine translate --project ./project.inlang`, because you have the product and code context. Machine translations need review before shipping. The default provider is a free community service. Set `INLANG_MACHINE_TRANSLATE_PROVIDER` and an API key for DeepL or Google.
+- Prefer your own translations over `npx @inlang/cli machine translate --project ./project.inlang`, because you have the product and code context. Machine translations need review before shipping. The default provider is a free community service. Set `INLANG_MACHINE_TRANSLATE_PROVIDER` and an API key for DeepL, Google or OpenAI.
 - To set up a new project: for Paraglide JS run `npx @inlang/paraglide-js@latest init`. For i18next run `npx i18next-cli init --inlang`. For next-intl add `project.inlang/settings.json` with `"plugin.inlang.nextIntl": { "pathPattern": "./messages/{locale}.json" }`. See the CLI docs below.
 
 ## Docs
