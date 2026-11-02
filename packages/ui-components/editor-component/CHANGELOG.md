@@ -1,5 +1,15 @@
 # @inlang/message-bundle-component
 
+## 14.0.1
+
+### Patch Changes
+
+- 0ab2a1e: Include literal expression values in plain pattern previews and translation-form accessibility labels. Markup remains omitted from plain previews.
+- Updated dependencies [8042b14]
+- Updated dependencies [2d066b5]
+- Updated dependencies [0ab2a1e]
+  - @inlang/sdk@4.1.1
+
 ## 14.0.0
 
 ### Patch Changes
