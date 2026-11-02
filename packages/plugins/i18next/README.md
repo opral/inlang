@@ -1,3 +1,8 @@
+---
+title: "i18next plugin: import and export i18next JSON in your repo"
+description: "Import and export i18next JSON files in your Git repo. Add plugin.inlang.i18next with a pathPattern to project.inlang/settings.json. Also finds unused keys with inlang check."
+---
+
 # i18next Plugin for Inlang
 
 This plugin enables your inlang project to read and write [i18next](https://inlang.com/m/kl95463j) translation files.

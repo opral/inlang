@@ -1,6 +1,6 @@
 ---
-title: inlang CLI - Find Missing and Unused Translations in CI
-description: Check translations for missing keys, wrong variables and unused messages. Machine translate missing messages. Works in CI with i18next, next-intl, Paraglide JS, and more.
+title: "inlang CLI: check translations in CI and machine translate"
+description: "Run npx @inlang/cli check to find missing, empty and unused translations. It exits with code 1 on findings. Machine translate missing messages with one command. No inlang account."
 og:image: https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/cli/assets/cli-banner.svg
 ---
 

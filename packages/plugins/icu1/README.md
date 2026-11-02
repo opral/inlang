@@ -1,4 +1,6 @@
 ---
+title: "ICU MessageFormat plugin: import and export ICU JSON in your repo"
+description: "Import and export ICU MessageFormat v1 JSON files in your Git repo, with selects, plurals and selectordinal. Add plugin.inlang.icu-messageformat-1 with a pathPattern to project.inlang/settings.json."
 og:title: ICU MessageFormat v1 Plugin
 og:description: Storage plugin for inlang that reads and writes ICU MessageFormat v1 JSON files. Supports selects, plurals, selectordinal, offsets, and formatter styles.
 ---
