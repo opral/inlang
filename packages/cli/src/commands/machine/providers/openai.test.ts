@@ -14,9 +14,11 @@ describe("createOpenAITranslateProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        status: "completed",
         output: [
           {
             type: "message",
+            status: "completed",
             content: [{ type: "output_text", text: "Hallo Welt" }],
           },
         ],
@@ -46,7 +48,6 @@ describe("createOpenAITranslateProvider", () => {
             "You are a translation engine. Translate the user's text from the source language to the target language. Preserve HTML tags, placeholders, and formatting. Return only the translated text, without explanations or quotation marks.",
           input:
             "Source language: en\nTarget language: de\n\nText:\nHello World",
-          reasoning: { effort: "none" },
         }),
       }),
     );
@@ -56,9 +57,11 @@ describe("createOpenAITranslateProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        status: "completed",
         output: [
           {
             type: "message",
+            status: "completed",
             content: [{ type: "output_text", text: "Hallo Welt" }],
           },
         ],
@@ -99,9 +102,11 @@ describe("createOpenAITranslateProvider", () => {
         vi.fn().mockResolvedValue({
           ok: true,
           json: async () => ({
+            status: "completed",
             output: [
               {
                 type: "message",
+                status: "completed",
                 content: [{ type: "output_text", text: outputText }],
               },
             ],
@@ -124,9 +129,11 @@ describe("createOpenAITranslateProvider", () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
+        status: "completed",
         output: [
           {
             type: "message",
+            status: "completed",
             content: [{ type: "output_text", text: "Hallo Welt" }],
           },
         ],
@@ -175,12 +182,80 @@ describe("createOpenAITranslateProvider", () => {
     });
   });
 
+  test("marks a throttled API request as unavailable", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 429,
+        statusText: "Too Many Requests",
+      }),
+    );
+
+    const provider = createOpenAITranslateProvider("openai-key");
+    const result = await provider.translateText({
+      text: "Hello World",
+      sourceLocale: "en",
+      targetLocale: "de",
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      error: "429 Too Many Requests: translating from en to de",
+      unavailable: true,
+    });
+  });
+
+  test.each([
+    {
+      status: "incomplete",
+      messageStatus: "incomplete",
+    },
+    {
+      status: "completed",
+      messageStatus: "incomplete",
+    },
+  ])(
+    "rejects a response or message that is not completed",
+    async ({ status, messageStatus }) => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            status,
+            output: [
+              {
+                type: "message",
+                status: messageStatus,
+                content: [{ type: "output_text", text: "Hallo" }],
+              },
+            ],
+          }),
+        }),
+      );
+
+      const provider = createOpenAITranslateProvider("openai-key");
+      const result = await provider.translateText({
+        text: "Hello World",
+        sourceLocale: "en",
+        targetLocale: "de",
+      });
+
+      expect(result).toEqual({
+        ok: false,
+        error: "OpenAI response was not completed: translating from en to de",
+        unavailable: true,
+      });
+    },
+  );
+
   test("returns an error when the response has no translation text", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ output: [] }),
+        json: async () => ({ status: "completed", output: [] }),
       }),
     );
 
