@@ -1,5 +1,15 @@
 # @inlang/plugin-i18next
 
+## 6.5.1
+
+### Patch Changes
+
+- 0ab2a1e: Import each `_zero` resource entry as one editable variant, so changing or deleting it cannot leave a hidden duplicate that restores the old translation. Use a zero-category match where the locale selects that category at count 0, preserving i18next runtime behavior for cardinal, ordinal, and context fallbacks. Existing resource text continues to preserve key order, and exporting previously authored exact-number variants remains supported.
+- Updated dependencies [8042b14]
+- Updated dependencies [2d066b5]
+- Updated dependencies [0ab2a1e]
+  - @inlang/sdk@4.1.1
+
 ## 6.5.0
 
 ### Minor Changes
