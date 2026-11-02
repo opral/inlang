@@ -1,3 +1,8 @@
+---
+title: "Apple String Catalog plugin: import and export .xcstrings"
+description: "Import and export Xcode .xcstrings catalogs, with variables, plurals and device variations, in your Git repo. Add plugin.inlang.apple-xcstrings with a pathPattern to project.inlang/settings.json."
+---
+
 # Apple String Catalog plugin for Inlang
 
 Reads and writes Xcode 15+ `.xcstrings` catalogs through Inlang's v2 message model.

@@ -1,6 +1,19 @@
 @import "tailwindcss";
 @import "./markdown.css";
 
+@theme {
+  --color-paper: #fbfaf7;
+  --color-ink: #15171b;
+  --color-ink-secondary: #3d4148;
+  --color-ink-muted: #4c5157;
+  --color-ink-faint: #5f646b;
+  --color-line: #e6e2d9;
+  --color-line-soft: #eceae4;
+  --color-panel: #e8f1f2;
+  --color-panel-line: #dbe8eb;
+  --color-panel-soft: #f3f9fa;
+}
+
 body {
   @apply m-0;
   font-family: "Inter", ui-sans-serif, system-ui, sans-serif;

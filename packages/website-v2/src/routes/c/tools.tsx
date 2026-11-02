@@ -1,39 +1,20 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { registry } from "@inlang/marketplace-registry";
 import { getStandaloneSiteRedirect } from "../../marketplace/legacyRedirects";
+import {
+  buildCategoryHead,
+  marketplaceItemUrl,
+  textOf,
+} from "../../marketplace/categorySeo";
+import { toolFacts } from "../../marketplace/categoryFacts";
 
-const ogImage =
-  "https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/website/public/opengraph/inlang-social-image.jpg";
+const toolsTitle =
+  "Tools for inlang: web editor, VS Code, CLI and i18n library | inlang";
 
 const toolsDescription =
-  "Explore tools that read and update the same open localization source of truth in inlang.";
+  "inlang tools work on the project.inlang folder in your Git repo: Fink, a web editor for translators; Sherlock for VS Code; the inlang CLI for checks in CI and machine translation; and Paraglide JS, an i18n library.";
 
-export const Route = createFileRoute("/c/tools")({
-  head: () => ({
-    meta: [
-      { title: "Localization Tools | inlang" },
-      {
-        name: "description",
-        content: toolsDescription,
-      },
-      { name: "og:image", content: ogImage },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: ogImage },
-      {
-        name: "twitter:image:alt",
-        content: "inlang is the open-format TMS for software teams.",
-      },
-      { name: "twitter:title", content: "Localization Tools | inlang" },
-      {
-        name: "twitter:description",
-        content: toolsDescription,
-      },
-      { name: "twitter:site", content: "@inlanghq" },
-      { name: "twitter:creator", content: "@inlanghq" },
-    ],
-  }),
-  component: ToolsPage,
-});
+type RegistryItem = (typeof registry)[number];
 
 const prioritizedTools = new Map([
   ["paraglide js", 0],
@@ -65,6 +46,25 @@ const tools = registry
     return aName.localeCompare(bName);
   });
 
+export const Route = createFileRoute("/c/tools")({
+  head: () =>
+    buildCategoryHead({
+      path: "/c/tools",
+      title: toolsTitle,
+      description: toolsDescription,
+      items: tools.map((item) => {
+        // Items with their own website are listed with that address.
+        const standaloneSite = getStandaloneSiteRedirect(item.uniqueID);
+        return {
+          name: textOf(item.displayName),
+          description: textOf(item.description),
+          url: standaloneSite?.href ?? marketplaceItemUrl(item),
+        };
+      }),
+    }),
+  component: ToolsPage,
+});
+
 function ToolsPage() {
   return (
     <main className="bg-white text-slate-900">
@@ -72,11 +72,11 @@ function ToolsPage() {
       <section className="border-b border-slate-200 bg-slate-50 px-6 py-16">
         <div className="mx-auto max-w-6xl">
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-            Tools
+            A tool for every localization need
           </h1>
           <p className="mt-4 max-w-2xl text-lg text-slate-600">
-            Tools that read and update the same open localization source of
-            truth: editors, runtimes, CI workflows, and AI agents.
+            Tools for translators, developers and CI. They all work on the same
+            project.inlang folder in your repo.
           </p>
           <div className="mt-6">
             <Link
@@ -118,15 +118,10 @@ function ToolsPage() {
   );
 }
 
-function ToolCard({ item }: { item: (typeof registry)[number] }) {
-  const displayName =
-    typeof item.displayName === "object"
-      ? item.displayName.en
-      : item.displayName;
-  const description =
-    typeof item.description === "object"
-      ? item.description.en
-      : item.description;
+function ToolCard({ item }: { item: RegistryItem }) {
+  const facts = toolFacts[item.id];
+  const displayName = textOf(item.displayName);
+  const description = textOf(item.description);
   const slug = item.id.replaceAll(".", "-");
   const isExternal = item.keywords
     ?.map((k) => k.toLowerCase())
@@ -164,9 +159,17 @@ function ToolCard({ item }: { item: (typeof registry)[number] }) {
             </span>
           )}
         </div>
-        <p className="line-clamp-2 flex-1 text-sm text-slate-500 group-hover:text-slate-600">
+        <p className="line-clamp-2 text-sm text-slate-500 group-hover:text-slate-600">
           {description}
         </p>
+        {facts && (
+          <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-500">
+            <span className="font-medium text-slate-700">
+              For {facts.audience}.
+            </span>{" "}
+            {facts.use}
+          </p>
+        )}
       </div>
 
       {/* Footer */}

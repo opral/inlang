@@ -1,4 +1,6 @@
 ---
+title: "inlang message format plugin: store translations as JSON in your repo"
+description: "Store translations as JSON files in your Git repo, with variables, plurals and variants. Add plugin.inlang.messageFormat with a pathPattern to project.inlang/settings.json. The recommended plugin for new projects."
 og:title: Inlang Message Format Plugin
 og:description: A storage plugin for inlang that stores messages in JSON files per language. Supports variables, pluralization, and nested structures.
 ---

@@ -66,6 +66,29 @@ describe("marketplace seo helpers", () => {
     expect(title).toBe("Paraglide JS | inlang");
   });
 
+  it("uses the title frontmatter for a root page title", () => {
+    const title = buildMarketplaceTitle({
+      displayName: "i18next",
+      pagePath: "/",
+      rawMarkdown: "# i18next Plugin for Inlang",
+      frontmatter: { title: "i18next plugin: import and export i18next JSON" },
+    });
+
+    expect(title).toBe(
+      "i18next plugin: import and export i18next JSON | inlang",
+    );
+  });
+
+  it("does not repeat the README heading in a root page title", () => {
+    const title = buildMarketplaceTitle({
+      displayName: "Android Resources",
+      pagePath: "/",
+      rawMarkdown: "# Android Resources plugin for Inlang",
+    });
+
+    expect(title).toBe("Android Resources | inlang");
+  });
+
   it("extracts first h1 after frontmatter", () => {
     const h1 = extractMarkdownH1(`---
 title: Hello
@@ -97,6 +120,28 @@ Later content.
     expect(description).toBe(
       "First paragraph line one. Second line of the same paragraph.",
     );
+  });
+
+  it("strips markdown links and code from the description", () => {
+    const description = extractMarkdownDescription(`# Title
+
+Reads and writes [i18next](https://inlang.com/m/kl95463j) files with \`strings.xml\` and **plurals**.
+`);
+
+    expect(description).toBe(
+      "Reads and writes i18next files with strings.xml and plurals.",
+    );
+  });
+
+  it("skips HTML blocks when extracting the description", () => {
+    const description = extractMarkdownDescription(`# Title
+
+<p><a href="https://example.com"><img src="badge.svg" /></a></p>
+
+VS Code extension for i18n.
+`);
+
+    expect(description).toBe("VS Code extension for i18n.");
   });
 
   it("prefers frontmatter description over markdown and fallback", () => {

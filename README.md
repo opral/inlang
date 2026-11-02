@@ -5,11 +5,12 @@
 
 <h1 align="center"><img src="https://github.com/opral/inlang/blob/main/assets/logo_rounded.png?raw=true" alt="inlang icon" height="32" align="absmiddle">&nbsp;inlang</h1>
 
-<h3 align="center">Run localization through Git, CI, and pull requests.</h3>
+<h3 align="center">The Git-based translation management system.</h3>
 
 <p align="center">
-  <a href="https://inlang.com/c/apps">Tools</a> ·
-  <a href="https://inlang.com/documentation">Docs</a> ·
+  <a href="https://inlang.com/c/tools">Tools</a> ·
+  <a href="https://inlang.com/c/plugins">Plugins</a> ·
+  <a href="https://inlang.com/docs">Docs</a> ·
   <a href="https://discord.gg/gdMPPWy57R">Discord</a>
 </p>
 
@@ -21,14 +22,76 @@
   <a href="https://ethz.ch/de.html"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/eth-zurich.svg?raw=true" alt="ETH Zurich" height="18"></a>&nbsp;&nbsp;
   <a href="https://brave.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/brave.svg?raw=true" alt="Brave" height="18"></a>&nbsp;&nbsp;
   <a href="https://www.michelin.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/michelin.svg?raw=true" alt="Michelin" height="18"></a>&nbsp;&nbsp;
-  <a href="https://www.idealista.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/idealista.svg?raw=true" alt="idealista" height="18"></a>
+  <a href="https://www.idealista.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/idealista.svg?raw=true" alt="idealista" height="18"></a>&nbsp;&nbsp;
+  <a href="https://lovable.dev/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/lovable.svg?raw=true" alt="Lovable" height="18"></a>
 </p>
 
 ---
 
-Keep translation files in your Git repo. Inlang gives editors, agents, and automation a shared localization model, so they can work with those files without making a hosted TMS the source of truth.
+inlang is an open-source translation management system (TMS) that lives in your Git repository. Translations are plain files in your repo. There is no server to host and no vendor database.
 
-## One project, many tools
+Your coding agent translates the files with your code as context, runs `inlang check`, fixes failures and opens a pull request. Translators edit in [Fink](https://fink.inlang.com), a web editor. You review the pull request.
+
+## What is a translation management system?
+
+A TMS stores an app's translations and manages how they are edited and reviewed. Most TMSs are hosted web apps. inlang keeps translations as files in your repo, where AI agents can read, edit and check them.
+
+|                              | Hosted TMS                                                                        | inlang                                           |
+| ---------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ |
+| **Who does the work**        | People work in the vendor's app. Agents use the vendor's API.                     | AI agents do the work. You review it.            |
+| **Where translations live**  | In a vendor's database. The vendor keeps the main copy and syncs it to your repo. | In your Git repo. Plain files. Nothing to host.  |
+| **How mistakes are caught**  | Reviewers proofread in the vendor app.                                            | `inlang check` finds errors. AI agents fix them. |
+| **How changes are reviewed** | In a separate vendor app, apart from code review.                                 | In a pull request.                               |
+
+## AI agents handle your translations, with guardrails
+
+```text
+you ask  →  agent translates  →  inlang check  →  you review
+```
+
+1. You ask your coding agent: "Add German."
+2. The agent adds `de` to `locales` in `project.inlang/settings.json` and writes `messages/de.json`.
+3. The agent runs the check and fixes every finding:
+
+   ```bash
+   npx @inlang/cli check --project ./project.inlang
+   ```
+
+4. CI runs the same check on the pull request. You review and merge.
+
+The check exits with code 1 on findings. Use `--format json` for a machine-readable report. It finds missing and empty translations, missing variables, missing plural forms and unused messages (`--unused-messages --source ./src`). It checks structure, so you review the wording in the pull request.
+
+Machine translation is optional. `npx @inlang/cli machine translate --project ./project.inlang` adds translations with a provider you configure. See the [CLI documentation](https://inlang.com/m/2qj2w8pu/app-inlang-cli) for provider setup.
+
+## Translators edit in the browser
+
+[Fink](https://fink.inlang.com) is a web editor for translators. They sign in with a free GitHub account and need no Git. Fink pushes changes to a branch, or to a fork without write access, and you review them in a pull request.
+
+## Plugins for any translation format
+
+Plugins import and export your translation files. Pick the plugin for your format, or write your own for a format that is missing.
+
+- i18next
+- next-intl
+- ICU MessageFormat v1
+- inlang message format (JSON, used by Paraglide JS)
+- Android `strings.xml`
+- Apple `.strings` and `.xcstrings`
+
+See all [plugins](https://inlang.com/c/plugins). Each plugin page lists the settings key and `pathPattern` to add to `project.inlang/settings.json`.
+
+## A tool for every localization need
+
+The tools work on the same `project.inlang` folder in your repo.
+
+| Tool                                                                                                                                                          | For                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| [Fink](https://fink.inlang.com)                                                                                                                               | Translators, web app   |
+| [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension)                                                                                             | Developers, VS Code    |
+| [Parrot](https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global) | Designers, Figma       |
+| [Paraglide JS](https://paraglidejs.com)                                                                                                                       | Your app, i18n library |
+| [inlang CLI](https://inlang.com/m/2qj2w8pu/app-inlang-cli)                                                                                                    | CI and coding agents   |
+| [SDK](https://www.npmjs.com/package/@inlang/sdk)                                                                                                              | Your own tools         |
 
 ```text
 Fink · Sherlock · CLI · Paraglide · your own tool
@@ -42,48 +105,28 @@ Fink · Sherlock · CLI · Paraglide · your own tool
           translation files in Git
 ```
 
-An inlang project describes messages, variants, locales, and settings. [Plugins](https://inlang.com/c/plugins) connect that model to the files your app uses, including JSON and i18next resources. Tools can use the [SDK](https://www.npmjs.com/package/@inlang/sdk) instead of each building its own parser and project model.
+An inlang project describes messages, variants, locales and settings. Plugins connect that model to the files your app uses. Tools use the [SDK](https://www.npmjs.com/package/@inlang/sdk) instead of each building its own parser and project model.
 
-That gives tool builders a common format to work with. You can use an editor, add an automation, or build your own tool around the same localization model.
+## When to use inlang
 
-## Use your Git workflow
+Use inlang if:
 
-```text
-my-app/
-├── src/
-├── messages/
-│   ├── en.json
-│   └── de.json
-└── project.inlang/
-    └── settings.json
-```
+- Your app's text lives in your repo: i18next, next-intl, Paraglide JS, JSON, iOS or Android files.
+- Developers and AI agents do most of the translation work.
+- You want translation changes reviewed in pull requests and checked in CI.
 
-In this setup, Git tracks the translation files and project settings. A configured plugin reads and writes the message files. Localization changes can follow the same path as code changes:
+Use Crowdin or Lokalise if:
 
-```text
-Change source text → update translations → run CI → review the pull request → ship
-```
-
-For example, CI can check the translations:
-
-```bash
-npx @inlang/cli check --project ./project.inlang
-```
-
-An optional automation can create draft translations with a configured provider:
-
-```bash
-npx @inlang/cli machine translate --project ./project.inlang
-```
-
-The resulting translation files can be committed and reviewed in a pull request. `check` reports project errors, missing translations, missing or unknown variables and, for Paraglide projects, unused messages; it does not judge translation quality. Generated translations need review before shipping. See the [CLI documentation](https://inlang.com/m/2qj2w8pu/app-inlang-cli) for provider setup.
+- You manage agencies or freelancers in one tool.
+- Your translators cannot use a GitHub account.
+- Your text lives in a CMS, not in code.
 
 ## Get started
 
-- [Set up an inlang project](https://inlang.com/documentation)
-- [Use the CLI in CI](https://inlang.com/m/2qj2w8pu/app-inlang-cli)
-- [Build with the SDK](https://www.npmjs.com/package/@inlang/sdk)
-- [Explore inlang tools](https://inlang.com/c/apps)
+- New JavaScript or TypeScript app: `npx @inlang/paraglide-js@latest init` ([Paraglide JS](https://paraglidejs.com))
+- Existing i18next project: `npx i18next-cli init --inlang`
+- Other formats and next-intl: see the [plugins](https://inlang.com/c/plugins) and the [CLI documentation](https://inlang.com/m/2qj2w8pu/app-inlang-cli)
+- Build your own tool with the [SDK](https://www.npmjs.com/package/@inlang/sdk)
 
 ## Contributing
 

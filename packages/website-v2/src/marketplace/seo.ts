@@ -5,7 +5,18 @@ type MarketplaceHeadInput = {
   frontmatter?: Record<string, unknown>;
 };
 
+/**
+ * Title of a marketplace page. A root page uses the `title` frontmatter, or the
+ * display name, so the name is not repeated after the README heading. A
+ * subpage is the display name followed by the subpage title.
+ */
 export function buildMarketplaceTitle(input: MarketplaceHeadInput) {
+  if (input.pagePath === "/") {
+    const title = input.frontmatter?.title;
+    const rootTitle =
+      typeof title === "string" && title.trim() ? title.trim() : undefined;
+    return `${rootTitle ?? input.displayName} | inlang`;
+  }
   const subpageTitle = getMarketplaceSubpageTitle(input);
   if (subpageTitle) {
     return `${input.displayName} - ${subpageTitle} | inlang`;
@@ -226,6 +237,7 @@ export function extractMarkdownDescription(markdown: string) {
     }
     if (trimmed.startsWith("#")) continue;
     if (trimmed.startsWith("![")) continue;
+    if (trimmed.startsWith("<")) continue;
     if (
       trimmed.startsWith("- ") ||
       trimmed.startsWith("* ") ||
@@ -238,7 +250,15 @@ export function extractMarkdownDescription(markdown: string) {
   }
 
   if (!paragraph.length) return undefined;
-  return paragraph.join(" ");
+  return stripInlineMarkdown(paragraph.join(" "));
+}
+
+/** Plain text for a meta description: no links, code ticks or bold markers. */
+function stripInlineMarkdown(text: string) {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/(\*\*|__)(.+?)\1/g, "$2");
 }
 
 function stripFrontmatter(markdown: string) {

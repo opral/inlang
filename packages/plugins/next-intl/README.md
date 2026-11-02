@@ -1,3 +1,8 @@
+---
+title: "next-intl plugin: import and export next-intl messages in your repo"
+description: "Import and export next-intl message files in your Git repo, one file per locale or per namespace. Add plugin.inlang.nextIntl with a pathPattern to project.inlang/settings.json."
+---
+
 # next-intl Plugin for Inlang
 
 This plugin enables your inlang project to read and write [next-intl](https://next-intl-docs.vercel.app/) translation files.

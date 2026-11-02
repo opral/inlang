@@ -1,38 +1,18 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { registry } from "@inlang/marketplace-registry";
+import {
+  buildCategoryHead,
+  marketplaceItemUrl,
+  textOf,
+} from "../../marketplace/categorySeo";
+import { pluginFacts } from "../../marketplace/categoryFacts";
 
-const ogImage =
-  "https://cdn.jsdelivr.net/gh/opral/inlang@latest/packages/website/public/opengraph/inlang-social-image.jpg";
+const pluginsTitle = "Plugins for any translation format | inlang";
 
 const pluginsDescription =
-  "Explore plugins that connect JSON, ICU, i18next, XLIFF, and other formats to the inlang localization source of truth.";
+  "inlang plugins import and export the translation files in your Git repo: i18next, next-intl, ICU MessageFormat, Android strings.xml, Apple .strings and .xcstrings, and inlang message format JSON.";
 
-export const Route = createFileRoute("/c/plugins")({
-  head: () => ({
-    meta: [
-      { title: "Localization Plugins | inlang" },
-      {
-        name: "description",
-        content: pluginsDescription,
-      },
-      { name: "og:image", content: ogImage },
-      { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:image", content: ogImage },
-      {
-        name: "twitter:image:alt",
-        content: "inlang is the open-format TMS for software teams.",
-      },
-      { name: "twitter:title", content: "Localization Plugins | inlang" },
-      {
-        name: "twitter:description",
-        content: pluginsDescription,
-      },
-      { name: "twitter:site", content: "@inlanghq" },
-      { name: "twitter:creator", content: "@inlanghq" },
-    ],
-  }),
-  component: PluginsPage,
-});
+type RegistryItem = (typeof registry)[number];
 
 // Filter plugins from the registry
 const plugins = registry
@@ -48,6 +28,27 @@ const plugins = registry
     return aName.localeCompare(bName);
   });
 
+/** Code matchers belong to the Sherlock VS Code extension, not to a file format. */
+const isCodeMatcher = (item: RegistryItem) =>
+  item.id.endsWith("FunctionMatcher");
+const formatPlugins = plugins.filter((item) => !isCodeMatcher(item));
+const codeMatchers = plugins.filter(isCodeMatcher);
+
+export const Route = createFileRoute("/c/plugins")({
+  head: () =>
+    buildCategoryHead({
+      path: "/c/plugins",
+      title: pluginsTitle,
+      description: pluginsDescription,
+      items: plugins.map((item) => ({
+        name: textOf(item.displayName),
+        description: textOf(item.description),
+        url: marketplaceItemUrl(item),
+      })),
+    }),
+  component: PluginsPage,
+});
+
 function PluginsPage() {
   return (
     <main className="bg-white text-slate-900">
@@ -55,11 +56,16 @@ function PluginsPage() {
       <section className="border-b border-slate-200 bg-slate-50 px-6 py-16">
         <div className="mx-auto max-w-6xl">
           <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
-            Plugins
+            Plugins for any translation format
           </h1>
           <p className="mt-4 max-w-2xl text-lg text-slate-600">
-            Connect JSON, ICU, i18next, XLIFF, and other formats to the same
-            inlang localization source of truth.
+            Plugins import and export your translation files. Pick the plugin
+            for your format, or write your own for a format that is missing.
+          </p>
+          <p className="mt-3 max-w-2xl text-[15px] text-slate-500">
+            To use a plugin, add its module URL to <code>modules</code> and its
+            settings to <code>project.inlang/settings.json</code>. Then run{" "}
+            <code>npx @inlang/cli check --project ./project.inlang</code>.
           </p>
           <div className="mt-6">
             <Link
@@ -90,26 +96,37 @@ function PluginsPage() {
       <section className="px-6 py-16">
         <div className="mx-auto max-w-6xl">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {plugins.map((item) => (
+            {formatPlugins.map((item) => (
               <PluginCard key={item.id} item={item} />
             ))}
             <BuildYourOwnCard />
           </div>
+          {codeMatchers.length > 0 && (
+            <>
+              <h2 className="mt-14 text-xl font-semibold tracking-tight">
+                Code matchers for Sherlock
+              </h2>
+              <p className="mt-2 max-w-2xl text-[15px] text-slate-500">
+                These plugins help the Sherlock VS Code extension find messages
+                in your code. They do not read translation files.
+              </p>
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {codeMatchers.map((item) => (
+                  <PluginCard key={item.id} item={item} />
+                ))}
+              </div>
+            </>
+          )}
         </div>
       </section>
     </main>
   );
 }
 
-function PluginCard({ item }: { item: (typeof registry)[number] }) {
-  const displayName =
-    typeof item.displayName === "object"
-      ? item.displayName.en
-      : item.displayName;
-  const description =
-    typeof item.description === "object"
-      ? item.description.en
-      : item.description;
+function PluginCard({ item }: { item: RegistryItem }) {
+  const facts = pluginFacts[item.id];
+  const displayName = textOf(item.displayName);
+  const description = textOf(item.description);
   const slug = item.id.replaceAll(".", "-");
 
   return (
@@ -138,9 +155,29 @@ function PluginCard({ item }: { item: (typeof registry)[number] }) {
         <h3 className="mb-2 text-[15px] font-bold text-slate-800 group-hover:text-slate-900">
           {displayName}
         </h3>
-        <p className="line-clamp-2 flex-1 text-sm text-slate-500 group-hover:text-slate-600">
+        <p className="line-clamp-2 text-sm text-slate-500 group-hover:text-slate-600">
           {description}
         </p>
+        {facts && (
+          <dl className="mt-3 flex flex-1 flex-col gap-1 text-xs text-slate-500">
+            <div className="flex gap-1.5">
+              <dt className="shrink-0">Format</dt>
+              <dd className="font-medium text-slate-700">{facts.format}</dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="shrink-0">Key</dt>
+              <dd className="min-w-0 break-all font-mono text-slate-700">
+                {facts.settingsKey}
+              </dd>
+            </div>
+            <div className="flex gap-1.5">
+              <dt className="shrink-0">Path</dt>
+              <dd className="min-w-0 break-all font-mono text-slate-700">
+                {facts.pathPattern}
+              </dd>
+            </div>
+          </dl>
+        )}
       </div>
 
       {/* Footer */}

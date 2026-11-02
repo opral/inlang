@@ -62,10 +62,6 @@ const resourceLinks = [
 const categoriesLinks = [
   { name: "Tools", href: "/c/tools" },
   { name: "Plugins", href: "/c/plugins" },
-  {
-    name: "Validation Rules",
-    href: "https://github.com/opral/lix/issues/239",
-  },
 ];
 
 const contactLinks = [

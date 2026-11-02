@@ -1,3 +1,8 @@
+---
+title: "Android strings.xml plugin: import and export Android resources"
+description: "Import and export Android strings.xml files, with variables and CLDR plurals, in your Git repo. Add plugin.inlang.android with a pathPattern to project.inlang/settings.json."
+---
+
 # Android Resources plugin for Inlang
 
 Reads and writes Android `strings.xml` files through Inlang's v2 message model.

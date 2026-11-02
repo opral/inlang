@@ -11,7 +11,8 @@
     "format": "pnpm exec prettier . --write",
     "test": "vitest run",
     "deploy": "wrangler deploy",
-    "deploy:redirect": "wrangler deploy --config www-redirect/wrangler.json --name inlang-www-redirect"
+    "deploy:redirect": "wrangler deploy --config www-redirect/wrangler.json --name inlang-www-redirect",
+    "update-npm-downloads": "node ./scripts/update-npm-downloads.mjs"
   },
   "dependencies": {
     "@inlang/marketplace-manifest": "workspace:*",
