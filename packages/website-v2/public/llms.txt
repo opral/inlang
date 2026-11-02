@@ -48,7 +48,7 @@ Key facts:
 
 - [Fink](https://fink.inlang.com): web translation editor for translators. It reads and writes the repository through GitHub
 - [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension): VS Code extension with inline previews, editing and string extraction
-- Parrot: Figma plugin that uses the project's messages
+- [Parrot](https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global): Figma plugin that uses the project's messages
 - [inlang CLI](https://inlang.com/m/2qj2w8pu/app-inlang-cli): `check` for CI and `machine translate`
 - [@inlang/sdk](https://www.npmjs.com/package/@inlang/sdk): build custom tools on the .inlang format
 

@@ -21,8 +21,7 @@ type Tool = {
   tag: string;
   name: string;
   body: string;
-  /** Omitted when the tool has no page to link to. */
-  href?: string;
+  href: string;
   icon: ReactNode;
 };
 
@@ -45,6 +44,7 @@ const tools: Tool[] = [
     tag: "Figma plugin",
     name: "Parrot",
     body: "Translate Figma designs with your project's messages.",
+    href: "https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global",
     icon: (
       <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px] bg-teal-600">
         <BirdIcon size={22} color="#ffffff" />
@@ -143,10 +143,11 @@ export function EcosystemSection() {
 }
 
 function ToolCard({ tool }: { tool: Tool }) {
-  const className =
-    "flex h-full items-start gap-4 rounded-2xl border border-line bg-white p-6 transition-colors";
-  const content = (
-    <>
+  return (
+    <a
+      href={tool.href}
+      className="flex h-full items-start gap-4 rounded-2xl border border-line bg-white p-6 transition-colors hover:border-ink-faint"
+    >
       {tool.icon}
       <span className="flex min-w-0 flex-col gap-1.5">
         <MonoLabel className="text-ink-faint">{tool.tag}</MonoLabel>
@@ -157,13 +158,6 @@ function ToolCard({ tool }: { tool: Tool }) {
           {tool.body}
         </span>
       </span>
-    </>
-  );
-  return tool.href ? (
-    <a href={tool.href} className={`${className} hover:border-ink-faint`}>
-      {content}
     </a>
-  ) : (
-    <div className={className}>{content}</div>
   );
 }

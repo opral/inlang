@@ -84,14 +84,14 @@ See all [plugins](https://inlang.com/c/plugins). Each plugin page lists the sett
 
 The tools work on the same `project.inlang` folder in your repo.
 
-| Tool                                                              | For                    |
-| ----------------------------------------------------------------- | ---------------------- |
-| [Fink](https://fink.inlang.com)                                   | Translators, web app   |
-| [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension) | Developers, VS Code    |
-| Parrot                                                            | Designers, Figma       |
-| [Paraglide JS](https://paraglidejs.com)                           | Your app, i18n library |
-| [inlang CLI](https://inlang.com/m/2qj2w8pu/app-inlang-cli)        | CI and coding agents   |
-| [SDK](https://www.npmjs.com/package/@inlang/sdk)                  | Your own tools         |
+| Tool                                                                                                                                                          | For                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
+| [Fink](https://fink.inlang.com)                                                                                                                               | Translators, web app   |
+| [Sherlock](https://inlang.com/m/r7kp499g/app-inlang-ideExtension)                                                                                             | Developers, VS Code    |
+| [Parrot](https://www.figma.com/community/plugin/1205803482754362456/parrot-localization-language-translation-no-lorem-ipsum-translator-i18n-l10n-html-global) | Designers, Figma       |
+| [Paraglide JS](https://paraglidejs.com)                                                                                                                       | Your app, i18n library |
+| [inlang CLI](https://inlang.com/m/2qj2w8pu/app-inlang-cli)                                                                                                    | CI and coding agents   |
+| [SDK](https://www.npmjs.com/package/@inlang/sdk)                                                                                                              | Your own tools         |
 
 ```text
 Fink · Sherlock · CLI · Paraglide · your own tool
