@@ -490,3 +490,44 @@ test("mixed Welsh zero keeps exact cardinal zero separate from ordinal categorie
 		"ordinal zero"
 	);
 });
+
+test.each(["en", "fr", "ar", "cy", "lv"])(
+	"one zero source branch preserves cardinal and ordinal fallback lookups in %s",
+	async (locale) => {
+		const resource = {
+			rank: "base",
+			rank_zero: "cardinal zero",
+			rank_one: "cardinal one",
+			rank_other: "cardinal other",
+			rank_ordinal_one: "ordinal one",
+			rank_ordinal_other: "ordinal other",
+			rank_male: "context base",
+			rank_male_zero: "context cardinal zero",
+			rank_male_other: "context cardinal other",
+			rank_male_ordinal_other: "context ordinal other",
+		};
+		const { runtime, imported } = await setup({ [locale]: resource });
+		for (const count of [0, 1, 2, 3, 10, 11, 19, 20, 21, 100, 0.5]) {
+			for (const ordinal of [false, true]) {
+				for (const context of [undefined, "male", "unknown"]) {
+					const inputs = {
+						count,
+						ordinal,
+						...(context === undefined ? {} : { context }),
+					};
+					expect(
+						evaluate(imported, "rank", locale, inputs),
+						JSON.stringify({ locale, ...inputs })
+					).toBe(runtime.t("rank", { lng: locale, ...inputs }));
+				}
+			}
+		}
+		expect(
+			imported.variants.filter((variant) =>
+				variant.pattern?.some(
+					(part) => part.type === "text" && part.value === resource.rank_zero
+				)
+			)
+		).toHaveLength(1);
+	}
+);

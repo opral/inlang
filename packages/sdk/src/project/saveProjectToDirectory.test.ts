@@ -1621,3 +1621,219 @@ test("a file read as another locale keeps its messages", async () => {
 		'{"hello": "Hello"}'
 	);
 });
+
+test.each([
+	{
+		name: "changed while deleting its last message",
+		before: '{"hello":"Hello"}',
+		next: {},
+		external: '{"hello":"External"}',
+		conflict: true,
+	},
+	{
+		name: "deleted during export",
+		before: '{"hello":"Hello"}',
+		next: { hello: "New" },
+		external: undefined,
+		conflict: true,
+	},
+	{
+		name: "created during export",
+		before: undefined,
+		next: { hello: "New" },
+		external: '{"hello":"External"}',
+		conflict: true,
+	},
+	{
+		name: "changed during an otherwise unchanged verbatim export",
+		before: '{ "hello": "Hello" }\n',
+		next: { hello: "Hello" },
+		external: '{"hello":"External"}',
+		conflict: true,
+	},
+	{
+		name: "unchanged while deleting its last message",
+		before: '{"hello":"Hello"}',
+		next: {},
+		external: null,
+		conflict: false,
+	},
+	{
+		name: "still missing when its first message is exported",
+		before: undefined,
+		next: { hello: "New" },
+		external: null,
+		conflict: false,
+	},
+])(
+	"protects a resource $name",
+	async ({ before, next, external, conflict }) => {
+		const resourcePath = "/repo/en.json";
+		const volume = Volume.fromJSON({
+			"/repo/project.inlang/settings.json": JSON.stringify({
+				baseLocale: "en",
+				locales: ["en"],
+				modules: [],
+				mock: { pathPattern: "./{locale}.json" },
+			}),
+			...(before === undefined ? {} : { [resourcePath]: before }),
+		});
+		const delegate = keepingJsonPlugin(["./{locale}.json"]);
+		let finishExport!: () => void;
+		let exportStarted!: () => void;
+		const paused = new Promise<void>((resolve) => {
+			finishExport = resolve;
+		});
+		const started = new Promise<void>((resolve) => {
+			exportStarted = resolve;
+		});
+		const plugin: InlangPlugin = {
+			...delegate,
+			exportFiles: async (args) => {
+				const result = await delegate.exportFiles!(args);
+				exportStarted();
+				await paused;
+				return result;
+			},
+		};
+		const project = await loadProjectFromDirectory({
+			fs: volume as any,
+			path: "/repo/project.inlang",
+			providePlugins: [plugin],
+		});
+		try {
+			await project.db.deleteFrom("inlang_variant").execute();
+			await project.db.deleteFrom("inlang_message").execute();
+			await project.db.deleteFrom("inlang_bundle").execute();
+			if (Object.keys(next).length)
+				await project.importFiles({
+					pluginKey: "mock",
+					files: [{ locale: "en", content: bytes(JSON.stringify(next)) }],
+				});
+			const saving = saveProjectToDirectory({
+				fs: volume as any,
+				project,
+				path: "/repo/project.inlang",
+			});
+			// Attach the rejection handler before releasing the exporter.
+			const outcome = saving.then(
+				() => undefined,
+				(error: unknown) => error
+			);
+			await started;
+			if (external === undefined) volume.unlinkSync(resourcePath);
+			else if (external !== null) volume.writeFileSync(resourcePath, external);
+			finishExport();
+			const error = await outcome;
+			if (conflict) {
+				expect(error).toBeInstanceOf(Error);
+				expect((error as Error).message).toContain(resourcePath);
+				expect((error as Error).message).toContain("Reload the project");
+				if (external === undefined)
+					expect(volume.existsSync(resourcePath)).toBe(false);
+				else expect(volume.readFileSync(resourcePath, "utf8")).toBe(external);
+			} else {
+				expect(error).toBeUndefined();
+				expect(
+					JSON.parse(String(volume.readFileSync(resourcePath, "utf8")))
+				).toEqual(next);
+			}
+		} finally {
+			finishExport();
+			await project.close();
+		}
+	}
+);
+
+test("allows a plugin to write its own destination twice after the resource baseline is captured", async () => {
+	const volume = Volume.fromJSON({ "/repo/en.json": '{"hello":"Before"}' });
+	const plugin: InlangPlugin = {
+		key: "mock",
+		toBeImportedFiles: async () => [{ locale: "en", path: "./en.json" }],
+		exportFiles: async () =>
+			["First", "Second"].map((hello) => ({
+				locale: "en",
+				name: "en.json",
+				content: bytes(JSON.stringify({ hello })),
+			})),
+	};
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: {
+				baseLocale: "en",
+				locales: ["en"],
+				modules: [],
+				mock: { pathPattern: "./{locale}.json" },
+			},
+		}),
+		providePlugins: [plugin],
+	});
+	try {
+		await saveProjectToDirectory({
+			fs: volume as any,
+			project,
+			path: "/repo/project.inlang",
+		});
+		expect(
+			JSON.parse(String(volume.readFileSync("/repo/en.json", "utf8")))
+		).toEqual({ hello: "Second" });
+	} finally {
+		await project.close();
+	}
+});
+
+test("duplicate descriptors keep one baseline when a resource changes during discovery", async () => {
+	const resourcePath = "/repo/en.json";
+	const original = '{"hello":"Before"}';
+	const external = '{"hello":"Changed during discovery"}';
+	const volume = Volume.fromJSON({ [resourcePath]: original });
+	const readFile = volume.promises.readFile.bind(volume.promises);
+	let resourceReads = 0;
+	const fs = {
+		...volume.promises,
+		readFile: async (...args: Parameters<typeof readFile>) => {
+			const content = await readFile(...args);
+			if (String(args[0]) === resourcePath && resourceReads++ === 0)
+				volume.writeFileSync(resourcePath, external);
+			return content;
+		},
+	};
+	const plugin: InlangPlugin = {
+		key: "mock",
+		toBeImportedFiles: async () => [
+			{ locale: "en", path: "./en.json" },
+			{ locale: "de", path: "./en.json" },
+		],
+		exportFiles: async ({ files }) => [
+			{
+				locale: "en",
+				name: "en.json",
+				content: files![0]!.content,
+				verbatim: true,
+			},
+		],
+	};
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: {
+				baseLocale: "en",
+				locales: ["en", "de"],
+				modules: [],
+				mock: { pathPattern: "./{locale}.json" },
+			},
+		}),
+		providePlugins: [plugin],
+	});
+	try {
+		await expect(
+			saveProjectToDirectory({
+				fs: fs as any,
+				project,
+				path: "/repo/project.inlang",
+			})
+		).rejects.toThrow("changed while its resource plugin was exporting");
+		expect(volume.readFileSync(resourcePath, "utf8")).toBe(external);
+	} finally {
+		await project.close();
+	}
+});

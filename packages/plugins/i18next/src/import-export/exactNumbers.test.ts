@@ -303,11 +303,8 @@ test("ICU exact numbers other than 0 are reported, not exported as wrong plurals
 	);
 });
 
-// `_zero` imports as the exact 0 form and the "zero" category form, like in
-// every earlier version, so that its position among the plural keys survives
-// a round trip. Where the category selects nothing but 0 (or does not exist),
-// i18next shows the exact text for `_zero`, so export writes the exact form
-// also when only it was edited.
+// Import each resource entry once. Its editable branch is exact zero where
+// the locale has no zero category at count0, and the zero category otherwise.
 test.each([
 	[
 		"en",
@@ -337,7 +334,7 @@ test.each([
 		},
 	],
 ])(
-	"`_zero` imports as exact 0 and the zero category in %s, and an edit of the exact form exports",
+	"`_zero` imports as one editable branch in %s, and its edit exports",
 	async (locale, file) => {
 		const imported = await runImport({ [locale]: file });
 		const zeroForms = imported.variants.filter((variant) =>
@@ -345,22 +342,23 @@ test.each([
 				(part) => part.type === "text" && part.value === file.item_zero
 			)
 		);
-		expect(zeroForms.map((variant) => variant.matches)).toStrictEqual([
-			[
-				{ type: "literal-match", key: "count", value: "0" },
-				{ type: "catchall-match", key: "countPlural" },
-			],
-			[
-				{ type: "catchall-match", key: "count" },
-				{ type: "literal-match", key: "countPlural", value: "zero" },
-			],
-		]);
+		expect(zeroForms).toHaveLength(1);
+		expect(zeroForms[0]!.matches).toStrictEqual(
+			locale === "ar"
+				? [
+						{ type: "catchall-match", key: "count" },
+						{ type: "literal-match", key: "countPlural", value: "zero" },
+					]
+				: [
+						{ type: "literal-match", key: "count", value: "0" },
+						{ type: "catchall-match", key: "countPlural" },
+					]
+		);
 		expect(await runExport(withIds(imported))).toStrictEqual({
 			[locale]: file,
 		});
 
-		// an edit of only the exact-0 form is exported: the category form is
-		// never shown for `_zero` in this language
+		// Editing the one branch changes the one source entry.
 		zeroForms[0]!.pattern = [{ type: "text", value: "edited" }];
 		const edited = await runExport(withIds(imported));
 		expect(edited).toStrictEqual({
@@ -371,21 +369,11 @@ test.each([
 		expect(t("item", { lng: locale, count: 1 })).toBe(
 			file.item_one.replace("{{count}}", "1")
 		);
-
-		// an edit of only the category form is not exported, as in earlier
-		// versions: i18next never shows it for this language
-		zeroForms[0]!.pattern = [{ type: "text", value: file.item_zero }];
-		zeroForms[1]!.pattern = [{ type: "text", value: "category edit" }];
-		expect(await runExport(withIds(imported))).toStrictEqual({
-			[locale]: file,
-		});
 	}
 );
 
-// Latvian's "zero" category also selects 10, 11–19, 20, 30, …, and i18next
-// uses `_zero` for those counts too. Two forms are needed there: exact 0 and
-// the category. They must have the same text.
-test("`_zero` imports as exact 0 and the zero category in Latvian", async () => {
+// Latvian zero selects 0 as well as 10, 11–19, …: one category branch covers both.
+test("`_zero` imports as one zero-category branch in Latvian", async () => {
 	const file = {
 		item_zero: "{{count}} vienību",
 		item_one: "{{count}} vienība",
@@ -397,15 +385,10 @@ test("`_zero` imports as exact 0 and the zero category in Latvian", async () => 
 			(part) => part.type === "text" && part.value === " vienību"
 		)
 	);
-	expect(zeroForms.map((variant) => variant.matches)).toStrictEqual([
-		[
-			{ type: "literal-match", key: "count", value: "0" },
-			{ type: "catchall-match", key: "countPlural" },
-		],
-		[
-			{ type: "catchall-match", key: "count" },
-			{ type: "literal-match", key: "countPlural", value: "zero" },
-		],
+	expect(zeroForms).toHaveLength(1);
+	expect(zeroForms[0]!.matches).toStrictEqual([
+		{ type: "catchall-match", key: "count" },
+		{ type: "literal-match", key: "countPlural", value: "zero" },
 	]);
 	expect(await runExport(withIds(imported))).toStrictEqual({ lv: file });
 
@@ -413,20 +396,13 @@ test("`_zero` imports as exact 0 and the zero category in Latvian", async () => 
 	expect(t("item", { lng: "lv", count: 0 })).toBe("0 vienību");
 	expect(t("item", { lng: "lv", count: 10 })).toBe("10 vienību");
 
-	// both forms edited alike: exported
+	// Editing its one branch updates the shared runtime value.
 	for (const form of zeroForms) {
 		form.pattern = [{ type: "text", value: "nav vienību" }];
 	}
 	expect(await runExport(withIds(imported))).toStrictEqual({
 		lv: { ...file, item_zero: "nav vienību" },
 	});
-
-	// only one edited: i18next cannot hold both texts, so export fails
-	// instead of silently dropping one
-	zeroForms[1]!.pattern = [{ type: "text", value: "{{count}} vienību" }];
-	await expect(runExport(withIds(imported))).rejects.toThrow(
-		'i18next export cannot represent two different texts for "item_zero" of bundle "item" (lv)'
-	);
 });
 
 test("an exact 0 and a different zero-category text: the exact text where the category selects only 0", async () => {
@@ -460,8 +436,7 @@ test("an exact 0 and a different zero-category text: the exact text where the ca
 	);
 });
 
-// Files keep their key order on import and export, also where `_zero` comes
-// after the other plural keys.
+// Existing resource text keeps its key order, independently of AST branch order.
 test.each([
 	["zero first", ["item_zero", "item_one", "item_other"]],
 	["zero last", ["item_one", "item_other", "item_zero"]],
@@ -490,6 +465,14 @@ test.each([
 				"plugin.inlang.i18next": { pathPattern: "./{locale}.json" },
 			},
 			...withIds(imported),
+			files: [
+				{
+					path: `./${locale}.json`,
+					locale,
+					content: new TextEncoder().encode(content),
+					imported: true,
+				},
+			],
 		});
 		expect(new TextDecoder().decode(file!.content)).toBe(content);
 	}

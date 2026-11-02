@@ -28,3 +28,20 @@ export function zeroCategorySelectsNonZero(locale: string): boolean {
 	zeroCategoryCache.set(locale, result);
 	return result;
 }
+
+const zeroAtZeroCache = new Map<string, boolean>();
+
+/** Whether one zero-category form also represents i18next's exact count=0 override. */
+export function zeroCategoryMatchesZero(locale: string): boolean {
+	const cached = zeroAtZeroCache.get(locale);
+	if (cached !== undefined) return cached;
+	let result = false;
+	try {
+		result =
+			new Intl.PluralRules(locale.replace(/_/g, "-")).select(0) === "zero";
+	} catch {
+		// Preserve exact-zero behavior for an invalid locale, as before.
+	}
+	zeroAtZeroCache.set(locale, result);
+	return result;
+}
