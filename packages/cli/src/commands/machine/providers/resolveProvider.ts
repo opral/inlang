@@ -2,15 +2,20 @@ import { log } from "../../../utilities/log.js";
 import { createDeepLTranslateProvider } from "./deepl.js";
 import { createGoogleTranslateProvider } from "./google.js";
 import { createDemosjarcoTranslateProvider } from "./demosjarco.js";
+import { createOpenAITranslateProvider } from "./openai.js";
 import type { MachineTranslateProvider } from "./types.js";
 
 export const PROVIDER_ENV = "INLANG_MACHINE_TRANSLATE_PROVIDER";
 export const GOOGLE_API_KEY_ENV = "INLANG_GOOGLE_TRANSLATE_API_KEY";
 export const DEEPL_API_KEY_ENV = "INLANG_DEEPL_API_KEY";
+export const OPENAI_API_KEY_ENV = "INLANG_OPENAI_API_KEY";
+export const OPENAI_MODEL_ENV = "INLANG_OPENAI_MODEL";
+export const OPENAI_REASONING_EFFORT_ENV = "INLANG_OPENAI_REASONING_EFFORT";
 export const DEMOSJARCO_MODEL_ENV = "DEMOSJARCO_TRANSLATE_MODEL";
 export const DEMOSJARCO_ZDR_ENV = "DEMOSJARCO_TRANSLATE_ZDR";
 
-export type MachineTranslateProviderName = "google" | "deepl" | "demosjarco";
+export type MachineTranslateProviderName =
+  "google" | "deepl" | "openai" | "demosjarco";
 
 const BYOK_URL = "https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok";
 const DEEPL_DOCS_URL =
@@ -20,7 +25,7 @@ const DEEPL_DOCS_URL =
  * Determines which provider to use.
  *
  * When `INLANG_MACHINE_TRANSLATE_PROVIDER` is set, that provider is used. When
- * it is unset, an already-configured BYOK provider (Google or DeepL) is used if
+ * it is unset, an already-configured BYOK provider (Google, DeepL or OpenAI) is used if
  * its API key is present; otherwise the CLI falls back to a free, third-party,
  * community-operated translation service at translate.demosjarco.dev that is
  * not owned, operated, or maintained by inlang.
@@ -33,12 +38,13 @@ function resolveMachineTranslateProviderName(): MachineTranslateProviderName {
     if (
       providerName !== "google" &&
       providerName !== "deepl" &&
+      providerName !== "openai" &&
       providerName !== "demosjarco"
     ) {
       throw new Error(
         [
           `Unsupported ${PROVIDER_ENV} value: "${process.env[PROVIDER_ENV]}".`,
-          "Supported values: google, deepl, demosjarco.",
+          "Supported values: google, deepl, openai, demosjarco.",
         ].join("\n"),
       );
     }
@@ -53,6 +59,9 @@ function resolveMachineTranslateProviderName(): MachineTranslateProviderName {
   if (process.env[DEEPL_API_KEY_ENV]) {
     return "deepl";
   }
+  if (process.env[OPENAI_API_KEY_ENV]) {
+    return "openai";
+  }
   return "demosjarco";
 }
 
@@ -65,7 +74,7 @@ export function resolveMachineTranslateProvider(): MachineTranslateProvider {
         "Using the community-operated translation service at translate.demosjarco.dev. Stability is not guaranteed.",
         "This service is not owned, operated, or maintained by inlang.",
         "Provide your own API key for higher reliability and control.",
-        `Set ${PROVIDER_ENV} to "google" or "deepl" and the matching API key to use your own provider.`,
+        `Set ${PROVIDER_ENV} to "google", "deepl", or "openai" and the matching API key to use your own provider.`,
         `See ${BYOK_URL}`,
       ].join("\n"),
     );
@@ -91,6 +100,24 @@ export function resolveMachineTranslateProvider(): MachineTranslateProvider {
       );
     }
     return createDeepLTranslateProvider(apiKey);
+  }
+
+  if (providerName === "openai") {
+    const apiKey = process.env[OPENAI_API_KEY_ENV];
+    if (!apiKey) {
+      throw new Error(
+        [
+          `${OPENAI_API_KEY_ENV} must be set to use machine translate with OpenAI.`,
+          "Create an OpenAI API key and export it before running this command.",
+          `See ${BYOK_URL}`,
+        ].join("\n"),
+      );
+    }
+    return createOpenAITranslateProvider(
+      apiKey,
+      process.env[OPENAI_MODEL_ENV]?.trim() || undefined,
+      process.env[OPENAI_REASONING_EFFORT_ENV]?.trim() || undefined,
+    );
   }
 
   const apiKey = process.env[GOOGLE_API_KEY_ENV];

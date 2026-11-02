@@ -54,6 +54,15 @@ test("requires INLANG_DEEPL_API_KEY when provider is deepl", async () => {
   );
 });
 
+test("requires INLANG_OPENAI_API_KEY when provider is openai", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "openai");
+  vi.stubEnv("INLANG_OPENAI_API_KEY", "");
+
+  await expect(translateCommandAction({ project: {} as any })).rejects.toThrow(
+    "INLANG_OPENAI_API_KEY must be set",
+  );
+});
+
 function unavailableResponse() {
   return new Response(null, {
     status: 503,

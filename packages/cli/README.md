@@ -94,6 +94,15 @@ export INLANG_MACHINE_TRANSLATE_PROVIDER="deepl"
 export INLANG_DEEPL_API_KEY="your-deepl-api-key"
 ```
 
+Or use OpenAI, optionally selecting a model and reasoning effort:
+
+```bash
+export INLANG_MACHINE_TRANSLATE_PROVIDER="openai"
+export INLANG_OPENAI_API_KEY="your-openai-api-key"
+export INLANG_OPENAI_MODEL="your-model"
+export INLANG_OPENAI_REASONING_EFFORT="none"
+```
+
 This creates `messages/de.json` and `messages/fr.json` with translations.
 
 **4. Check your translations**
@@ -203,7 +212,7 @@ The translate command has the following options:
 - `--locale <source>`: Specifies the base locale.
 - `--targetLocales <targets...>`: Specifies the target locales as comma seperated list (e.g. sk,zh,pt-BR).
 
-The translations are performed with the configured provider (`INLANG_MACHINE_TRANSLATE_PROVIDER`). The community-operated translation service at translate.demosjarco.dev (not affiliated with inlang) is used by default; set `INLANG_GOOGLE_TRANSLATE_API_KEY` or `INLANG_DEEPL_API_KEY` to use your own provider, and optionally `DEMOSJARCO_TRANSLATE_MODEL` to pin a model for the community-operated service (and `DEMOSJARCO_TRANSLATE_ZDR=true` to request Zero Data Retention from it). If that service is unavailable, throttled, or returns an unparseable response, the command fails with a non-zero exit code instead of reporting success. The translated messages are added to the respective language resources. Finally, the updated resources are written back to the file system.
+The translations are performed with the configured provider (`INLANG_MACHINE_TRANSLATE_PROVIDER`). The community-operated translation service at translate.demosjarco.dev (not affiliated with inlang) is used by default; set `INLANG_GOOGLE_TRANSLATE_API_KEY`, `INLANG_DEEPL_API_KEY`, or `INLANG_OPENAI_API_KEY` to use your own provider. You can also set `DEMOSJARCO_TRANSLATE_MODEL` to pin a model for the community-operated service (and `DEMOSJARCO_TRANSLATE_ZDR=true` to request Zero Data Retention from it). If that service is unavailable, throttled, or returns an unparseable response, the command fails with a non-zero exit code instead of reporting success. The translated messages are added to the respective language resources. Finally, the updated resources are written back to the file system.
 
 ## `check`
 
