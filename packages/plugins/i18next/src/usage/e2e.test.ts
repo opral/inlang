@@ -245,6 +245,15 @@ test.each([
 		 setTranslate(() => getFixedT("en"));
 		 translate("live");`,
 	],
+	[
+		"a tuple changed by a mutating method",
+		`function useHook() {
+			const result = ["initial"];
+			result.splice(0, 1, getFixedT("en"));
+			return result;
+		}
+		const [translate] = useHook(); translate("live");`,
+	],
 ])("%s cannot offer deletion of a live translation", async (_name, source) => {
 	const { project, files } = await load({
 		pathPattern: "./locales/{locale}.json",
