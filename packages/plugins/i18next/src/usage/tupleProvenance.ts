@@ -53,6 +53,15 @@ const data: Value = { kind: "data" };
 const translator: Value = { kind: "translator" };
 const calls = new Set(["CallExpression", "OptionalCallExpression"]);
 const members = new Set(["MemberExpression", "OptionalMemberExpression"]);
+const forwardsValue = (parent: Node, child: Node) =>
+	unwrap(parent) === unwrap(child) ||
+	(members.has(parent.type) && parent.object === child) ||
+	(parent.type === "ConditionalExpression" &&
+		(parent.consequent === child || parent.alternate === child)) ||
+	(parent.type === "LogicalExpression" &&
+		(parent.left === child || parent.right === child)) ||
+	(parent.type === "SequenceExpression" &&
+		(parent.expressions as Node[]).at(-1) === child);
 const blocks = new Set([
 	"BlockStatement",
 	"CatchClause",
@@ -265,8 +274,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 				)
 					return true;
 				if (
-					unwrap(parent) !== unwrap(current) &&
-					!(members.has(parent.type) && parent.object === current) &&
+					!forwardsValue(parent, current) &&
 					!["ArrayExpression", "ObjectExpression", "ObjectProperty"].includes(
 						parent.type
 					)
@@ -306,11 +314,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			let escapeParent = parents.get(current);
 			let escapeKey = parentKeys.get(current);
 			const escapePath: string[] = [];
-			while (
-				escapeParent &&
-				(unwrap(escapeParent) === unwrap(current) ||
-					(members.has(escapeParent.type) && escapeParent.object === current))
-			) {
+			while (escapeParent && forwardsValue(escapeParent, current)) {
 				if (members.has(escapeParent.type))
 					escapePath.push(propertyName(escapeParent) ?? "?");
 				current = escapeParent;
@@ -327,6 +331,8 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 				(escapeParent?.type === "TemplateLiteral" &&
 					escapeKey === "expressions" &&
 					parents.get(escapeParent)?.type === "TaggedTemplateExpression") ||
+				escapeParent?.type === "JSXExpressionContainer" ||
+				escapeParent?.type === "ThrowStatement" ||
 				(escapeParent?.type === "VariableDeclarator" && escapeKey === "init") ||
 				(escapeParent?.type === "AssignmentExpression" &&
 					escapeKey === "right") ||

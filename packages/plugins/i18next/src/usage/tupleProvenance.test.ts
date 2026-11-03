@@ -263,6 +263,11 @@ test.each([
 	`mutate(...(result as any));`,
 	`new Mutator(result as any);`,
 	"mutate`${result as any}`;",
+	`const alias = flag ? result : result; alias[0] = getFixedT("en");`,
+	`const alias = result || []; alias[0] = getFixedT("en");`,
+	`const alias = (0, result); alias[0] = getFixedT("en");`,
+	`render(<Mutator value={result} />);`,
+	`try { throw result; } catch (alias) { alias[0] = getFixedT("en"); }`,
 ])("wrapped aggregate references cannot hide escapes: %s", async (mutation) => {
 	const result = await run(
 		`import { getFixedT } from "i18next"; function useHook() { const result = ["data", getFixedT("en")]; ${mutation} return result; } const [translate] = useHook(); translate("live");`
@@ -272,7 +277,12 @@ test.each([
 	).toBe(true);
 });
 
-test.each([`result as const`, `result!`, `(result satisfies unknown)!`])(
+test.each([
+	`result as unknown`,
+	`result!`,
+	`(result satisfies unknown)!`,
+	`flag ? result : result`,
+])(
 	"wrapped fresh data returns preserve their proof: %s",
 	async (expression) => {
 		const result = await run(
