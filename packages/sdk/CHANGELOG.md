@@ -1,5 +1,11 @@
 # @inlang/sdk
 
+## 4.2.0
+
+### Minor Changes
+
+- 6c909cd: Add shared bundle descriptions for translator and agent guidance. Preserve descriptions through SDK queries, migrations, imports, snapshots and project saves, with a Git-tracked companion file for formats without native metadata. Use descriptions as context for OpenAI and DeepL CLI translations.
+
 ## 4.1.2
 
 ### Patch Changes
@@ -32,7 +38,6 @@
 ### Patch Changes
 
 - 9725173: Improved loading, reading, and exporting projects with hundreds of thousands of translations, with lower memory use for large reads.
-
   - Large directory loads and partial imports process data in batches. Imports remain atomic by default; `allowPartialImport: true` keeps earlier successful batches if a later batch fails.
   - Project exports preserve a consistent view of files and translations.
 
@@ -80,7 +85,6 @@
   | `"variant.messageId"`   | `"inlang_variant.message_id"`  |
 
   Also changed:
-
   - `selectBundleNested()` returns messages with `bundle_id` and variants with `message_id`, and filters with `.where("inlang_bundle.id", "=", id)` (`"bundle.id"` throws).
   - `createMessage()` and `createVariant()` return `bundle_id` and `message_id`.
   - `insertBundleNested()`, `upsertBundleNested()` and `updateBundleNested()` take snake_case rows, as do `insertInto()` and `updateTable()`.
@@ -97,7 +101,6 @@
 
 - f45a761: Add the `empty-variant` check: a variant (form) whose pattern is empty while another variant of the message has text, e.g. an ICU `=0 {}`, is reported with its `variantId` and `matches`, the reference locale's included. `checkTranslation()` reports it as `{ type: "empty-variant" }`.
 - 356a50a: `exportFiles` receives the files it overwrites, so that plugins can keep the text of unchanged entries.
-
   - The plugin API's `exportFiles` has a new optional argument `files`: the current content of the files that `toBeImportedFiles` lists, as `{ path, locale, content, metadata? }` (type `ExistingFile`). Only files that exist are passed. Plugins that ignore it work as before, and plugins that use it still work on hosts that don't pass it.
   - `saveProjectToDirectory` reads the files of `toBeImportedFiles` from disk and passes them to `exportFiles`.
   - `project.exportFiles({ pluginKey, files })` passes `files` through, for apps that write the exported files themselves.
@@ -124,7 +127,7 @@
   A file counts as read only as the locale (and namespace) it was read or written as, so a file that a settings change assigns to another locale (e.g. a new base locale for `values/`) is not emptied.
 
 - fb83c18: Translation checks are more precise: variables and markup are compared with the reference forms that have the same exact numbers and select values (plural categories mean different numbers per locale, so a plural's input is needed in every form that isn't one number), a form for one exact number may leave out only that number's input variable, and an empty reference expects no variables. A translation that can't choose like the reference (no selector for a select's values, no plural the locale needs, or no exact-number selector for the reference's `=0`) gets the new `missing-selector` diagnostic with the `values` it can't express. Plural categories only millions select (French, Spanish, Italian, Portuguese, Catalan `many`) are no longer required; `pluralRules().requiredCategories` lists the required ones. Locales such as `pt_BR` are read as `pt-BR`. Full scans read patterns with one query per table, lowering peak memory.
-- 3e9bd54: Usage analysis issues can locate the construct that makes the analysis incomplete. `UsageIssue` has optional `start` and `end` positions (1-based lines, 0-based columns, as for references), which `checkProject` and `findUsages` pass through. The m-function matcher reports one issue per unresolved construct, in source order, e.g. `src/Field.tsx` line 14 for `` m[`${fieldName}_label`]() ``, instead of one issue per reason and file.
+- 3e9bd54: Usage analysis issues can locate the construct that makes the analysis incomplete. `UsageIssue` has optional `start` and `end` positions (1-based lines, 0-based columns, as for references), which `checkProject` and `findUsages` pass through. The m-function matcher reports one issue per unresolved construct, in source order, e.g. `src/Field.tsx` line 14 for ``m[`${fieldName}_label`]()``, instead of one issue per reason and file.
 
 ### Patch Changes
 
@@ -232,7 +235,6 @@
 ### Minor Changes
 
 - 6680ac1: fix `saveProjectToDirectory` throwing `pathPattern.replace is not a function` when a plugin's `pathPattern` is a namespace object (https://github.com/opral/inlang/issues/4356)
-
   - `ExportFile` has a new optional `metadata` field — the counterpart of `ImportFile.toBeImportedFilesMetadata`. Plugins can use it to pass information to the writer, e.g. the namespace an exported file belongs to.
   - `saveProjectToDirectory` resolves namespaced `pathPattern` objects (`Record<namespace, pattern>`) via `ExportFile.metadata.namespace` and writes each exported file to the path its namespace pattern describes. Files without a resolvable namespace fall back to being written by `file.name` instead of throwing.
   - `@inlang/plugin-i18next` now provides `metadata: { namespace }` for namespaced export files. Saving a multi-namespace i18next project requires this plugin version (older plugin versions no longer crash but fall back to writing `{namespace}-{locale}.json` files relative to the project directory).
@@ -274,7 +276,6 @@
 - 6defee0: Extend the SDK pattern AST with richer markup metadata.
 
   Added support for markup `options` and `attributes` on:
-
   - `markup-start`
   - `markup-end`
   - `markup-standalone`

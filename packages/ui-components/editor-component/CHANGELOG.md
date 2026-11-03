@@ -1,5 +1,16 @@
 # @inlang/message-bundle-component
 
+## 15.0.0
+
+### Minor Changes
+
+- 6c909cd: Add a reusable bundle Description editor and include shared translator guidance in the bundle component.
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 14.0.1
 
 ### Patch Changes
@@ -32,7 +43,6 @@
   Breaking: the components use the `@inlang/sdk` 4 database rows. The `change` event's `newData` and the `message` / `variants` properties carry `bundle_id` / `message_id` instead of `bundleId` / `messageId`.
 
   Breaking changes in `<inlang-pattern-editor>`:
-
   - Expressions and markup are atomic tokens (deleted as a whole). Markup is now preserved instead of being dropped from the pattern, and text between known markup is shown formatted.
   - Styles no longer leak: the global `div` / `p` selectors were removed and all styles are scoped to the element. Padding, min-height, background, font size and colors are themeable via `--inlang-pattern-*` custom properties (current values are the defaults).
   - New `placeholder` and `aria-label` support and an `insertExpression(name)` method. The `variant` property and the `change`, `pattern-editor-focus` and `pattern-editor-blur` events are unchanged.
@@ -51,7 +61,6 @@
 ### Patch Changes
 
 - 5d93f32: Review follow-up:
-
   - `<inlang-pattern-editor>`: a `variant` with another `id` ("+ Add form") replaces the content and forgets pending echoes, so unsaved text of the previous variant is never saved into the new one. Echoes are compared structurally, so a store that returns patterns with sorted keys (the SDK database) no longer reverts text typed after a token was inserted. A lone `markup-start` is kept, and keys are left to an IME while it composes. Undo stays with the host (documented).
   - `addExactNumber` / `removeExactNumber` find the exact-number selector in any language (no more `countPluralExact1` when only some locales use `=0`). `removeSelector` on a plural removes its exact-number partner. `addSelector` throws for an input that already is a plural and `selectableVariables` no longer offers it; select values get their forms before the catch-all.
   - `selectVariant` and `<inlang-message-forms>` respect an ICU `offset`; `pluralExamples` takes `offset` and returns copies. `<inlang-message-forms>` shows a plural's explicit `other` once.

@@ -1,5 +1,12 @@
 # @inlang/plugin-next-intl
 
+## 2.4.7
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 2.4.6
 
 ### Patch Changes
@@ -51,7 +58,7 @@
 
   A message such as `Home.title` is used by `useTranslations("Home")` or `getTranslations("Home")` (also `getTranslations({ locale, namespace })` and `createTranslator({ namespace })`) followed by `t("title")`, `t.rich("title")` or `t.markup("title")`, or by `t("Home.title")` without a namespace. Aliases, renamed and namespace imports, constant keys, ternaries and arrays of keys that are only iterated (`keys.map((key) => t(key))`) resolve. Server and Client Components in `.ts`, `.tsx`, `.js`, `.jsx`, `.mjs`, `.cjs` and `.mdx` files are read.
 
-  Anything that can't be resolved makes the analysis incomplete, with the file, line and column: then no message is reported unused or deleted. That includes dynamic keys and namespaces (`` t(`items.${id}`) ``, `t(key)`), a translator passed to a function or component, returned from a custom hook or exported, next-intl functions imported from a wrapper module or package, `t.raw()` and `t.has()` of a key that could be a namespace, `useMessages()` and `getMessages()` other than for `NextIntlClientProvider`, message files read directly or nested where the plugin doesn't put them, re-exports of next-intl, `useExtracted()`, and types derived from the message keys (`MessageKeys`, `keyof Messages`, `keyof IntlMessages["Nav"]`, `Parameters<typeof t>`). Passing all messages to `NextIntlClientProvider` or `getRequestConfig`, and typing next-intl with `Messages: typeof messages`, keep the analysis complete.
+  Anything that can't be resolved makes the analysis incomplete, with the file, line and column: then no message is reported unused or deleted. That includes dynamic keys and namespaces (``t(`items.${id}`)``, `t(key)`), a translator passed to a function or component, returned from a custom hook or exported, next-intl functions imported from a wrapper module or package, `t.raw()` and `t.has()` of a key that could be a namespace, `useMessages()` and `getMessages()` other than for `NextIntlClientProvider`, message files read directly or nested where the plugin doesn't put them, re-exports of next-intl, `useExtracted()`, and types derived from the message keys (`MessageKeys`, `keyof Messages`, `keyof IntlMessages["Nav"]`, `Parameters<typeof t>`). Passing all messages to `NextIntlClientProvider` or `getRequestConfig`, and typing next-intl with `Messages: typeof messages`, keep the analysis complete.
 
 ### Patch Changes
 
@@ -68,7 +75,6 @@
   Before, the plugin split messages at braces, so `{count, plural, =0 {none} one {# item} other {# items}}` imported as the variables `count, plural, =0 {none`, `# item` and `# items`, which every check of a translation reported as missing and unknown variables, and messages with variants (e.g. a plural added in an editor) were written as one of their variants.
 
   Also fixed:
-
   - A new message is nested at the dots of its key (`Checkout.Summary.total` goes to `"Checkout": { "Summary": { "total": … } }`). Before, it was written as the flat key `"Checkout.Summary.total"`, which next-intl can't read: it shows the key instead. A new translation of an existing message goes where the message's other translations are, e.g. to a key with a dot.
   - Literal `{`, `}` and tags in edited text are quoted (`'{'beta'}'`, `'<'b>`). Before, `Start {beta}` was written as is, and next-intl read `{beta}` as an argument.
   - Quoted ICU (`'{name}'`, `it''s`) imports as the text next-intl displays.
@@ -164,7 +170,6 @@
   If you still want to use Sherlock v1, please use the previous major version of the plugin. For Sherlock itself, [please pin the version to `1.x.x`](https://github.com/microsoft/vscode-docs/blob/vnext/release-notes/v1_91.md#extension-install-options) in the VS Code extension settings.
 
   ### Breaking changes
-
   - Lint rules are now polyfilled (and therefore may work different), as we are currently reworking how lint rules are working with [Lix Validation Rules](https://lix.dev).
   - The `messageId` parameter in the `extractMessages` function has been renamed to `bundleId`. This change is due to the new API in Sherlock v2. If you are using the `extractMessages` function, please update the parameter name to `bundleId`.
 

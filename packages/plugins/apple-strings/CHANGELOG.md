@@ -1,5 +1,16 @@
 # @inlang/plugin-apple-strings
 
+## 0.3.0
+
+### Minor Changes
+
+- 6c909cd: Map source translator guidance to shared bundle descriptions on capable SDK hosts. Support description edits and clearing without changing translations, keep native document and target-locale metadata, and preserve descriptions during fresh exports.
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 0.2.15
 
 ### Patch Changes

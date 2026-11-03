@@ -1,5 +1,12 @@
 # @inlang/plugin-json
 
+## 5.1.67
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 5.1.66
 
 ### Patch Changes

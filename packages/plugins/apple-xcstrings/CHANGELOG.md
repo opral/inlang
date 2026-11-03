@@ -1,5 +1,16 @@
 # @inlang/plugin-apple-xcstrings
 
+## 0.3.0
+
+### Minor Changes
+
+- 6c909cd: Map source translator guidance to shared bundle descriptions on capable SDK hosts. Support description edits and clearing without changing translations, keep native document and target-locale metadata, and preserve descriptions during fresh exports.
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 0.2.15
 
 ### Patch Changes
@@ -62,7 +73,6 @@
   Like Xcode at runtime, a string without a localization of the source language uses its key as the source language value. The plugin imports the key as the source language message, so editors show it and translators can translate it. The export doesn't write it back, so these strings stay exactly as Xcode wrote them, and a translation only adds the translated locale. A source language localization that the catalog has is kept, even if its value is the key.
 
   Also fixed:
-
   - Catalogs of version 1.1 and 1.2, which Xcode 26 writes, can be imported, and their version is kept.
   - Implicit printf arguments with width or precision, such as `%.2f` or `%5d`, are read as variables. Before, they were text, or failed the import next to another argument. Percent signs followed by a flag, e.g. `50%-off`, stay text.
   - Xcode's `%arg` placeholder, e.g. in `"Hello, %arg!"`, is read as one argument. Before, it was read as `%a` followed by the text `rg`.

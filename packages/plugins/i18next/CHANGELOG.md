@@ -1,5 +1,20 @@
 # @inlang/plugin-i18next
 
+## 6.5.3
+
+### Patch Changes
+
+- 4e83362: Distinguish data tuples from possible translators using their source, rather than assuming every destructured array value is a translator.
+
+  The usage analyzer follows bounded local and snapshot-imported hook implementations, including simple wrappers and aliases. Proven data returned by hooks such as `useGetData()` and `useTheme()` can be passed to helpers or components without suppressing unused-message diagnostics.
+
+  Translator aliases remain tracked under any name. React state and reducer results are checked rather than unconditionally excluded, because they can themselves hold translators. TypeScript parameter properties and namespace scopes are handled when resolving bindings.
+
+  Opaque hooks, mutable or escaped return values, cycles, and unsupported shapes remain explicitly incomplete when their usages cannot be resolved. Unused-message deletion fixes are withheld in those cases. External packages and context providers whose return values are unavailable in the source snapshot are not inferred from their names alone.
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 6.5.2
 
 ### Patch Changes
@@ -78,7 +93,6 @@
 ### Minor Changes
 
 - 9be7627: Export exact numbers created by `@inlang/plugin-icu1` and editors, and keep `_zero` files unchanged.
-
   - An exact `0` on an un-annotated alias of `count` (`.local countPluralExact = {$count}`, ICU `{count, plural, =0 {…}}`) exports as `key_zero`, like an exact `0` on `count` itself. i18next looks up `_zero` whenever `count === 0`, in every language. Where the plural category `zero` covers more than 0 (Latvian: 10, 11–19, 20, …), i18next uses `_zero` for those counts too. An exact 0 can then only be exported next to a `zero` form with the same text; otherwise export fails with an error, because the "=0" text would also show for 10, 11, 20, ….
   - Exact numbers i18next cannot express (`=1`, `=5`, exact numbers of ordinal plurals) fail the export with an error naming the bundle and number instead of a generic "cannot represent selector" error.
   - Two forms that map to the same key with different texts fail the export with an error naming the key, bundle and locale, instead of keeping one, except `_zero` where the `zero` category selects no number other than 0 (see below). Files change only where the old output was wrong. `_zero` imports as before, as an exact `count = 0` form plus a `countPlural = zero` form, and keeps its position in the file. Where the `zero` category selects no number other than 0 (English, French, Arabic, Welsh, and tags Intl has no plural rules for), i18next shows the exact text for `_zero`. The export writes it, as earlier versions did, also if only the "=0" form was edited. In Latvian, where `zero` also selects 10, 11–19, 20, …, earlier versions wrote the "=0" text for all of those counts. Example: an "=0" form "Nav preču" and a `zero` form "{{count}} preču" made `item_zero` "Nav preču" also for 10 items. That now fails until both forms have the same text.
@@ -95,7 +109,6 @@
   Every `{locale}` of a `pathPattern` is replaced when files are read, as when they are saved, so a pattern like `./{locale}/common.{locale}.json` reads the file it writes.
 
 - 5423aa7: Export ICU `#` (imported by `@inlang/plugin-icu1` as `icu:pound`) that no longer sits in a plural, for example after an editor removed the plural.
-
   - `#` without a plural offset exports as `{{count, number}}`, which i18next formats like ICU formats `#`. It used to export as `{{count, icu:pound}}`, an unknown i18next format.
   - `#` with a plural offset displays `count - offset`, which i18next cannot express. The export fails with an error naming the bundle, locale and offset instead of "Not implemented".
   - Other functions with options fail the export with an error naming the options, function, variable, bundle and locale instead of "Not implemented".
@@ -224,7 +237,6 @@
 ### Minor Changes
 
 - 6680ac1: fix `saveProjectToDirectory` throwing `pathPattern.replace is not a function` when a plugin's `pathPattern` is a namespace object (https://github.com/opral/inlang/issues/4356)
-
   - `ExportFile` has a new optional `metadata` field — the counterpart of `ImportFile.toBeImportedFilesMetadata`. Plugins can use it to pass information to the writer, e.g. the namespace an exported file belongs to.
   - `saveProjectToDirectory` resolves namespaced `pathPattern` objects (`Record<namespace, pattern>`) via `ExportFile.metadata.namespace` and writes each exported file to the path its namespace pattern describes. Files without a resolvable namespace fall back to being written by `file.name` instead of throwing.
   - `@inlang/plugin-i18next` now provides `metadata: { namespace }` for namespaced export files. Saving a multi-namespace i18next project requires this plugin version (older plugin versions no longer crash but fall back to writing `{namespace}-{locale}.json` files relative to the project directory).
@@ -278,7 +290,6 @@
 ### Minor Changes
 
 - 6defee0: Add markup-aware import and export support to the i18next plugin.
-
   - Added support for rich text tag syntax (`<tag>`, `</tag>`, `<tag/>`) in import/export, mapped to SDK markup pattern elements.
   - Added roundtrip coverage for markup-only and mixed markup + interpolation patterns.
   - Added a clear error when `variableReferencePattern` is `["<", ">"]` and markup is present, because those syntaxes conflict.
@@ -413,7 +424,6 @@
   If you still want to use Sherlock v1, please use the previous major version of the plugin. For Sherlock itself, [please pin the version to `1.x.x`](https://github.com/microsoft/vscode-docs/blob/vnext/release-notes/v1_91.md#extension-install-options) in the VS Code extension settings.
 
   ### Breaking changes
-
   - Lint rules are now polyfilled (and therefore may work different), as we are currently reworking how lint rules are working with [Lix Validation Rules](https://lix.dev).
   - The `messageId` parameter in the `extractMessages` function has been renamed to `bundleId`. This change is due to the new API in Sherlock v2. If you are using the `extractMessages` function, please update the parameter name to `bundleId`.
 
@@ -495,7 +505,6 @@
 - 3d5a454: Upgrade to the @inlang/sdk v2.0.0.
 
   No breaking change is expected. But, if you encounter issues, fix the version of the plugin to the previous major version. This version of the i18next plugin adds support for
-
   - pluralization
   - selectors
   - and more
