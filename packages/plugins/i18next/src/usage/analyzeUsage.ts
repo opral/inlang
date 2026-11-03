@@ -263,9 +263,36 @@ const objectName = (node: unknown): string | undefined =>
 function reactStateCalls(program: Node): (call: Node) => boolean {
 	const hooks = new Set<string>();
 	const objects = new Set<string>();
-	const shadowed = new Set<string>();
+	type BindingScope = {
+		parent?: BindingScope;
+		names: Set<string>;
+		functionScope: boolean;
+	};
+	const scopes = new Map<Node, BindingScope>();
 	const stateHooks = new Set(["useState", "useReducer"]);
-	walk(program, (node) => {
+	const blocks = new Set([
+		"BlockStatement",
+		"CatchClause",
+		"ForStatement",
+		"ForInStatement",
+		"ForOfStatement",
+		"SwitchStatement",
+		"ClassDeclaration",
+		"ClassExpression",
+		"StaticBlock",
+	]);
+	walk(program, (node, parent) => {
+		const outer = parent ? scopes.get(parent) : undefined;
+		const isFunction = Array.isArray(node.params);
+		const scope: BindingScope =
+			!outer || isFunction || blocks.has(node.type)
+				? {
+						parent: outer,
+						names: new Set(),
+						functionScope: !outer || isFunction || node.type === "StaticBlock",
+					}
+				: outer;
+		scopes.set(node, scope);
 		if (
 			node.type === "ImportDeclaration" &&
 			stringValue(node.source) === "react"
@@ -279,26 +306,41 @@ function reactStateCalls(program: Node): (call: Node) => boolean {
 				} else objects.add(local);
 			}
 		}
-		// Any other binding of an imported name makes the exemption unsafe.
-		for (const name of patternNames(node.id)) shadowed.add(name);
+		// Collect declarations before classifying calls, including bindings declared later.
+		let declaredIn = scope;
+		if (node.type === "VariableDeclarator" && parent?.kind === "var") {
+			while (!declaredIn.functionScope && declaredIn.parent)
+				declaredIn = declaredIn.parent;
+		} else if (
+			node.type !== "FunctionExpression" &&
+			node.type !== "ClassExpression" &&
+			node.type !== "VariableDeclarator"
+		) {
+			// Declarations bind in the surrounding scope; named expressions bind only inside.
+			declaredIn = outer ?? scope;
+		}
+		for (const name of patternNames(node.id)) declaredIn.names.add(name);
 		if (Array.isArray(node.params))
 			for (const param of node.params)
-				for (const name of patternNames(param)) shadowed.add(name);
+				for (const name of patternNames(param)) scope.names.add(name);
 		if (node.type === "CatchClause")
-			for (const name of patternNames(node.param)) shadowed.add(name);
+			for (const name of patternNames(node.param)) scope.names.add(name);
 	});
-	const imported = (names: Set<string>, node: Node | undefined) =>
-		node?.type === "Identifier" &&
-		names.has(node.name as string) &&
-		!shadowed.has(node.name as string);
+	const imported = (names: Set<string>, node: Node | undefined, call: Node) => {
+		if (node?.type !== "Identifier" || !names.has(node.name as string))
+			return false;
+		for (let scope = scopes.get(call); scope; scope = scope.parent)
+			if (scope.names.has(node.name as string)) return false;
+		return true;
+	};
 	return (call) => {
 		const callee = unwrap(call.callee);
 		return (
-			imported(hooks, callee) ||
+			imported(hooks, callee, call) ||
 			(callee !== undefined &&
 				MEMBERS.has(callee.type) &&
 				stateHooks.has(propertyName(callee) ?? "") &&
-				imported(objects, unwrap(callee.object)))
+				imported(objects, unwrap(callee.object), call))
 		);
 	};
 }

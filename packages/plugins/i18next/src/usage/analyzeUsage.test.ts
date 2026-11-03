@@ -159,6 +159,77 @@ test("known tuple translator factories preserve aliases and namespaces", async (
 	expect(result).toMatchObject({ status: "complete", used: ["admin:live"] });
 });
 
+test.each([
+	[
+		"a sibling function parameter",
+		`function other(useState) { return useState; }`,
+	],
+	[
+		"a sibling function local",
+		`function other() { const useState = customHook; }`,
+	],
+	["a sibling block", `{ const useState = customHook; }`],
+	["a catch binding", `try {} catch (useState) { consume(useState); }`],
+	["a loop binding", `for (const useState of hooks) { consume(useState); }`],
+	["a named function expression", `const other = function useState() {};`],
+])("%s does not shadow React hooks in another scope", async (_name, shadow) => {
+	const result = await analyze(`
+		import { useState } from "react";
+		import { useTranslation } from "react-i18next";
+		${shadow}
+		function App() {
+			const [value] = useState("initial");
+			consume(value);
+			const { t } = useTranslation();
+			return t("live");
+		}
+	`);
+	expect(result).toMatchObject({ status: "complete", used: ["live"] });
+});
+
+test("namespace import shadowing is resolved separately for each call", async () => {
+	const result = await analyze(`
+		import * as Hooks from "react";
+		import { useTranslation } from "react-i18next";
+		function custom(Hooks) {
+			const [translate] = Hooks.useReducer();
+			return translate("custom.key");
+		}
+		function App() {
+			const [value] = Hooks.useReducer(reducer, "initial");
+			consume(value);
+			const { t } = useTranslation();
+			return t("page.title");
+		}
+	`);
+	expect(result).toMatchObject({
+		status: "complete",
+		used: ["custom.key", "page.title"],
+	});
+});
+
+test("a hoisted var hook binding shadows its function but not a sibling", async () => {
+	const result = await analyze(`
+		import { useState as useLocalState } from "react";
+		import { useTranslation } from "react-i18next";
+		function custom() {
+			const [translate] = useLocalState();
+			if (enabled) { var useLocalState = customHook; }
+			return translate("custom.key");
+		}
+		function App() {
+			const [value] = useLocalState("initial");
+			consume(value);
+			const { t } = useTranslation();
+			return t("page.title");
+		}
+	`);
+	expect(result).toMatchObject({
+		status: "complete",
+		used: ["custom.key", "page.title"],
+	});
+});
+
 test("plural and context keys use the bundle of their root key", async () => {
 	const result = await analyze(`
 		import i18next from "i18next";
