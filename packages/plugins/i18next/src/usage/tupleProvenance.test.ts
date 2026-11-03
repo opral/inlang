@@ -411,6 +411,60 @@ test("default-exported hook functions still resolve from source", async () => {
 	expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
 });
 
+test.each([
+	`function useHook() { return useState(null); }`,
+	`const useHook = () => useState(null);`,
+	`function useHook() { const tuple = useState(null); return tuple; }`,
+	`function useHook() { const [value, setter] = useState(null); return [value, setter]; }`,
+	`function inner() { return useState(null); } function useHook() { return inner(); }`,
+])(
+	"exposed React setters invalidate wrapper state proofs: %s",
+	async (source) => {
+		const result = await run(
+			`import { useState } from "react"; import { getFixedT } from "i18next"; ${source} const [value, setValue] = useHook(); setValue(() => getFixedT("en")); value("live");`
+		);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
+test.each([
+	`const /* hook result */ [translate] = useOpaque();`,
+	`let // hook result\n[translate] = useOpaque();`,
+	`var /* first */ /* second */ [translate] = useOpaque();`,
+	`const other = 1, [translate] = useOpaque();`,
+])(
+	"tuple prefilter tolerates comments and multiple declarations: %s",
+	async (source) => {
+		const result = await run(`${source} translate("live");`);
+		expect(result.status).toBe("incomplete");
+	}
+);
+
+test("a wrapper returning only locally destructured state data remains complete", async () => {
+	const result = await run(
+		`import { useState } from "react"; function useHook() { const [value] = useState("data"); return [value]; } const [value] = useHook(); consume(value);`
+	);
+	expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+});
+
+test.each([
+	`const [value, ...setters] = useState(null); setters[0](() => getFixedT("en"));`,
+	`const [value, setter = fallback] = useState(null); setter(() => getFixedT("en"));`,
+	`var [value, setter] = useState(null); var setter; const update = setter; update(() => getFixedT("en"));`,
+])(
+	"indirect setter captures cannot preserve state proof: %s",
+	async (source) => {
+		const result = await run(
+			`import { useState } from "react"; import { getFixedT } from "i18next"; ${source} value("live");`
+		);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
 test("source-visible receiver-free namespace methods preserve data proof", async () => {
 	const result = await run(
 		`const hooks = { useData() { return ["data"]; } }; const [data] = hooks.useData(); consume(data);`

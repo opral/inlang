@@ -273,6 +273,13 @@ test.each([
 		}
 		const [{ fn: translate }] = useHook(); translate("live");`,
 	],
+	[
+		"a custom state hook exposing its setter",
+		`function useHook() { return useState(null); }
+		const [value, setValue] = useHook();
+		setValue(() => getFixedT("en"));
+		value("live");`,
+	],
 ])("%s cannot offer deletion of a live translation", async (_name, source) => {
 	const { project, files } = await load({
 		pathPattern: "./locales/{locale}.json",

@@ -303,7 +303,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 		if (
 			!MARKER.test(file.content) &&
 			!MAYBE.test(file.content) &&
-			!/\b(?:const|let|var)\s*\[/.test(file.content)
+			// Comments and earlier declarators can separate the keyword from an array pattern.
+			!(
+				file.content.includes("[") && /\b(?:const|let|var)\b/.test(file.content)
+			)
 		)
 			continue;
 		let program: Node;

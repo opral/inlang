@@ -46,6 +46,7 @@ type Module = {
 	root: Scope;
 	declarations: Set<Node>;
 	bindings: Binding[];
+	patterns: Map<Node, Node>;
 	references: Map<Binding, { node: Node; parent?: Node; key?: string }[]>;
 };
 const unknown: Value = { kind: "unknown" };
@@ -138,6 +139,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			scopes: new Map(),
 			declarations: new Set(),
 			bindings: [],
+			patterns: new Map(),
 			references: new Map(),
 		};
 		modules.set(path, module);
@@ -221,6 +223,8 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 					: outer;
 			module.scopes.set(node, scope);
 			if (node.type === "VariableDeclarator") {
+				const init = unwrap(node.init);
+				if (init && isNode(node.id)) module.patterns.set(init, node.id);
 				let target = scope;
 				if (parent?.kind === "var")
 					while (!target.functionScope && target.parent) target = target.parent;
@@ -712,6 +716,28 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			if (kindOf(initial) !== "data" || kindOf(reducer) !== "data" || args[2])
 				initial = unknown;
 		}
+		const pattern = module.patterns.get(node);
+		const elements =
+			pattern?.type === "ArrayPattern" ? (pattern.elements as unknown[]) : [];
+		// A whole returned tuple or a rest/default/nested setter pattern can expose updates
+		// beyond the local setter references inspected below. Fail closed in those cases.
+		if (
+			pattern?.type !== "ArrayPattern" ||
+			elements.length > 2 ||
+			elements.some((part, index) => {
+				if (part == null) return false;
+				if (!isNode(part) || part.type !== "Identifier") return true;
+				const binding = bindingAt(module, part, part.name as string);
+				return (
+					!binding ||
+					binding.mutable ||
+					binding.expression !== node ||
+					binding.selection.length !== 1 ||
+					binding.selection[0] !== String(index)
+				);
+			})
+		)
+			initial = unknown;
 		// A setter that escapes or accepts an opaque value can replace initially non-callable state.
 		for (const binding of module.bindings)
 			if (binding.expression === node && binding.selection[0] === "1") {
