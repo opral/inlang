@@ -341,6 +341,15 @@ test("a React setter method cannot inherit direct-call update evidence", async (
 	).toBe(true);
 });
 
+test("deleting a property cannot retain a stale own-property proof", async () => {
+	const result = await run(
+		`import { getFixedT } from "i18next"; function useHook() { const obj = { fn: "data", __proto__: { fn: getFixedT("en") } }; delete obj.fn; return [obj.fn]; } const [translate] = useHook(); translate("live");`
+	);
+	expect(
+		result.status === "incomplete" || result.usedBundleIds.includes("live")
+	).toBe(true);
+});
+
 test.each([
 	[`const tuple = ["data"]; export default tuple;`, "tuple"],
 	[`export default ["data"];`, "tuple"],

@@ -390,11 +390,13 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 				![
 					"AssignmentExpression",
 					"UpdateExpression",
+					"UnaryExpression",
 					"ForInStatement",
 					"ForOfStatement",
 				].includes(node.type)
 			)
 				return;
+			if (node.type === "UnaryExpression" && node.operator !== "delete") return;
 			const mark = (pattern: unknown) => {
 				const target = unwrap(pattern);
 				if (!target) return;

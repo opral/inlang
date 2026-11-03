@@ -280,6 +280,15 @@ test.each([
 		setValue(() => getFixedT("en"));
 		value("live");`,
 	],
+	[
+		"property deletion revealing an inherited translator",
+		`function useHook() {
+			const obj = { fn: "initial", __proto__: { fn: getFixedT("en") } };
+			delete obj.fn;
+			return [obj.fn];
+		}
+		const [translate] = useHook(); translate("live");`,
+	],
 ])("%s cannot offer deletion of a live translation", async (_name, source) => {
 	const { project, files } = await load({
 		pathPattern: "./locales/{locale}.json",
