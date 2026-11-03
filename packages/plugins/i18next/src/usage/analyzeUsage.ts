@@ -1,5 +1,6 @@
 import type { AnalyzeUsage, UsageIssue } from "@inlang/sdk";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { createTupleProvenance } from "./tupleProvenance.js";
 import {
 	isNode,
 	keyName,
@@ -283,6 +284,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 		return tails.some((tail) => lower === tail || lower.endsWith(`/${tail}`));
 	};
 	const resolver = createResolver(files);
+	const tupleResolver = createTupleProvenance(files);
 	const used = new Set<string>();
 	const issues: UsageIssue[] = [];
 
@@ -298,7 +300,15 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 				);
 			continue;
 		}
-		if (!MARKER.test(file.content) && !MAYBE.test(file.content)) continue;
+		if (
+			!MARKER.test(file.content) &&
+			!MAYBE.test(file.content) &&
+			// Comments and earlier declarators can separate the keyword from an array pattern.
+			!(
+				file.content.includes("[") && /\b(?:const|let|var)\b/.test(file.content)
+			)
+		)
+			continue;
 		let program: Node;
 		try {
 			program = parseScript(path, file.content);
@@ -311,6 +321,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 			normalizePath(path),
 			program
 		).lookup;
+		const tuples = tupleResolver.forFile(path, program);
 
 		// ---- pass 1: what is a translator in this file ----
 		let aware = false;
@@ -488,9 +499,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 						bind(id.name as string, "all");
 					} else if (
 						id.type === "ArrayPattern" &&
-						init?.type === "CallExpression"
+						tuples.first(init, (id.elements as Node[])[0]!) !== "data"
 					) {
-						// a custom hook that returns `[t, ...]`
+						// A custom hook can return `[translate, ...]` under any name.
+						// Prove data from source evidence; preserve keys and report ambiguity otherwise.
 						for (const name of patternNames((id.elements as unknown[])[0])) {
 							other.add(name);
 							bind(name, "all");
@@ -641,7 +653,8 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 				const callee = unwrap(node.callee);
 				if (
 					callee?.type === "Identifier" &&
-					translatorNames.has(callee.name as string)
+					translatorNames.has(callee.name as string) &&
+					tuples.reference(callee) !== "data"
 				) {
 					addKeys(node, scopeOf(callee.name as string), callee.name as string);
 				} else if (callee && MEMBERS.has(callee.type)) {
@@ -755,8 +768,20 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 
 			// a translator that is passed on, so a key is read where we can't see it
 			if (translatesLikely) {
-				if (node.type === "Identifier" && tracked.has(node.name as string)) {
-					if (referenceKind(parent, key) === "reference")
+				if (
+					node.type === "Identifier" &&
+					tracked.has(node.name as string) &&
+					tuples.reference(node) !== "data"
+				) {
+					if (
+						tuples.reference(node) === "unknown" &&
+						referenceKind(parent, key) !== "binding"
+					)
+						issue(
+							`The tuple value ${node.name as string} may be a translator${referenceKind(parent, key) === "reference" ? " and is passed on" : ""}; its source cannot be resolved.`,
+							node
+						);
+					else if (referenceKind(parent, key) === "reference")
 						issue(
 							`The translator ${node.name as string} is passed on, so its keys can't be resolved.`,
 							node
