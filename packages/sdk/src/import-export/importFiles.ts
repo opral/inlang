@@ -177,6 +177,8 @@ export async function importFiles(args: {
 	readonly allowPartialImport?: boolean;
 	/** Testing hook for the partial import commit budget. */
 	readonly rowsPerCommit?: number;
+	/** Existing fallback ownership, without reapplying possibly stale companion text. */
+	readonly companionOwnedBundleIds?: ReadonlySet<string>;
 	/** Internal portable companion import; shares the resource transaction. */
 	readonly descriptionImport?: {
 		next: ReadonlyMap<string, string>;
@@ -207,9 +209,23 @@ export async function importFiles(args: {
 				throw new Error(
 					`Invalid description for bundle ${JSON.stringify(bundle.id)}`
 				);
+			const description = bundle.description?.trim()
+				? bundle.description
+				: null;
+			// A source added after guidance was authored can have no native comment.
+			// Retain the current row (including a newer authored clear), not stale file text.
+			if (
+				description === null &&
+				bundle.id !== undefined &&
+				args.companionOwnedBundleIds?.has(bundle.id)
+			) {
+				const preserved = { ...bundle };
+				delete preserved.description;
+				return preserved;
+			}
 			return {
 				...bundle,
-				description: bundle.description?.trim() ? bundle.description : null,
+				description,
 			};
 		}),
 		messages: pluginResult.messages.map(messageFromPlugin),
@@ -219,6 +235,24 @@ export async function importFiles(args: {
 	// Groups of a large fresh import that commit after the first one.
 	let remainingFreshCommits: FreshImportCommit[] = [];
 	await args.db.transaction().execute(async (trx) => {
+		for (const bundle of imported.bundles) {
+			if (
+				bundle.description === undefined ||
+				bundle.id === undefined ||
+				!args.companionOwnedBundleIds?.has(bundle.id)
+			)
+				continue;
+			const existing = await trx
+				.selectFrom("inlang_bundle")
+				.select("description")
+				.where("id", "=", bundle.id)
+				.executeTakeFirst();
+			if (existing && existing.description !== bundle.description) {
+				throw new Error(
+					`Conflicting native and companion descriptions for bundle ${JSON.stringify(bundle.id)} (descriptions.json)`
+				);
+			}
+		}
 		const hasExistingBundles = await trx
 			.selectFrom("inlang_bundle")
 			.select("id")

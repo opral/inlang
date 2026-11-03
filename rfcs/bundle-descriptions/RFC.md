@@ -125,7 +125,9 @@ Mutation omission and source-file omission are different cases:
 
 The SDK must know whether a plugin supports descriptions and which entries an import authoritatively covers. Do not infer deletion from an omitted property emitted by an older plugin. Hosts pass `sdkCapabilities: ["bundle-description"]`. Native plugins advertise `supportsBundleDescriptions: true` and emit description patches only when the host advertises that capability.
 
-Changing the base locale retains existing descriptions and moves native ownership on the next save. A missing description in the newly selected base file must not erase context merely because the base locale changed. A conflict with existing guidance in that file is reported.
+Changing the base locale through a loaded project’s `settings.set()` retains its canonical descriptions. Complete a normal project save before reopening from the directory so native exports write guidance into the new source representation.
+
+A cold directory load has no previous settings or source-ownership history. When changing `baseLocale` directly in `settings.json`, move shared guidance into the new source entries or `descriptions.json` in the same change. Former-source and other target notes remain file metadata; the SDK does not guess which target note was previously authoritative. For Apple catalogs, update `sourceLanguage` together with the project base locale. Automatic recovery from an external source-locale reconfiguration is outside this release.
 
 ## Shared editing and product integration
 

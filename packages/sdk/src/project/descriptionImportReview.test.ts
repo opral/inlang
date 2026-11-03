@@ -104,6 +104,201 @@ test("translation imports retain current descriptions instead of reapplying stal
 	}
 });
 
+const nativeResource: InlangPlugin = {
+	key: "native-resource",
+	supportsBundleDescriptions: true,
+	importFiles: ({ files }) => {
+		const source = JSON.parse(new TextDecoder().decode(files[0]!.content)).save;
+		return {
+			bundles: [
+				{
+					id: "save",
+					description:
+						typeof source === "string" ? null : (source.description ?? null),
+				},
+			],
+			messages: [{ bundleId: "save", locale: "en" }],
+			variants: [
+				{
+					messageBundleId: "save",
+					messageLocale: "en",
+					pattern: [{ type: "text", value: "Save" }],
+				},
+			],
+		};
+	},
+	exportFiles: ({ bundles }) => [
+		{
+			name: "en.json",
+			locale: "en",
+			content: new TextEncoder().encode(
+				JSON.stringify({
+					save: { description: bundles[0]?.description, text: "Save" },
+				})
+			),
+		},
+	],
+};
+
+test.each(["Companion guidance", "Edited guidance", null])(
+	"adding a native base-locale resource preserves companion-owned current guidance %s",
+	async (description) => {
+		const project = await loadProjectInMemory({
+			blob: await newProject({
+				settings: { baseLocale: "en", locales: ["en"], modules: [] },
+			}),
+			providePlugins: [nativeResource],
+		});
+		try {
+			await project.importFiles({
+				pluginKey: nativeResource.key,
+				files: [companion("Companion guidance")],
+			});
+			await project.db
+				.updateTable("inlang_bundle")
+				.set({ description })
+				.where("id", "=", "save")
+				.execute();
+			await project.importFiles({
+				pluginKey: nativeResource.key,
+				files: [
+					{
+						locale: "en",
+						content: new TextEncoder().encode('{"save":"Save"}'),
+					},
+				],
+			});
+			expect(
+				(
+					await project.db
+						.selectFrom("inlang_bundle")
+						.select("description")
+						.where("id", "=", "save")
+						.executeTakeFirstOrThrow()
+				).description
+			).toBe(description);
+			const exported = await project.exportFiles({
+				pluginKey: nativeResource.key,
+			});
+			const resource = exported.find((file) => file.locale === "en")!;
+			expect(
+				JSON.parse(new TextDecoder().decode(resource.content)).save.description
+			).toBe(description);
+			expect(
+				JSON.parse(
+					new TextDecoder().decode(
+						exported.find((file) => file.metadata?.inlangDescriptions)!.content
+					)
+				).descriptions
+			).toEqual({});
+			const reopened = await loadProjectInMemory({
+				blob: await newProject({ settings: await project.settings.get() }),
+				providePlugins: [nativeResource],
+			});
+			try {
+				await reopened.importFiles({
+					pluginKey: nativeResource.key,
+					files: exported,
+				});
+				expect(
+					(
+						await reopened.db
+							.selectFrom("inlang_bundle")
+							.select("description")
+							.executeTakeFirstOrThrow()
+					).description
+				).toBe(description);
+			} finally {
+				await reopened.close();
+			}
+		} finally {
+			await project.close();
+		}
+	}
+);
+
+test.each(["Edited guidance", null])(
+	"resource-only native import conflicts atomically with companion-owned current guidance %s",
+	async (description) => {
+		const project = await loadProjectInMemory({
+			blob: await newProject({
+				settings: { baseLocale: "en", locales: ["en"], modules: [] },
+			}),
+			providePlugins: [nativeResource],
+		});
+		try {
+			await project.importFiles({
+				pluginKey: nativeResource.key,
+				files: [companion("Companion guidance")],
+			});
+			await project.db
+				.updateTable("inlang_bundle")
+				.set({ description })
+				.where("id", "=", "save")
+				.execute();
+			await expect(
+				project.importFiles({
+					pluginKey: nativeResource.key,
+					files: [
+						{
+							locale: "en",
+							content: new TextEncoder().encode(
+								JSON.stringify({
+									save: { description: "Conflicting native guidance" },
+								})
+							),
+						},
+					],
+				})
+			).rejects.toThrow("Conflicting native and companion descriptions");
+			expect(
+				(
+					await project.db
+						.selectFrom("inlang_bundle")
+						.select("description")
+						.executeTakeFirstOrThrow()
+				).description
+			).toBe(description);
+			expect(
+				await project.db.selectFrom("inlang_message").select("id").execute()
+			).toEqual([]);
+		} finally {
+			await project.close();
+		}
+	}
+);
+
+test("resource-only native import still clears native-owned guidance", async () => {
+	const project = await loadProjectInMemory({
+		blob: await newProject({
+			settings: { baseLocale: "en", locales: ["en"], modules: [] },
+		}),
+		providePlugins: [nativeResource],
+	});
+	try {
+		await project.db
+			.insertInto("inlang_bundle")
+			.values({ id: "save", description: "Native guidance" })
+			.execute();
+		await project.importFiles({
+			pluginKey: nativeResource.key,
+			files: [
+				{ locale: "en", content: new TextEncoder().encode('{"save":"Save"}') },
+			],
+		});
+		expect(
+			(
+				await project.db
+					.selectFrom("inlang_bundle")
+					.select("description")
+					.executeTakeFirstOrThrow()
+			).description
+		).toBeNull();
+	} finally {
+		await project.close();
+	}
+});
+
 test.each(["new companion", null])(
 	"companion edit %s reports conflicting native changes",
 	async (description) => {

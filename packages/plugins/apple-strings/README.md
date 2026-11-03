@@ -25,3 +25,5 @@ Supported: exact message keys, quoted-string escaping, Unicode, and positional v
 On SDK hosts supporting bundle descriptions, a block comment directly above a source-locale entry maps to `bundle.description` when it belongs to that entry alone. Blank lines separate document headings; a comment above adjacent entries is treated as a group heading. Target-locale comments remain file metadata.
 
 The shared editor writes descriptions as native `/* ... */` comments in the source file, keeping document comments and target notes when the existing files are available. Removing the attached source comment clears the description. Description text containing `*/` cannot be represented as a block comment and is rejected.
+
+Change the base locale through a loaded project’s settings and save the project before reopening it. If editing `baseLocale` directly in `settings.json`, move shared guidance into the new source entries or `project.inlang/descriptions.json` in the same change. A fresh directory load cannot identify the former source locale and never promotes target-only notes automatically.

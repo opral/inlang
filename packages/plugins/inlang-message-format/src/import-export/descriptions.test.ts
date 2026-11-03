@@ -7,6 +7,62 @@ const encode = (value: unknown) =>
 const parse = (content: Uint8Array) =>
 	JSON.parse(new TextDecoder().decode(content));
 
+test("a cold source-locale configuration change never promotes former-source or ambiguous target notes", async () => {
+	const files = [
+		{
+			locale: "en",
+			path: "en.json",
+			imported: true,
+			content: encode({
+				save: [
+					{ description: "Former source guidance", match: { "*": "Save" } },
+				],
+			}),
+		},
+		{
+			locale: "de",
+			path: "de.json",
+			imported: true,
+			content: encode({ save: "Speichern" }),
+		},
+		{
+			locale: "fr",
+			path: "fr.json",
+			imported: true,
+			content: encode({
+				save: [
+					{ description: "Target-only note", match: { "*": "Enregistrer" } },
+				],
+			}),
+		},
+	];
+	const changed = {
+		...settings,
+		baseLocale: "de",
+		locales: ["en", "de", "fr"],
+	};
+	const imported = await plugin.importFiles!({
+		files,
+		settings: changed,
+		sdkCapabilities,
+	});
+	expect(imported.bundles[0]?.description).toBeNull();
+	const exported = await plugin.exportFiles!({
+		...concrete(imported),
+		files,
+		settings: changed,
+		sdkCapabilities,
+	});
+	expect(
+		parse(exported.find((file) => file.locale === "en")!.content).save[0]
+			.description
+	).toBe("Former source guidance");
+	expect(
+		parse(exported.find((file) => file.locale === "fr")!.content).save[0]
+			.description
+	).toBe("Target-only note");
+});
+
 test("legacy nested collision shapes preserve guidance without creating a description message", async () => {
 	const files = [
 		{

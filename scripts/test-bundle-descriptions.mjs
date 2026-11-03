@@ -8,14 +8,14 @@ import { loadProjectFromDirectory, loadProjectInMemory, newProject, saveProjectT
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const formats = [
-  { directory: "inlang-message-format", name: "messages/en.json", pattern: "./messages/{locale}.json", source: JSON.stringify({ save: [{ description: "Initial guidance", match: { "*": "Save" } }] }), native: true },
+  { directory: "inlang-message-format", name: "messages/en.json", pattern: "./messages/{locale}.json", source: JSON.stringify({ save: [{ description: "Initial guidance", match: { "*": "Save" } }] }), targetName: "messages/de.json", target: '{"save":"Speichern"}', migratedName: "messages/de.json", native: true },
   { directory: "json", name: "messages/en.json", pattern: "./messages/{locale}.json", source: '{"save":"Save"}', native: false },
   { directory: "i18next", name: "messages/en.json", pattern: "./messages/{locale}.json", source: '{"save":"Save"}', native: false },
   { directory: "next-intl", name: "messages/en.json", pattern: "./messages/{locale}.json", source: '{"save":"Save"}', native: false },
   { directory: "icu1", name: "messages/en.json", pattern: "./messages/{locale}.json", source: '{"save":"Save"}', native: false },
-  { directory: "apple-strings", name: "messages/en.strings", pattern: "./messages/{locale}.strings", source: '/* Initial guidance */\n"save" = "Save";\n', native: true },
-  { directory: "android", name: "res/values/strings.xml", pattern: "./res/values{locale}/strings.xml", source: '<resources>\n  <!-- Initial guidance -->\n  <string name="save">Save</string>\n</resources>\n', native: true },
-  { directory: "apple-xcstrings", name: "Localizable.xcstrings", pattern: "./Localizable.xcstrings", source: JSON.stringify({ sourceLanguage: "en", version: "1.0", strings: { save: { comment: "Initial guidance", localizations: { en: { stringUnit: {state:"translated", value:"Save"} } } } } }), native: true },
+  { directory: "apple-strings", name: "messages/en.strings", pattern: "./messages/{locale}.strings", source: '/* Initial guidance */\n"save" = "Save";\n', targetName: "messages/de.strings", target: '"save" = "Speichern";\n', migratedName: "messages/de.strings", native: true },
+  { directory: "android", name: "res/values/strings.xml", pattern: "./res/values{locale}/strings.xml", source: '<resources>\n  <!-- Initial guidance -->\n  <string name="save">Save</string>\n</resources>\n', targetName: "res/values-de/strings.xml", target: '<resources>\n  <string name="save">Speichern</string>\n</resources>\n', native: true },
+  { directory: "apple-xcstrings", name: "Localizable.xcstrings", pattern: "./Localizable.xcstrings", source: JSON.stringify({ sourceLanguage: "en", version: "1.0", strings: { save: { comment: "Initial guidance", localizations: { en: { stringUnit: {state:"translated", value:"Save"} }, de: { stringUnit: {state:"translated", value:"Speichern"} } } } } }), native: true },
 ];
 
 for (const format of formats) {
@@ -29,7 +29,11 @@ for (const format of formats) {
     fs.mkdirSync(projectPath, {recursive:true});
     fs.mkdirSync(path.dirname(path.join(directory, format.name)), {recursive:true});
     fs.writeFileSync(path.join(directory, format.name), format.source);
-    fs.writeFileSync(path.join(projectPath, "settings.json"), JSON.stringify({baseLocale:"en", locales:["en"], modules:[], [plugin.key]:{pathPattern:format.pattern}}));
+    if (format.targetName) {
+      fs.mkdirSync(path.dirname(path.join(directory, format.targetName)), {recursive:true});
+      fs.writeFileSync(path.join(directory, format.targetName), format.target);
+    }
+    fs.writeFileSync(path.join(projectPath, "settings.json"), JSON.stringify({baseLocale:"en", locales:format.native ? ["en", "de"] : ["en"], modules:[], [plugin.key]:{pathPattern:format.pattern}}));
     const load = () => loadProjectFromDirectory({path:projectPath, fs, providePlugins:[plugin]});
     project = await load();
     const [bundle] = await selectBundleNested(project.db).execute();
@@ -53,6 +57,16 @@ for (const format of formats) {
       assert.equal((await selectBundleNested(transferred.db).execute())[0].description,"Updated guidance",`${format.directory} portable reimport`);
     } finally { await transferred.close(); }
 
+    // A supported source-locale change updates the loaded canonical project,
+    // then saves native resources before a new directory load.
+    if (format.native) {
+      await project.settings.set({...await project.settings.get(), baseLocale:"de"});
+      assert.equal((await selectBundleNested(project.db).execute())[0].description,"Updated guidance",`${format.directory} live source switch`);
+      await saveProjectToDirectory({project,path:projectPath,fs});
+      assert(fs.readFileSync(path.join(directory,format.migratedName ?? format.name),"utf8").includes("Updated guidance"),`${format.directory} new native source guidance`);
+      await project.close(); project=await load();
+      assert.equal((await selectBundleNested(project.db).execute())[0].description,"Updated guidance",`${format.directory} source switch save/reopen`);
+    }
     await project.db.updateTable("inlang_bundle").set({description:null}).where("id","=",bundle.id).execute();
     await saveProjectToDirectory({project,path:projectPath,fs});
     await project.close(); project=await load();
@@ -67,10 +81,10 @@ for (const format of formats) {
       await project.close(); project=await load();
       assert.equal((await selectBundleNested(project.db).execute())[0].description,"Fallback guidance",format.directory);
       await saveProjectToDirectory({project,path:projectPath,fs});
-      assert(fs.readFileSync(path.join(directory,format.name),"utf8").includes("Fallback guidance"),format.directory);
+      assert(fs.readFileSync(path.join(directory,format.migratedName ?? format.name),"utf8").includes("Fallback guidance"),format.directory);
       assert.deepEqual(JSON.parse(fs.readFileSync(path.join(projectPath,"descriptions.json"),"utf8")).descriptions,{});
     }
-    console.log(`PASS ${format.directory}: import, description-only edit, directory reopen, portable export, clear${format.native ? ", fallback migration" : ""}`);
+    console.log(`PASS ${format.directory}: import, description-only edit, directory reopen, portable export, clear${format.native ? ", source-locale switch and fallback migration" : ""}`);
   } finally {
     await project?.close();
     fs.rmSync(directory,{recursive:true,force:true});

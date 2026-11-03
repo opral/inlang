@@ -31,3 +31,5 @@ This is a content adapter. On capable SDK hosts, catalog comments are represente
 ## Translation descriptions
 
 On SDK hosts supporting bundle descriptions, an entry's native `comment` maps to `bundle.description`. Description edits, including clearing, write back to the same catalog entry. Other Xcode metadata stays intact; descriptions also survive a fresh catalog export.
+
+Change the base locale through a loaded project’s settings and save the project before reopening it. If editing `baseLocale` directly in `settings.json`, move shared guidance into the new source entries or `project.inlang/descriptions.json` in the same change. A fresh directory load cannot identify the former source locale and never promotes target-only notes automatically. Update the catalog’s `sourceLanguage` to match the new base locale as well.

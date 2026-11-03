@@ -128,9 +128,7 @@ export async function loadProject(args: {
 			const companion = files.find(
 				(file) => file.toBeImportedFilesMetadata?.inlangDescriptions
 			);
-			const previous = companion
-				? await readBundleDescriptions({ lix: args.lix })
-				: new Map<string, string>();
+			const previous = await readBundleDescriptions({ lix: args.lix });
 			const descriptions = companion
 				? parseBundleDescriptions(companion.content)
 				: undefined;
@@ -145,6 +143,9 @@ export async function loadProject(args: {
 					settings,
 					plugins,
 					db,
+					companionOwnedBundleIds: companion
+						? undefined
+						: new Set(previous.keys()),
 					descriptionImport:
 						descriptions && companion
 							? { next: descriptions, previous, content: companion.content }
