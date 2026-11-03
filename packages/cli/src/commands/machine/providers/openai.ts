@@ -87,6 +87,7 @@ export function createOpenAITranslateProvider(
   reasoningEffort?: string,
 ): MachineTranslateProvider {
   return {
+    supportsContext: true,
     async translateText(args: TranslateTextArgs) {
       const response = await fetch(OPENAI_RESPONSES_URL, {
         method: "POST",
@@ -98,7 +99,9 @@ export function createOpenAITranslateProvider(
           model,
           instructions:
             "You are a translation engine. Translate the user's text from the source language to the target language. Preserve HTML tags, placeholders, and formatting. Return only the translated text, without explanations or quotation marks.",
-          input: `Source language: ${args.sourceLocale}\nTarget language: ${args.targetLocale}\n\nText:\n${args.text}`,
+          input: `Source language: ${args.sourceLocale}\nTarget language: ${args.targetLocale}\n${
+            args.context === undefined ? "" : `Context: ${args.context}\n`
+          }\nText:\n${args.text}`,
           ...(reasoningEffort === undefined
             ? {}
             : { reasoning: { effort: reasoningEffort } }),

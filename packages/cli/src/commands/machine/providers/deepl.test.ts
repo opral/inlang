@@ -75,6 +75,28 @@ describe("createDeepLTranslateProvider", () => {
     );
   });
 
+  test("sends contextual descriptions to DeepL", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ translations: [{ text: "Hafen" }] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const provider = createDeepLTranslateProvider("test-key");
+    await provider.translateText({
+      text: "Port",
+      sourceLocale: "en",
+      targetLocale: "de",
+      context: "in computing",
+    });
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    if (!request) {
+      throw new Error("Expected a DeepL API request");
+    }
+    expect(JSON.parse(request.body).context).toBe("in computing");
+  });
+
   test("returns error when API request fails", async () => {
     vi.stubGlobal(
       "fetch",

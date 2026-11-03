@@ -16,7 +16,7 @@ inlang keeps the Git repo as the source of truth: translation files and \`settin
 
 ## What to edit
 
-- \`settings.json\`: \`baseLocale\`, \`locales\`, plugin \`modules\` and plugin settings such as \`pathPattern\` ([reference](https://inlang.com/docs/settings)). Commit it.
+- \`settings.json\`: \`baseLocale\`, \`locales\`, optional \`translationDescriptors\` path, plugin \`modules\` and plugin settings such as \`pathPattern\` ([reference](https://inlang.com/docs/settings)). Commit it.
 - \`paraglide.config.*\` (if present): Paraglide JS compiler options such as \`strategy\`. Commit it.
 - Translation files (for example \`messages/en.json\`) live **outside** this folder, at the \`pathPattern\` in \`settings.json\`. Add and change messages there.
 - Don't edit \`README.md\`, \`.gitignore\`, \`.meta.json\`, \`cache/\` or \`.lix/\`. They are generated and Git-ignored.
@@ -30,7 +30,7 @@ Run commands from the repo root. Replace \`./project.inlang\` with the path to t
 | Check translations: missing or empty translations, placeholder and plural mismatches, unused messages | \`npx @inlang/cli check --project ./project.inlang\`. Exits 1 on findings, so it works as a CI step. Formerly \`validate\` / \`lint\`. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#check) |
 | Fail CI only on missing translations, for some locales | \`npx @inlang/cli check --project ./project.inlang --missing-translations --locales de\` |
 | Find unused messages | \`npx @inlang/cli check --project ./project.inlang --unused-messages\`. It scans the source code for Paraglide \`m.*\` calls via the \`m-function-matcher\` plugin. |
-| Machine translate missing messages | \`npx @inlang/cli machine translate --project ./project.inlang\` (optionally \`--targetLocales de\`). Uses Google or DeepL if \`INLANG_GOOGLE_TRANSLATE_API_KEY\` or \`INLANG_DEEPL_API_KEY\` is set, otherwise a free third-party service ([bring your own key](https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok)). Review the output before shipping. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#machine-translate) |
+| Machine translate missing messages | \`npx @inlang/cli machine translate --project ./project.inlang\` (optionally \`--targetLocales de\`). Set \`translationDescriptors\` in \`settings.json\` to provide per-message context to supported providers. Uses Google, DeepL or OpenAI if configured, otherwise a free third-party service ([bring your own key](https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok)). Review the output before shipping. [Docs](https://inlang.com/m/2qj2w8pu/app-inlang-cli#machine-translate) |
 | Add a locale | Add it to \`locales\` in \`settings.json\`, then create its translation file or machine translate it. |
 | Switch the file format (JSON, i18next, ICU MessageFormat, XLIFF, ...) | Replace the format plugin in \`modules\` and its settings key ([plugins](https://inlang.com/c/plugins)). Existing files are not converted automatically. |
 | Let translators edit without touching JSON | [Fink](https://fink.inlang.com), a translation editor that works on this project |

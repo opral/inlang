@@ -14,6 +14,7 @@ type ProjectSettings = {
   $schema?: string;
   baseLocale: string;
   locales: string[];
+  translationDescriptors?: string;
   modules?: string[];
   experimental?: Record<string, true>;
 };
@@ -45,6 +46,37 @@ Must be a valid [BCP-47 language tag](https://www.w3.org/International/articles/
 - Must include `baseLocale`
 - Each locale must be a valid BCP-47 language tag
 - Duplicates are not allowed
+
+### translationDescriptors
+
+Optional path to a YAML file containing message descriptions for machine translation. The path is relative to the project directory.
+
+The SDK-native format uses exact inlang bundle IDs as top-level keys, with a `description` passed as translation context to providers that support it:
+
+```json
+{
+  "translationDescriptors": "./descriptors.yml"
+}
+```
+
+```yaml
+"misc:port":
+  description: in computing
+"misc:portRange":
+  description: in computing
+```
+
+For compatibility with i18n-ally review files, entries can instead be nested under a top-level `reviews` key. In that format, each key uses `<namespace>.<key>`; the SDK converts the first dot to `:` to match an inlang bundle ID, preserving any later dots in the key:
+
+```yaml
+reviews:
+  misc.port:
+    description: in computing
+  misc.port.range:
+    description: in computing
+```
+
+OpenAI and DeepL use these descriptions. Google Translate and the default community-operated provider do not support contextual descriptions, so the CLI warns and continues without them.
 
 ### modules
 
@@ -97,6 +129,7 @@ See each plugin's marketplace page for available settings.
   "$schema": "https://inlang.com/schema/project-settings",
   "baseLocale": "en",
   "locales": ["en", "de", "fr", "es"],
+  "translationDescriptors": "./descriptors.yml",
   "modules": [
     "https://cdn.jsdelivr.net/npm/@inlang/plugin-i18next@6.1.4/dist/index.js",
     "https://cdn.jsdelivr.net/npm/@inlang/plugin-t-function-matcher@3/dist/index.js"

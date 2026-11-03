@@ -2,6 +2,7 @@ export type TranslateTextArgs = {
   text: string;
   sourceLocale: string;
   targetLocale: string;
+  context?: string;
 };
 
 export type TranslateTextResult =
@@ -9,5 +10,6 @@ export type TranslateTextResult =
   | { ok: false; error: string; unavailable?: boolean };
 
 export type MachineTranslateProvider = {
+  supportsContext?: boolean;
   translateText: (args: TranslateTextArgs) => Promise<TranslateTextResult>;
 };

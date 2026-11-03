@@ -3,14 +3,18 @@ import { Command } from "commander";
 import { getInlangProject } from "../../utilities/getInlangProject.js";
 import { log, logError } from "../../utilities/log.js";
 import {
+  getTranslationDescription,
+  parseTranslationDescriptors,
   saveProjectToDirectory,
   selectBundleNested,
   upsertBundleNested,
   type InlangProject,
+  type TranslationDescriptors,
 } from "@inlang/sdk";
 import { projectOption } from "../../utilities/globalFlags.js";
 import progessBar from "cli-progress";
 import fs from "node:fs/promises";
+import { resolve } from "node:path";
 import {
   machineTranslateBundle,
   type MachineTranslateResult,
@@ -32,7 +36,10 @@ export const translate = new Command()
     let exitCode = 0;
     try {
       const project = await getInlangProject({ projectPath: args.project });
-      await translateAndSave({ project, path: args.project });
+      await translateAndSave({
+        project,
+        path: args.project,
+      });
     } catch (error) {
       logError(error);
       exitCode = 1;
@@ -72,6 +79,7 @@ export async function translateAndSave(args: {
   try {
     ({ translated, bundles } = await translateCommandAction({
       project: args.project,
+      projectPath: args.path,
     }));
   } catch (error) {
     if (!(error instanceof PartialMachineTranslateError)) {
@@ -98,6 +106,7 @@ export async function translateAndSave(args: {
 /** Translates missing translations into the project. Returns how many were added. */
 export async function translateCommandAction(args: {
   project: InlangProject;
+  projectPath?: string;
 }): Promise<{ translated: number; bundles: number }> {
   const options = translate.opts();
   const provider = resolveMachineTranslateProvider();
@@ -113,6 +122,28 @@ export async function translateCommandAction(args: {
       );
   try {
     const settings = await args.project.settings.get();
+    let descriptors: TranslationDescriptors = new Map();
+    if (settings.translationDescriptors) {
+      if (!args.projectPath) {
+        throw new Error(
+          "A project path is required to resolve the translationDescriptors setting.",
+        );
+      }
+      const descriptorPath = resolve(
+        args.projectPath,
+        settings.translationDescriptors,
+      );
+      descriptors = parseTranslationDescriptors(
+        await fs.readFile(descriptorPath, "utf8"),
+        descriptorPath,
+      );
+    }
+
+    if (descriptors.size > 0 && provider.supportsContext !== true) {
+      log.warn(
+        "The selected translation provider does not support contextual descriptions; the descriptor file will be ignored.",
+      );
+    }
 
     const targetLocales: string[] = options.targetLocales
       ? options.targetLocales[0]?.split(",")
@@ -140,6 +171,10 @@ export async function translateCommandAction(args: {
         sourceLocale: settings.baseLocale,
         targetLocales: targetLocales,
         provider,
+        contextDescription:
+          provider.supportsContext === true
+            ? getTranslationDescription(bundle.id, descriptors)
+            : undefined,
       });
 
       const trackedPromise = (

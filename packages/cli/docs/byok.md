@@ -13,12 +13,12 @@ For many projects, coding agents can produce better translation drafts than gene
 
 Set `INLANG_MACHINE_TRANSLATE_PROVIDER` to choose the translation service:
 
-| Provider | Env var | API key env var |
-| -------- | ------- | --------------- |
-| Community-operated translation service at translate.demosjarco.dev (default) | `demosjarco` or unset (when no API key is set) | none |
-| Google Translate | `google` | `INLANG_GOOGLE_TRANSLATE_API_KEY` |
-| DeepL | `deepl` | `INLANG_DEEPL_API_KEY` |
-| OpenAI | `openai` | `INLANG_OPENAI_API_KEY` |
+| Provider                                                                     | Env var                                        | API key env var                   |
+| ---------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------- |
+| Community-operated translation service at translate.demosjarco.dev (default) | `demosjarco` or unset (when no API key is set) | none                              |
+| Google Translate                                                             | `google`                                       | `INLANG_GOOGLE_TRANSLATE_API_KEY` |
+| DeepL                                                                        | `deepl`                                        | `INLANG_DEEPL_API_KEY`            |
+| OpenAI                                                                       | `openai`                                       | `INLANG_OPENAI_API_KEY`           |
 
 When `INLANG_MACHINE_TRANSLATE_PROVIDER` is unset, the CLI uses Google, DeepL, or OpenAI if the matching API key is set, and otherwise falls back to the community-operated translation service at translate.demosjarco.dev. If multiple keys are set, Google takes precedence over DeepL, which takes precedence over OpenAI.
 
@@ -132,3 +132,30 @@ Once the environment variables are set, run machine translate:
 ```bash
 npx @inlang/cli machine translate --project ./project.inlang
 ```
+
+## Contextual descriptions
+
+Machine translation can use per-message descriptions as additional context with OpenAI and DeepL. Configure `translationDescriptors` in the project’s `settings.json`; the path is relative to the project directory:
+
+```json
+{
+  "translationDescriptors": "./descriptors.yml"
+}
+```
+
+The SDK-native YAML format maps exact inlang bundle IDs to descriptions:
+
+```yaml
+"misc:port":
+  description: in computing
+```
+
+An i18n-ally review file is also accepted. It uses `<namespace>.<key>` entries nested under `reviews`; the parser converts the first dot to `:` for the inlang bundle ID:
+
+```yaml
+reviews:
+  misc.port:
+    description: in computing
+```
+
+Google Translate and the default community-operated provider do not support contextual descriptions. The CLI warns and proceeds without them when either provider is selected.

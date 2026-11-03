@@ -8,6 +8,7 @@ test("valid settings file", () => {
 	const settings: ProjectSettings = {
 		baseLocale: "en",
 		locales: ["en", "de"],
+		translationDescriptors: "./descriptors.yml",
 		modules: [
 			"https://cdn.jsdelivr.net/npm/@inlang/plugin-i18next@3/dist/index.js",
 			"https://cdn.jsdelivr.net/npm/@inlang/plugin-csv@1/dist/index.js",

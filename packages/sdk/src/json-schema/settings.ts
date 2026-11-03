@@ -16,6 +16,15 @@ const SDKSettings = Type.Object({
 		description:
 			"Set the locales that are available in your project. All locales needs to be a valid BCP-47 language tag. Needs to include the base locale tag.",
 	}),
+	translationDescriptors: Type.Optional(
+		Type.String({
+			minLength: 1,
+			title: "Translation descriptors",
+			description:
+				"Path to a YAML file mapping inlang bundle IDs to machine translation context descriptions, relative to the project directory.",
+			examples: ["./descriptors.yml"],
+		})
+	),
 	// exits for backwards compatibility
 	// remove in SDK-v3
 	sourceLanguageTag: Type.Optional(

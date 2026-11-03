@@ -42,3 +42,8 @@ export * from "./database/schema.js";
 export { createMessageV1 } from "./migrations/v2/createMessageV1.js";
 
 export * from "./checks/index.js";
+export {
+	parseTranslationDescriptors,
+	getTranslationDescription,
+	type TranslationDescriptors,
+} from "./utilities/translationDescriptors.js";

@@ -19,6 +19,7 @@ type MachineTranslateArgs = {
   sourceLocale: string;
   targetLocales: string[];
   provider: MachineTranslateProvider;
+  contextDescription?: string;
 };
 
 export type MachineTranslateResult = {
@@ -118,6 +119,9 @@ export async function machineTranslateBundle(
           text: sourcePattern,
           sourceLocale: args.sourceLocale,
           targetLocale,
+          ...(args.contextDescription === undefined
+            ? {}
+            : { context: args.contextDescription }),
         });
 
         if (!translation.ok && translation.unavailable) {

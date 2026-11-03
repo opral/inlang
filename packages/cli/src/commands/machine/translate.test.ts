@@ -63,6 +63,54 @@ test("requires INLANG_OPENAI_API_KEY when provider is openai", async () => {
   );
 });
 
+test("uses the configured descriptor file to provide context for matching keys", async () => {
+  vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "openai");
+  vi.stubEnv("INLANG_OPENAI_API_KEY", "openai-key");
+  const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "inlang-context-"));
+  const descriptorPath = nodePath.join(root, "descriptors.yml");
+  fs.writeFileSync(
+    descriptorPath,
+    "reviews:\n  misc.port:\n    description: in computing\n",
+  );
+  const fetchMock = vi.fn().mockResolvedValue(
+    Response.json({
+      status: "completed",
+      output: [
+        {
+          type: "message",
+          status: "completed",
+          content: [{ type: "output_text", text: "Hafen" }],
+        },
+      ],
+    }),
+  );
+  vi.stubGlobal("fetch", fetchMock);
+
+  const project = await loadProjectInMemory({
+    blob: await newProject({
+      settings: {
+        baseLocale: "en",
+        locales: ["en", "de"],
+        translationDescriptors: "./descriptors.yml",
+      },
+    }),
+  });
+
+  try {
+    await insertBundleNested(project.db, textBundle("misc:port", "Port"));
+    await translateCommandAction({ project, projectPath: root });
+
+    const request = fetchMock.mock.calls[0]?.[1];
+    if (!request) {
+      throw new Error("Expected an OpenAI API request");
+    }
+    expect(JSON.parse(request.body).input).toContain("Context: in computing");
+  } finally {
+    await project.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 function unavailableResponse() {
   return new Response(null, {
     status: 503,

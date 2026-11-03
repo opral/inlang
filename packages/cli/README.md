@@ -18,9 +18,9 @@ Read the announcement: [inlang check: find missing translations and unused keys 
 
 ## Features
 
-- **Machine Translation** — Translate missing messages automatically via a free, third-party translation service by default, or with your own Google Cloud Translation or DeepL API key
+- **Machine Translation** — Translate missing messages automatically via a free, third-party translation service by default, or with your own Google Cloud Translation, DeepL, or OpenAI API key
 - **Checks** — Find missing translations, missing variables and unused messages before they ship. Exits with `1` on findings, so CI fails. See [`check`](#check)
-- **CI/CD Ready** — Run non-interactively with `--force` for pipelines
+- **CI/CD Ready** — Run checks and machine translations non-interactively in pipelines
 - **Plugin System** — Supports JSON, i18next, next-intl, ICU message format, and more
 
 # Getting Started
@@ -105,6 +105,44 @@ export INLANG_OPENAI_MODEL="your-model"
 export INLANG_OPENAI_REASONING_EFFORT="none"
 ```
 
+For keys that need extra translation context, add `translationDescriptors` to `settings.json`. Its path is relative to the project folder:
+
+```json
+{
+  "$schema": "https://inlang.com/schema/project-settings",
+  "baseLocale": "en",
+  "locales": ["en", "de", "fr"],
+  "modules": [
+    "https://cdn.jsdelivr.net/npm/@inlang/plugin-json@latest/dist/index.js"
+  ],
+  "plugin.inlang.json": {
+    "pathPattern": "./messages/{locale}.json"
+  },
+  "translationDescriptors": "./descriptors.yml"
+}
+```
+
+In `descriptors.yml`, use exact inlang bundle IDs as keys. You can use the SDK-native flat format:
+
+```yaml
+"misc:port":
+  description: in computing
+"misc:portRange":
+  description: in computing
+```
+
+Or use the i18n-ally review-file format by nesting entries under `reviews`. Its `<namespace>.<key>` entries are converted to bundle IDs by replacing the first dot with `:`; later dots remain part of the key:
+
+```yaml
+reviews:
+  misc.port:
+    description: in computing
+  misc.port.range:
+    description: in computing
+```
+
+Context descriptions are sent to OpenAI and DeepL. Google Translate and the default community service do not support contextual descriptions; the CLI warns if one of those providers is selected.
+
 This creates `messages/de.json` and `messages/fr.json` with translations.
 
 **4. Check your translations**
@@ -147,7 +185,7 @@ If one of the commands can't be found, you probably use an outdated CLI version.
 | --------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **CLI Version** | `npx @inlang/cli@latest [command]`            | Get the latest version of the inlang CLI.                                                                                                                           |
 | **Check**       | `npx @inlang/cli check [options]`             | Check translations for missing, empty or inconsistent messages, and source code for unused messages. Exits with 1 on findings, for CI.                              |
-| **Machine**     | `npx @inlang/cli machine translate [options]` | Automate translation processes. Options include `-f, --force`, `--project <path>`, `--locale <source>` and `--targetLocales <targets...>`                           |
+| **Machine**     | `npx @inlang/cli machine translate [options]` | Translate missing messages. Configure per-message context with `translationDescriptors` in `settings.json`.                                                         |
 | **Cloud**       | `npx @inlang/cli cloud`                       | See what's coming in inlang Cloud and tell us what your team needs.                                                                                                 |
 | **Plugin**      | `npx @inlang/cli plugin [command]`            | Interact with Inlang plugins, including initialization and building. `build [options]` build an inlang module. Options include `--type`, `--entry`, and `--outdir`. |
 
@@ -193,28 +231,44 @@ The machine command is used to automate localization processes.
 
 ### `machine translate`
 
-The translate command machine translates all resources.
+The translate command machine translates missing messages.
 
-By default, the CLI uses a free, third-party translation service that is not owned, operated, or maintained by inlang. Stability is not guaranteed. For higher reliability and control, set `INLANG_MACHINE_TRANSLATE_PROVIDER` to `google` or `deepl` and bring your own API key. See the [BYOK setup guide](https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok).
+By default, the CLI uses a free, third-party translation service that is not owned, operated, or maintained by inlang. Stability is not guaranteed. For higher reliability and control, set `INLANG_MACHINE_TRANSLATE_PROVIDER` to `google`, `deepl`, or `openai` and bring your own API key. See the [BYOK setup guide](https://inlang.com/m/2qj2w8pu/app-inlang-cli/byok).
 
 For many projects, coding agents can produce better translation drafts than generic machine translation because they can use surrounding product and code context. Consider using an agent-driven workflow when translation quality matters more than fully automated CI output.
 
 To initiate machine translation, run the following command:
 
 ```sh
-npx @inlang/cli machine translate
+npx @inlang/cli machine translate --project ./project.inlang
 ```
 
 **Options**
 
 The translate command has the following options:
 
-- `-f, --force`: If this option is set, the command will not prompt confirmation. This is useful for CI/CD build pipelines. **We advise you to only use `machine translate` in build pipelines to avoid out-of-context/wrong translations.**
-- `--project <path>`: Specifies the path to the project root. The default project root is the current working directory.
-- `--locale <source>`: Specifies the base locale.
-- `--targetLocales <targets...>`: Specifies the target locales as comma seperated list (e.g. sk,zh,pt-BR).
+- `--project <path>`: Required path to the inlang project.
+- `-q, --quiet`: Don't log every translation.
+- `--locale <source>`: Currently does not override the source locale; `baseLocale` from project settings is used.
+- `--targetLocales <targets...>`: Target locales, comma-separated (e.g. `--targetLocales de,fr`).
+- `-n, --nobar`: Disable the progress bar.
 
-The translations are performed with the configured provider (`INLANG_MACHINE_TRANSLATE_PROVIDER`). The community-operated translation service at translate.demosjarco.dev (not affiliated with inlang) is used by default; set `INLANG_GOOGLE_TRANSLATE_API_KEY`, `INLANG_DEEPL_API_KEY`, or `INLANG_OPENAI_API_KEY` to use your own provider. You can also set `DEMOSJARCO_TRANSLATE_MODEL` to pin a model for the community-operated service (and `DEMOSJARCO_TRANSLATE_ZDR=true` to request Zero Data Retention from it). If the selected provider is unavailable or throttles requests, the command fails with a non-zero exit code instead of reporting success. OpenAI Responses that are incomplete are not accepted as translations and also cause the command to fail. The translated messages are added to the respective language resources. Finally, the updated resources are written back to the file system.
+Add `translationDescriptors` to `settings.json` to provide extra context per message. It points to a YAML file, relative to the project directory, whose top-level keys are exact inlang bundle IDs:
+
+```json
+{
+  "translationDescriptors": "./descriptors.yml"
+}
+```
+
+```yaml
+misc.port:
+  description: in computing
+```
+
+OpenAI and DeepL use the descriptions; Google Translate and the default community-operated provider do not support context. The CLI warns and continues without descriptions when using an unsupported provider.
+
+Translations use the configured provider (`INLANG_MACHINE_TRANSLATE_PROVIDER`). The community-operated translation service at translate.demosjarco.dev (not affiliated with inlang) is used by default; set `INLANG_GOOGLE_TRANSLATE_API_KEY`, `INLANG_DEEPL_API_KEY`, or `INLANG_OPENAI_API_KEY` to use your own provider. You can also set `DEMOSJARCO_TRANSLATE_MODEL` to pin a model for the community-operated service (and `DEMOSJARCO_TRANSLATE_ZDR=true` to request Zero Data Retention from it). If the selected provider is unavailable or throttles requests, the command fails with a non-zero exit code instead of reporting success. OpenAI Responses that are incomplete are not accepted as translations and also cause the command to fail. The translated messages are added to the respective language resources. Finally, the updated resources are written back to the file system.
 
 ## `check`
 
