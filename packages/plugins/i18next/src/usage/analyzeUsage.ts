@@ -492,6 +492,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 					) {
 						// Only infer a translator from a custom hook's tuple that
 						// returns `[t, ...]` when its first item is `t`.
+						// ---- incomplete: the hook could return a translator under any name, so we can't know the namespace. ----
 						for (const name of patternNames((id.elements as unknown[])[0])) {
 							if (name === "t") {
 								other.add(name);
