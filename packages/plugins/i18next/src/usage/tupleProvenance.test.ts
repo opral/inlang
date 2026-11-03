@@ -74,8 +74,6 @@ test.each([
 	`function* useData() { yield external; return ["hello"]; } const [translate] = useData();`,
 	`function useData() { return flag ? [{ translate: "data", other: external }] : [{ translate: external, other: external }]; } const [{translate}] = useData();`,
 	`function useData() { if (flag) return [{ translate: "data", other: external }]; return [{ translate: external, other: external }]; } const [{translate}] = useData();`,
-	`import { useState } from "react"; class Reader { constructor(private useState: Hook) { const [translate] = useState(); translate("live"); } } const [translate] = opaque();`,
-	`import { useState } from "react"; namespace Example { const useState = external; const [translate] = useState(); translate("live"); } const [translate] = opaque();`,
 ])("ambiguous tuple values cannot enable deletion: %s", async (source) => {
 	const result = await run(`${source} translate("live");`);
 	expect(
@@ -112,7 +110,7 @@ test("exported mutable tuples cannot be treated as immutable data", async () => 
 	).toBe(true);
 });
 
-test("cyclic and deep hook return graphs fail closed", async () => {
+test("cyclic hook return graphs fail closed", async () => {
 	const result = await run(
 		`function first() { return second(); } function second() { return first(); } const [translate] = first(); consume(translate);`
 	);
@@ -144,3 +142,47 @@ test("snapshot file ordering does not change hook data classification", async ()
 		expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
 	}
 });
+
+test.each([
+	`const holder = { source }; holder.source[0] = external;`,
+	`const holder = [source]; holder[0][0] = external;`,
+])(
+	"aggregates captured by another object can be mutated: %s",
+	async (mutation) => {
+		const result = await run(
+			`function useData() { const source = ["hello"]; ${mutation} return source; } const [translate] = useData(); translate("live");`
+		);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
+test("a fresh returned data object can be consumed without losing its non-callable proof", async () => {
+	const result = await run(
+		`function useTheme() { const theme = { mode: "dark" }; return [theme]; } const [theme] = useTheme(); consume(theme);`
+	);
+	expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+});
+
+test("escaped selected aggregates lose property proofs", async () => {
+	const result = await run(
+		`import {useState} from "react"; const [shared] = useState({translate: "data"}); function useTheme() { return [shared]; } const [first] = useTheme(); first.translate = external; const [{translate}] = useTheme(); translate("live");`
+	);
+	expect(
+		result.status === "incomplete" || result.usedBundleIds.includes("live")
+	).toBe(true);
+});
+
+test.each([
+	`import { useState } from "react"; class Reader { constructor(private useState: Hook) { const [translate] = useState(); translate("live"); } }`,
+	`import { useState } from "react"; namespace Example { const useState = external; const [translate] = useState(); translate("live"); }`,
+])(
+	"TypeScript shadow bindings cannot inherit React data evidence: %s",
+	async (source) => {
+		const result = await run(source);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);

@@ -118,6 +118,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			}
 		}
 		const root: Scope = { names: new Map(), functionScope: true };
+		const parents = new Map<Node, Node>();
 		const module: Module = {
 			path,
 			program,
@@ -189,6 +190,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			}
 		};
 		walk(program, (node, parent) => {
+			if (parent) parents.set(node, parent);
 			const outer = parent ? (module.scopes.get(parent) ?? root) : root;
 			const fn = Array.isArray(node.params);
 			const scope: Scope =
@@ -244,6 +246,34 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 					};
 				}
 		});
+		const inFreshReturn = (node: Node) => {
+			let current = node;
+			for (
+				let parent = parents.get(current);
+				parent;
+				parent = parents.get(current)
+			) {
+				if (
+					parent.type === "ReturnStatement" ||
+					(parent.type === "ArrowFunctionExpression" && parent.body === current)
+				)
+					return true;
+				if (
+					![
+						"ArrayExpression",
+						"ObjectExpression",
+						"ObjectProperty",
+						"TSAsExpression",
+						"TSSatisfiesExpression",
+						"TSNonNullExpression",
+						"ParenthesizedExpression",
+					].includes(parent.type)
+				)
+					return false;
+				current = parent;
+			}
+			return false;
+		};
 		walk(program, (node, parent, key) => {
 			if (node.type !== "Identifier" || module.declarations.has(node)) return;
 			if (
@@ -267,7 +297,11 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			if (
 				(parent && calls.has(parent.type) && key === "arguments") ||
 				(parent?.type === "VariableDeclarator" && key === "init") ||
-				parent?.type === "ExportSpecifier"
+				parent?.type === "ExportSpecifier" ||
+				((parent?.type === "ArrayExpression" ||
+					(parent?.type === "ObjectProperty" && key === "value")) &&
+					!inFreshReturn(node)) ||
+				parent?.type === "SpreadElement"
 			)
 				binding.escaped = true;
 			const references = module.references.get(binding) ?? [];
@@ -423,13 +457,16 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			seen,
 			budget
 		);
+		const selection = selected(result, binding.selection);
 		if (
-			binding.selection.length === 0 &&
 			binding.escaped &&
-			(result.kind === "tuple" || result.kind === "object")
-		)
-			return unknown;
-		return selected(result, binding.selection);
+			(selection.kind === "tuple" || selection.kind === "object")
+		) {
+			// An escaped aggregate stays non-callable, but its properties/elements can change.
+			// A whole tuple source must lose its first-element proof; selected data can still render.
+			return binding.selection.length > 0 ? data : unknown;
+		}
+		return selection;
 	}
 	function evaluate(
 		expression: unknown,
