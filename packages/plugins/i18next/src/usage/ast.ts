@@ -155,6 +155,8 @@ export const unwrap = (node: unknown): Node | undefined => {
 		isNode(current) &&
 		(current.type === "AwaitExpression" ||
 			current.type === "TSAsExpression" ||
+			current.type === "TSTypeAssertion" ||
+			current.type === "TSInstantiationExpression" ||
 			current.type === "TSSatisfiesExpression" ||
 			current.type === "TSNonNullExpression" ||
 			current.type === "ParenthesizedExpression")

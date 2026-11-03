@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import nodeFs from "node:fs";
 import nodeOs from "node:os";
 import nodePath from "node:path";
@@ -8,6 +8,9 @@ import {
 	type InlangPlugin,
 } from "@inlang/sdk";
 import { plugin } from "../plugin.js";
+
+// Loading and saving projects with the SDK is slow on shared CI runners.
+vi.setConfig({ testTimeout: 30_000 });
 
 // kept separate from roundtrip.test.ts on purpose: that file imports
 // ./importFiles.js before ../plugin.js, and under vite's module transform

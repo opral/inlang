@@ -164,3 +164,150 @@ test("the plugin's project errors don't come from the analyzer", async () => {
 		(await project.plugins.get()).some((entry) => entry.analyzeUsage)
 	).toBe(true);
 });
+
+test("a local custom data tuple does not suppress unused-message diagnostics", async () => {
+	const { project, files } = await load({
+		pathPattern: "./locales/{locale}.json",
+		locales: {
+			"locales/en.json": { live: "Live", legacy: "Legacy" },
+			"locales/de.json": { live: "Aktuell", legacy: "Alt" },
+		},
+		source: {
+			"src/theme.ts": `export function useTheme() {
+				const theme = { mode: "dark" };
+				return [theme, ["small", "large"]] as const;
+			}`,
+			"src/App.tsx": `
+				import { useTranslation } from "react-i18next";
+				import { useTheme } from "./theme";
+				const [theme, mediaQueries] = useTheme();
+				consume(theme);
+				const { t } = useTranslation();
+				t("live");
+			`,
+		},
+	});
+	const result = await checkProject({
+		project,
+		files,
+		checks: ["unused-message"],
+	});
+	expect(result.checks).toEqual([{ id: "unused-message", status: "complete" }]);
+	expect(unused(result)).toEqual(["legacy"]);
+});
+
+test("an opaque tuple translator escaping cannot offer deletion fixes", async () => {
+	const { project, files } = await load({
+		pathPattern: "./locales/{locale}.json",
+		locales: {
+			"locales/en.json": { live: "Live", legacy: "Legacy" },
+			"locales/de.json": { live: "Aktuell", legacy: "Alt" },
+		},
+		source: {
+			"src/App.tsx": `
+				import "react-i18next";
+				import { useCustomTranslation } from "external-hooks";
+				const [translate] = useCustomTranslation();
+				render(translate);
+			`,
+		},
+	});
+	const result = await checkProject({
+		project,
+		files,
+		checks: ["unused-message"],
+	});
+	expect(result.checks[0]?.status).toBe("incomplete");
+	expect(unused(result)).toEqual([]);
+	expect(result.diagnostics.flatMap((diagnostic) => diagnostic.fixes)).toEqual(
+		[]
+	);
+});
+
+test.each([
+	[
+		"a constructor parameter property",
+		`class Reader {
+			constructor(private useState: Hook) {
+				const [translate] = useState();
+				translate("live");
+			}
+		}`,
+	],
+	[
+		"a React state initializer returning a translator",
+		`const [translate] = useState(() => getFixedT("en"));
+		 translate("live");`,
+	],
+	[
+		"a React state setter storing a translator",
+		`const [translate, setTranslate] = useState("initial");
+		 setTranslate(() => getFixedT("en"));
+		 translate("live");`,
+	],
+	[
+		"a tuple changed by a mutating method",
+		`function useHook() {
+			const result = ["initial"];
+			result.splice(0, 1, getFixedT("en"));
+			return result;
+		}
+		const [translate] = useHook(); translate("live");`,
+	],
+	[
+		"a tuple mutated through a TypeScript-wrapped alias",
+		`function useHook() {
+			const result = ["initial"];
+			const alias = (result as any)!;
+			alias.splice(0, 1, getFixedT("en"));
+			return result;
+		}
+		const [translate] = useHook(); translate("live");`,
+	],
+	[
+		"tuple elements mutated through for-of aliases",
+		`function useHook() {
+			const result = [{ fn: "initial" }];
+			for (const item of result) item.fn = getFixedT("en");
+			return result;
+		}
+		const [{ fn: translate }] = useHook(); translate("live");`,
+	],
+	[
+		"a custom state hook exposing its setter",
+		`function useHook() { return useState(null); }
+		const [value, setValue] = useHook();
+		setValue(() => getFixedT("en"));
+		value("live");`,
+	],
+	[
+		"property deletion revealing an inherited translator",
+		`function useHook() {
+			const obj = { fn: "initial", __proto__: { fn: getFixedT("en") } };
+			delete obj.fn;
+			return [obj.fn];
+		}
+		const [translate] = useHook(); translate("live");`,
+	],
+])("%s cannot offer deletion of a live translation", async (_name, source) => {
+	const { project, files } = await load({
+		pathPattern: "./locales/{locale}.json",
+		locales: {
+			"locales/en.json": { live: "Live", legacy: "Legacy" },
+			"locales/de.json": { live: "Aktuell", legacy: "Alt" },
+		},
+		source: {
+			"src/Reader.ts": `
+				import { useState } from "react";
+				import { getFixedT } from "i18next";
+				${source}
+			`,
+		},
+	});
+	const result = await checkProject({
+		project,
+		files,
+		checks: ["unused-message"],
+	});
+	expect(unused(result)).not.toContain("live");
+});
