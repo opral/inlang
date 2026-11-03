@@ -222,3 +222,36 @@ test.each([
 		).toBe(true);
 	}
 );
+
+test.each([
+	`const result = ["data"]; result.unshift(getFixedT("en")); return result;`,
+	`const result = ["data"]; result.splice(0, 1, getFixedT("en")); return result;`,
+	`const result = ["data", getFixedT("en")]; result.reverse(); return result;`,
+	`const result = ["data"]; result["unshift"](getFixedT("en")); return result;`,
+	`const result = ["data"]; result.unshift?.(getFixedT("en")); return result;`,
+	`const result = ["data"]; const alias = result; alias.unshift(getFixedT("en")); return result;`,
+	`const result = { tuple: ["data"] }; result.tuple.unshift(getFixedT("en")); return result.tuple;`,
+	`const result = { tuple: ["data"], mutate() { this.tuple.unshift(getFixedT("en")); } }; result.mutate(); return result.tuple;`,
+])(
+	"aggregate method calls cannot leave stale tuple proofs: %s",
+	async (body) => {
+		const result = await run(
+			`import { getFixedT } from "i18next"; function useHook() { ${body} } const [translate] = useHook(); translate("live");`
+		);
+		expect(result.status).toBe("incomplete");
+	}
+);
+
+test("readonly array receiver methods remain conservatively opaque", async () => {
+	const result = await run(
+		`function useData() { const result = ["data"]; result.slice(); return result; } const [data] = useData(); consume(data);`
+	);
+	expect(result.status).toBe("incomplete");
+});
+
+test("source-visible receiver-free namespace methods preserve data proof", async () => {
+	const result = await run(
+		`const hooks = { useData() { return ["data"]; } }; const [data] = hooks.useData(); consume(data);`
+	);
+	expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+});

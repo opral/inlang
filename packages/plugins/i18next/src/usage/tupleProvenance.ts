@@ -30,6 +30,7 @@ type Binding = {
 	imported?: { source: string; name: string };
 	mutable?: boolean;
 	escaped?: boolean;
+	receiverMethods?: string[][];
 	tuple: boolean;
 };
 type Scope = {
@@ -310,6 +311,25 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			module.references.set(binding, references);
 		});
 		walk(program, (node) => {
+			if (calls.has(node.type)) {
+				const callee = unwrap(node.callee);
+				if (callee && members.has(callee.type)) {
+					const path = [propertyName(callee) ?? "?"];
+					let receiver = unwrap(callee.object);
+					while (receiver && members.has(receiver.type)) {
+						path.unshift(propertyName(receiver) ?? "?");
+						receiver = unwrap(receiver.object);
+					}
+					if (receiver?.type === "Identifier") {
+						const binding = bindingAt(
+							module,
+							receiver,
+							receiver.name as string
+						);
+						if (binding) (binding.receiverMethods ??= []).push(path);
+					}
+				}
+			}
 			if (
 				![
 					"AssignmentExpression",
@@ -462,10 +482,20 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			budget
 		);
 		const selection = selected(result, binding.selection);
-		if (
-			binding.escaped &&
-			(selection.kind === "tuple" || selection.kind === "object")
-		) {
+		if (selection.kind === "tuple" || selection.kind === "object") {
+			const opaqueReceiverCall = binding.receiverMethods?.some((path) => {
+				const method = selected(selection, path);
+				if (method.kind !== "function") return true;
+				let usesReceiver = false;
+				walk(method.node, (node) => {
+					if (node.type === "ThisExpression" || node.type === "Super")
+						usesReceiver = true;
+				});
+				return usesReceiver;
+			});
+			// Any opaque method can mutate its receiver. This deliberately also treats readonly
+			// array methods as opaque; only source-visible, receiver-free object methods keep proof.
+			if (!binding.escaped && !opaqueReceiverCall) return selection;
 			// An escaped aggregate stays non-callable, but its properties/elements can change.
 			// A whole tuple source must lose its first-element proof; selected data can still render.
 			return binding.selection.length > 0 ? data : unknown;
