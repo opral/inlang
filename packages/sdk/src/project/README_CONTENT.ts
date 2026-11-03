@@ -16,7 +16,7 @@ inlang keeps the Git repo as the source of truth: translation files and \`settin
 
 ## What to edit
 
-- \`settings.json\`: \`baseLocale\`, \`locales\`, optional \`translationDescriptors\` path, plugin \`modules\` and plugin settings such as \`pathPattern\` ([reference](https://inlang.com/docs/settings)). Commit it.
+- \`settings.json\`: \`baseLocale\`, \`locales\`, optional \`translationDescriptors\` path (relative to the directory containing \`project.inlang\`), plugin \`modules\` and plugin settings such as \`pathPattern\` ([reference](https://inlang.com/docs/settings)). Commit it.
 - \`paraglide.config.*\` (if present): Paraglide JS compiler options such as \`strategy\`. Commit it.
 - Translation files (for example \`messages/en.json\`) live **outside** this folder, at the \`pathPattern\` in \`settings.json\`. Add and change messages there.
 - Don't edit \`README.md\`, \`.gitignore\`, \`.meta.json\`, \`cache/\` or \`.lix/\`. They are generated and Git-ignored.

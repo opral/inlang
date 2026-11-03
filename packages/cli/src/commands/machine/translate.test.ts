@@ -67,9 +67,10 @@ test("uses the configured descriptor file to provide context for matching keys",
   vi.stubEnv("INLANG_MACHINE_TRANSLATE_PROVIDER", "openai");
   vi.stubEnv("INLANG_OPENAI_API_KEY", "openai-key");
   const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), "inlang-context-"));
-  const descriptorPath = nodePath.join(root, "descriptors.yml");
+  const projectPath = nodePath.join(root, "project.inlang");
+  fs.mkdirSync(projectPath);
   fs.writeFileSync(
-    descriptorPath,
+    nodePath.join(root, "descriptors.yml"),
     "reviews:\n  misc.port:\n    description: in computing\n",
   );
   const fetchMock = vi.fn().mockResolvedValue(
@@ -98,7 +99,10 @@ test("uses the configured descriptor file to provide context for matching keys",
 
   try {
     await insertBundleNested(project.db, textBundle("misc:port", "Port"));
-    await translateCommandAction({ project, projectPath: root });
+    await translateCommandAction({
+      project,
+      projectPath,
+    });
 
     const request = fetchMock.mock.calls[0]?.[1];
     if (!request) {

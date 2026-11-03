@@ -135,7 +135,7 @@ npx @inlang/cli machine translate --project ./project.inlang
 
 ## Contextual descriptions
 
-Machine translation can use per-message descriptions as additional context with OpenAI and DeepL. Configure `translationDescriptors` in the project’s `settings.json`; the path is relative to the project directory:
+Machine translation can use per-message descriptions as additional context with OpenAI and DeepL. Configure `translationDescriptors` in `project.inlang/settings.json`; its path is relative to the project root (the directory containing `project.inlang`), not relative to the settings file:
 
 ```json
 {

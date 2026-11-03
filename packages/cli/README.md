@@ -105,7 +105,7 @@ export INLANG_OPENAI_MODEL="your-model"
 export INLANG_OPENAI_REASONING_EFFORT="none"
 ```
 
-For keys that need extra translation context, add `translationDescriptors` to `settings.json`. Its path is relative to the project folder:
+For keys that need extra translation context, add `translationDescriptors` to `settings.json`. Its path is relative to the project root:
 
 ```json
 {
@@ -253,7 +253,7 @@ The translate command has the following options:
 - `--targetLocales <targets...>`: Target locales, comma-separated (e.g. `--targetLocales de,fr`).
 - `-n, --nobar`: Disable the progress bar.
 
-Add `translationDescriptors` to `settings.json` to provide extra context per message. It points to a YAML file, relative to the project directory, whose top-level keys are exact inlang bundle IDs:
+Add `translationDescriptors` to `settings.json` to provide extra context per message. It points to a YAML file, relative to the project root, whose top-level keys are exact inlang bundle IDs:
 
 ```json
 {

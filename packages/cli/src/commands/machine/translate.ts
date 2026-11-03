@@ -5,6 +5,7 @@ import { log, logError } from "../../utilities/log.js";
 import {
   getTranslationDescription,
   parseTranslationDescriptors,
+  absolutePathFromProject,
   saveProjectToDirectory,
   selectBundleNested,
   upsertBundleNested,
@@ -14,7 +15,6 @@ import {
 import { projectOption } from "../../utilities/globalFlags.js";
 import progessBar from "cli-progress";
 import fs from "node:fs/promises";
-import { resolve } from "node:path";
 import {
   machineTranslateBundle,
   type MachineTranslateResult,
@@ -129,7 +129,7 @@ export async function translateCommandAction(args: {
           "A project path is required to resolve the translationDescriptors setting.",
         );
       }
-      const descriptorPath = resolve(
+      const descriptorPath = absolutePathFromProject(
         args.projectPath,
         settings.translationDescriptors,
       );

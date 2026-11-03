@@ -21,7 +21,7 @@ const SDKSettings = Type.Object({
 			minLength: 1,
 			title: "Translation descriptors",
 			description:
-				"Path to a YAML file mapping inlang bundle IDs to machine translation context descriptions, relative to the project directory.",
+				"Path to a YAML file mapping inlang bundle IDs to machine translation context descriptions, resolved relative to the project root (the parent directory of the project.inlang directory).",
 			examples: ["./descriptors.yml"],
 		})
 	),

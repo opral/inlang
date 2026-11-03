@@ -49,7 +49,7 @@ Must be a valid [BCP-47 language tag](https://www.w3.org/International/articles/
 
 ### translationDescriptors
 
-Optional path to a YAML file containing message descriptions for machine translation. The path is relative to the project directory.
+Optional path to a YAML file containing message descriptions for machine translation. The path is resolved relative to the project root, the directory containing the `project.inlang` directory.
 
 The SDK-native format uses exact inlang bundle IDs as top-level keys, with a `description` passed as translation context to providers that support it:
 

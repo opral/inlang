@@ -21,6 +21,7 @@ export {
 } from "./project/loadProjectFromDirectory.js";
 
 export { saveProjectToDirectory } from "./project/saveProjectToDirectory.js";
+export { absolutePathFromProject } from "./project/path-helpers.js";
 export type { InlangProject } from "./project/api.js";
 export * from "./json-schema/settings.js";
 export * from "./json-schema/pattern.js";
