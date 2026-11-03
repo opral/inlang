@@ -254,6 +254,16 @@ test.each([
 		}
 		const [translate] = useHook(); translate("live");`,
 	],
+	[
+		"a tuple mutated through a TypeScript-wrapped alias",
+		`function useHook() {
+			const result = ["initial"];
+			const alias = (result as any)!;
+			alias.splice(0, 1, getFixedT("en"));
+			return result;
+		}
+		const [translate] = useHook(); translate("live");`,
+	],
 ])("%s cannot offer deletion of a live translation", async (_name, source) => {
 	const { project, files } = await load({
 		pathPattern: "./locales/{locale}.json",

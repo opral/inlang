@@ -249,6 +249,88 @@ test("readonly array receiver methods remain conservatively opaque", async () =>
 	expect(result.status).toBe("incomplete");
 });
 
+test.each([
+	`const alias = result as any; alias.unshift(getFixedT("en"));`,
+	`const alias = result satisfies unknown; alias.splice(0, 1, getFixedT("en"));`,
+	`const alias = result!; alias[0] = getFixedT("en");`,
+	`const alias = (result as any)<any>; alias[0] = getFixedT("en");`,
+	`const alias = ((result as any)!) satisfies unknown; alias.reverse();`,
+	`mutate(result as any);`,
+	`mutate((result satisfies unknown)!);`,
+	`let alias; alias = result as any; alias.unshift(getFixedT("en"));`,
+	`const holder = { tuple: result as any }; holder.tuple.unshift(getFixedT("en"));`,
+	`const holder = [result!]; holder[0].unshift(getFixedT("en"));`,
+	`mutate(...(result as any));`,
+	`new Mutator(result as any);`,
+	"mutate`${result as any}`;",
+])("wrapped aggregate references cannot hide escapes: %s", async (mutation) => {
+	const result = await run(
+		`import { getFixedT } from "i18next"; function useHook() { const result = ["data", getFixedT("en")]; ${mutation} return result; } const [translate] = useHook(); translate("live");`
+	);
+	expect(
+		result.status === "incomplete" || result.usedBundleIds.includes("live")
+	).toBe(true);
+});
+
+test.each([`result as const`, `result!`, `(result satisfies unknown)!`])(
+	"wrapped fresh data returns preserve their proof: %s",
+	async (expression) => {
+		const result = await run(
+			`function useData() { const result = ["data"]; return ${expression}; } const [data] = useData(); consume(data);`
+		);
+		expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+	}
+);
+
+test.each([
+	`const alias = result.tuple; alias[0] = getFixedT("en");`,
+	`const alias = result.tuple as any; alias[0] = getFixedT("en");`,
+	`mutate(result.tuple as any);`,
+	`mutate((result as any).tuple);`,
+	`let alias; alias = (result.tuple as any)!; alias[0] = getFixedT("en");`,
+])(
+	"selected aggregate aliases cannot retain owner proofs: %s",
+	async (mutation) => {
+		const result = await run(
+			`import { getFixedT } from "i18next"; function useHook() { const result = { tuple: ["data"] }; ${mutation} return result.tuple; } const [translate] = useHook(); translate("live");`
+		);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
+test("angle-bracket assertions cannot hide escapes in TypeScript files", async () => {
+	const result = await run(
+		`import { useHook } from "./hook"; const [translate] = useHook(); translate("live");`,
+		[
+			{
+				path: "src/hook.ts",
+				content: `import { getFixedT } from "i18next"; export function useHook() { const result = ["data"]; const alias = <any>result; alias[0] = getFixedT("en"); return result; }`,
+			},
+		]
+	);
+	expect(
+		result.status === "incomplete" || result.usedBundleIds.includes("live")
+	).toBe(true);
+});
+
+test("fresh returned member data remains complete", async () => {
+	const result = await run(
+		`function useData() { const result = { tuple: ["data"] }; return [result.tuple as unknown]; } const [data] = useData(); consume(data);`
+	);
+	expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+});
+
+test("a React setter method cannot inherit direct-call update evidence", async () => {
+	const result = await run(
+		`import { useState } from "react"; import { getFixedT } from "i18next"; const [translate, setTranslate] = useState("data"); setTranslate.call(null, () => getFixedT("en")); translate("live");`
+	);
+	expect(
+		result.status === "incomplete" || result.usedBundleIds.includes("live")
+	).toBe(true);
+});
+
 test("source-visible receiver-free namespace methods preserve data proof", async () => {
 	const result = await run(
 		`const hooks = { useData() { return ["data"]; } }; const [data] = hooks.useData(); consume(data);`

@@ -30,6 +30,7 @@ type Binding = {
 	imported?: { source: string; name: string };
 	mutable?: boolean;
 	escaped?: boolean;
+	escapedMembers?: string[][];
 	receiverMethods?: string[][];
 	tuple: boolean;
 };
@@ -120,6 +121,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 		}
 		const root: Scope = { names: new Map(), functionScope: true };
 		const parents = new Map<Node, Node>();
+		const parentKeys = new Map<Node, string | undefined>();
 		const module: Module = {
 			path,
 			program,
@@ -190,8 +192,11 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 				);
 			}
 		};
-		walk(program, (node, parent) => {
-			if (parent) parents.set(node, parent);
+		walk(program, (node, parent, key) => {
+			if (parent) {
+				parents.set(node, parent);
+				parentKeys.set(node, key);
+			}
 			const outer = parent ? (module.scopes.get(parent) ?? root) : root;
 			const fn = Array.isArray(node.params);
 			const scope: Scope =
@@ -260,15 +265,11 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 				)
 					return true;
 				if (
-					![
-						"ArrayExpression",
-						"ObjectExpression",
-						"ObjectProperty",
-						"TSAsExpression",
-						"TSSatisfiesExpression",
-						"TSNonNullExpression",
-						"ParenthesizedExpression",
-					].includes(parent.type)
+					unwrap(parent) !== unwrap(current) &&
+					!(members.has(parent.type) && parent.object === current) &&
+					!["ArrayExpression", "ObjectExpression", "ObjectProperty"].includes(
+						parent.type
+					)
 				)
 					return false;
 				current = parent;
@@ -277,6 +278,12 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 		};
 		walk(program, (node, parent, key) => {
 			if (node.type !== "Identifier" || module.declarations.has(node)) return;
+			// Assertions and other transparent wrappers do not change how the value escapes.
+			// Use the outer expression's context for aliases, arguments and stored values.
+			while (parent && unwrap(parent) === node) {
+				key = parentKeys.get(parent);
+				parent = parents.get(parent);
+			}
 			if (
 				(parent &&
 					members.has(parent.type) &&
@@ -295,17 +302,44 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 				parent?.type === "UpdateExpression"
 			)
 				binding.mutable = true;
+			let current = node;
+			let escapeParent = parents.get(current);
+			let escapeKey = parentKeys.get(current);
+			const escapePath: string[] = [];
+			while (
+				escapeParent &&
+				(unwrap(escapeParent) === unwrap(current) ||
+					(members.has(escapeParent.type) && escapeParent.object === current))
+			) {
+				if (members.has(escapeParent.type))
+					escapePath.push(propertyName(escapeParent) ?? "?");
+				current = escapeParent;
+				escapeKey = parentKeys.get(current);
+				escapeParent = parents.get(current);
+			}
+			// A selected property can alias an aggregate too. Invalidate its owner's shape
+			// when it escapes, while keeping the direct reference context for setter calls.
 			if (
-				(parent && calls.has(parent.type) && key === "arguments") ||
-				(parent?.type === "VariableDeclarator" && key === "init") ||
-				(parent?.type === "AssignmentExpression" && key === "right") ||
-				parent?.type === "ExportSpecifier" ||
-				((parent?.type === "ArrayExpression" ||
-					(parent?.type === "ObjectProperty" && key === "value")) &&
+				(escapeParent &&
+					(calls.has(escapeParent.type) ||
+						escapeParent.type === "NewExpression") &&
+					escapeKey === "arguments") ||
+				(escapeParent?.type === "TemplateLiteral" &&
+					escapeKey === "expressions" &&
+					parents.get(escapeParent)?.type === "TaggedTemplateExpression") ||
+				(escapeParent?.type === "VariableDeclarator" && escapeKey === "init") ||
+				(escapeParent?.type === "AssignmentExpression" &&
+					escapeKey === "right") ||
+				escapeParent?.type === "ExportSpecifier" ||
+				((escapeParent?.type === "ArrayExpression" ||
+					(escapeParent?.type === "ObjectProperty" && escapeKey === "value")) &&
 					!inFreshReturn(node)) ||
-				parent?.type === "SpreadElement"
-			)
-				binding.escaped = true;
+				escapeParent?.type === "SpreadElement"
+			) {
+				if (escapePath.length > 0)
+					(binding.escapedMembers ??= []).push(escapePath);
+				else binding.escaped = true;
+			}
 			const references = module.references.get(binding) ?? [];
 			references.push({ node, parent, key });
 			module.references.set(binding, references);
@@ -483,6 +517,10 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 		);
 		const selection = selected(result, binding.selection);
 		if (selection.kind === "tuple" || selection.kind === "object") {
+			const escapedMember = binding.escapedMembers?.some((path) => {
+				const member = selected(selection, path);
+				return ["tuple", "object", "unknown"].includes(member.kind);
+			});
 			const opaqueReceiverCall = binding.receiverMethods?.some((path) => {
 				const method = selected(selection, path);
 				if (method.kind !== "function") return true;
@@ -495,7 +533,8 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			});
 			// Any opaque method can mutate its receiver. This deliberately also treats readonly
 			// array methods as opaque; only source-visible, receiver-free object methods keep proof.
-			if (!binding.escaped && !opaqueReceiverCall) return selection;
+			if (!binding.escaped && !escapedMember && !opaqueReceiverCall)
+				return selection;
 			// An escaped aggregate stays non-callable, but its properties/elements can change.
 			// A whole tuple source must lose its first-element proof; selected data can still render.
 			return binding.selection.length > 0 ? data : unknown;
