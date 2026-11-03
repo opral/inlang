@@ -56,6 +56,7 @@ export async function loadProject(args: {
 	});
 
 	const plugins = [...(args.providePlugins ?? []), ...importedPlugins.plugins];
+	let pendingSettingsRead: Promise<Uint8Array> | undefined;
 
 	// const state = createProjectState({
 	// 	...args,
@@ -69,7 +70,16 @@ export async function loadProject(args: {
 		},
 		settings: {
 			get: async () => {
-				const file = await readLixFile(args.lix, "/settings.json");
+				// Rendering many messages can request the same settings concurrently.
+				// Share only the pending read so subsequent calls still see SQL updates.
+				if (!pendingSettingsRead) {
+					const read = readLixFile(args.lix, "/settings.json").finally(() => {
+						if (pendingSettingsRead === read) pendingSettingsRead = undefined;
+					});
+					pendingSettingsRead = read;
+				}
+				const file = await pendingSettingsRead;
+				// Parse for each caller so mutable settings are never shared.
 				return withLanguageTagToLocaleMigration(
 					JSON.parse(new TextDecoder().decode(file))
 				);
@@ -79,6 +89,8 @@ export async function loadProject(args: {
 				cloned.languageTags = cloned.locales;
 				cloned.sourceLanguageTag = cloned.baseLocale;
 
+				// A getter issued after this write must not join a preceding read.
+				pendingSettingsRead = undefined;
 				await args.lix.execute(
 					"UPDATE lix_file SET content = $1 WHERE path = $2",
 					[
