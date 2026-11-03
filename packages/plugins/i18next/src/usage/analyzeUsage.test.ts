@@ -50,6 +50,36 @@ test("keys read with t() of useTranslation are used", async () => {
 	});
 });
 
+test("React state values are not inferred as translators", async () => {
+	const result = await analyze(`
+		import React from "react";
+		import { passOn } from "other-package";
+		import { useTranslation } from "react-i18next";
+		export function App() {
+			const { t } = useTranslation();
+			const [textContent, setTextContent] = React.useState<"foo" | "bar" | "baz" | null>(null);
+			passOn(textContent);
+			return <>{textContent}{t("page.title")}</>;
+		}
+	`);
+	expect(result).toMatchObject({
+		status: "complete",
+		used: expect.arrayContaining(["page.title"]),
+	});
+	expect(result.reasons.join("\n")).not.toContain("textContent");
+});
+
+test("a custom hook can return a translator in an array, when it's called t", async () => {
+	const result = await analyze(`
+		const [t] = useCustomTranslation();
+		t("custom.key");
+	`);
+	expect(result).toMatchObject({
+		status: "complete",
+		used: expect.arrayContaining(["custom.key"]),
+	});
+});
+
 test("plural and context keys use the bundle of their root key", async () => {
 	const result = await analyze(`
 		import i18next from "i18next";

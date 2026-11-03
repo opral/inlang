@@ -154,8 +154,8 @@ function catalogTails(settings: Record<string, unknown>): string[] {
 			? [value]
 			: value && typeof value === "object"
 				? Object.values(value).filter(
-						(path): path is string => typeof path === "string"
-					)
+					(path): path is string => typeof path === "string"
+				)
 				: [];
 	const patterns = [
 		...paths(pluginSettings?.pathPattern),
@@ -490,10 +490,13 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 						id.type === "ArrayPattern" &&
 						init?.type === "CallExpression"
 					) {
-						// a custom hook that returns `[t, ...]`
+						// Only infer a translator from a custom hook's tuple that
+						// returns `[t, ...]` when its first item is `t`.
 						for (const name of patternNames((id.elements as unknown[])[0])) {
-							other.add(name);
-							bind(name, "all");
+							if (name === "t") {
+								other.add(name);
+								bind(name, "all");
+							}
 						}
 					}
 					break;
