@@ -15,7 +15,7 @@ A source language value equal to the key is written only if the catalog already 
 
 Strings with `"shouldTranslate" : false` also get a source language message, so lint rules and machine translation may offer to translate them. A translation of such a string is written next to `shouldTranslate`, which Xcode compiles as usual.
 
-This is a content adapter. Catalog workflow metadata such as comments, extraction state, translation state, and `shouldTranslate` is not represented by Inlang's v2 message tables and is regenerated on export.
+This is a content adapter. On capable SDK hosts, catalog comments are represented by `bundle.description`. Other catalog workflow metadata, such as extraction state, translation state, and `shouldTranslate`, stays in the existing catalog when the host provides it to export; a fresh export uses the plugin's defaults.
 
 ```json
 {
@@ -27,3 +27,7 @@ This is a content adapter. Catalog workflow metadata such as comments, extractio
   }
 }
 ```
+
+## Translation descriptions
+
+On SDK hosts supporting bundle descriptions, an entry's native `comment` maps to `bundle.description`. Description edits, including clearing, write back to the same catalog entry. Other Xcode metadata stays intact; descriptions also survive a fresh catalog export.

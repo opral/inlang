@@ -29,14 +29,17 @@ export function compileBundleNestedBatch(
 	const bundleId = bundle.id ?? v7();
 	const queries: CompiledQuery[] = [];
 
-	const bundleInsert = db
-		.insertInto("inlang_bundle")
-		.values({ id: bundleId, declarations: bundle.declarations });
+	const bundleInsert = db.insertInto("inlang_bundle").values({
+		id: bundleId,
+		declarations: bundle.declarations,
+		description: bundle.description,
+	});
 	queries.push(
 		(mode === "upsert"
 			? bundleInsert.onConflict((oc) =>
 					oc.column("id").doUpdateSet({
 						declarations: bundle.declarations,
+						description: bundle.description,
 					})
 				)
 			: bundleInsert

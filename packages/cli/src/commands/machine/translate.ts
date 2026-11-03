@@ -129,6 +129,17 @@ export async function translateCommandAction(args: {
       return { translated: 0, bundles: 0 };
     }
 
+    if (
+      !provider.supportsContext &&
+      bundles.some(
+        (bundle: { description?: string | null }) => bundle.description,
+      )
+    ) {
+      log.warn(
+        "The selected translation provider does not use bundle descriptions. Use OpenAI or DeepL to translate with context.",
+      );
+    }
+
     bar?.start(bundles.length, 0);
 
     const promises: Promise<MachineTranslateResult>[] = [];

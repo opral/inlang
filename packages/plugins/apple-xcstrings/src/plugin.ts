@@ -44,6 +44,7 @@ type Catalog = {
   strings: Record<
     string,
     {
+      comment?: string;
       extractionState?: string;
       localizations?: Record<string, Localization>;
     }
@@ -84,6 +85,7 @@ const deviceCategories = new Set([
 
 export const plugin: InlangPlugin<Config> = {
   key: PLUGIN_KEY,
+  supportsBundleDescriptions: true,
   settingsSchema: PluginSettings,
   toBeImportedFiles: ({ settings }) => [
     {
@@ -91,8 +93,8 @@ export const plugin: InlangPlugin<Config> = {
       path: settings[PLUGIN_KEY].pathPattern,
     },
   ],
-  importFiles: ({ files, settings }: ImportArgs) =>
-    importCatalogs(files, settings),
+  importFiles: ({ files, settings, sdkCapabilities }: ImportArgs) =>
+    importCatalogs(files, settings, sdkCapabilities),
   exportFiles: (args: ExportArgs) =>
     args.files?.length ? exportKeepingEntries(args) : exportCatalog(args),
 };
@@ -100,6 +102,7 @@ export const plugin: InlangPlugin<Config> = {
 function importCatalogs(
   files: ImportArgs["files"],
   settings: ImportArgs["settings"],
+  sdkCapabilities?: readonly string[],
 ) {
   if (files.length !== 1)
     throw new Error(
@@ -122,7 +125,12 @@ function importCatalogs(
       locale: string,
       imported: ReturnType<typeof importLocalization>,
     ) => {
-      const existing = bundles.get(id) ?? { id, declarations: [] };
+      const existing: Bundle = bundles.get(id) ?? { id, declarations: [] };
+      if (sdkCapabilities?.includes("bundle-description")) {
+        if (entry.comment !== undefined && typeof entry.comment !== "string")
+          throw new Error(`Invalid Apple .xcstrings comment in "${id}"`);
+        existing.description = entry.comment ?? null;
+      }
       bundles.set(id, mergeDeclarations(existing, imported.declarations));
       messages.push({ bundleId: id, locale, selectors: imported.selectors });
       for (const variant of imported.variants)
@@ -458,7 +466,8 @@ async function exportKeepingEntries(args: ExportArgs) {
   let previousRows: ReturnType<typeof rowsOf> | undefined;
   try {
     previousRows =
-      previous && rowsOf(importCatalogs([previous], args.settings));
+      previous &&
+      rowsOf(importCatalogs([previous], args.settings, args.sdkCapabilities));
   } catch {
     previousRows = undefined;
   }
@@ -485,7 +494,14 @@ async function exportKeepingEntries(args: ExportArgs) {
     version: previousCatalog!.version,
   };
   const exportFiles = (exportArgs: Omit<ExportArgs, "files">) =>
-    withUnimportedKeys(exportCatalog(exportArgs, options), previousStrings);
+    withUnimportedKeys(
+      exportCatalog(
+        { ...exportArgs, sdkCapabilities: args.sdkCapabilities },
+        options,
+      ),
+      previousStrings,
+      args.sdkCapabilities?.includes("bundle-description"),
+    );
   // New strings and locales are inserted where Xcode puts them.
   const exported = inXcodeOrder(exportFiles(args));
   const keep = (content: Uint8Array) =>
@@ -493,7 +509,8 @@ async function exportKeepingEntries(args: ExportArgs) {
       exported,
       files: [{ ...previous, content }],
       settings: args.settings,
-      importFiles: ({ files, settings }) => importCatalogs(files, settings),
+      importFiles: ({ files, settings }) =>
+        importCatalogs(files, settings, args.sdkCapabilities),
       exportFiles,
       isEntry: isStringUnit,
       indent: "  ",
@@ -510,8 +527,11 @@ async function exportKeepingEntries(args: ExportArgs) {
     const content = rewriteChangedLocalizations({
       previous: previous.content,
       next: exported[0]!.content,
-      canonical: exportFiles({ ...previousRows, settings: args.settings })[0]!
-        .content,
+      canonical: exportFiles({
+        ...previousRows,
+        settings: args.settings,
+        sdkCapabilities: args.sdkCapabilities,
+      })[0]!.content,
     });
     if (content !== undefined) {
       const rewritten = await keep(content);
@@ -758,6 +778,7 @@ function xcodeEmptyObjects(text: string): string {
 function withUnimportedKeys(
   files: ReturnType<typeof exportCatalog>,
   previousStrings: Record<string, unknown> | undefined,
+  descriptions = false,
 ): ReturnType<typeof exportCatalog> {
   if (previousStrings === undefined) return files;
   return files.map((file) => {
@@ -777,6 +798,7 @@ function withUnimportedKeys(
         const unimported = Object.entries(previousEntry).filter(
           ([key]) =>
             !importedStringKeys.has(key) &&
+            !(descriptions && key === "comment") &&
             !Object.prototype.hasOwnProperty.call(entry, key),
         );
         if (unimported.length === 0) return [id, entry];
@@ -804,7 +826,13 @@ function withUnimportedKeys(
 }
 
 function exportCatalog(
-  { bundles, messages, variants, settings }: Omit<ExportArgs, "files">,
+  {
+    bundles,
+    messages,
+    variants,
+    settings,
+    sdkCapabilities,
+  }: Omit<ExportArgs, "files">,
   options: CatalogOptions = {},
 ) {
   assertUniqueIds(bundles, "bundle");
@@ -845,10 +873,14 @@ function exportCatalog(
     }
     stringEntries.push([
       bundle.id,
-      Object.keys(localizations).length > 0
-        ? { extractionState: "manual", localizations }
-        : // the key is the value of the source language, see `importCatalogs`
-          { extractionState: "manual" },
+      {
+        ...(sdkCapabilities?.includes("bundle-description") &&
+        bundle.description != null
+          ? { comment: bundle.description }
+          : {}),
+        extractionState: "manual",
+        ...(Object.keys(localizations).length > 0 ? { localizations } : {}),
+      },
     ]);
   }
   const catalog: Catalog = {

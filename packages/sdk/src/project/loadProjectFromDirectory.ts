@@ -7,6 +7,11 @@ export {
 	WarningDeprecatedLintRule,
 	ResourceFileImportError,
 } from "./directoryPlugins.js";
+import {
+	applyBundleDescriptions,
+	readBundleDescriptions,
+} from "./bundleDescriptions.js";
+import { rememberDescriptionFile } from "./descriptionFileBaseline.js";
 import { newProject } from "./newProject.js";
 import { loadProjectInMemory } from "./loadProjectInMemory.js";
 import { openLix, type Lix } from "@lix-js/sdk";
@@ -191,6 +196,16 @@ export async function loadProjectFromDirectory(
 			fs: args.fs,
 		});
 	}
+
+	await applyBundleDescriptions(project, await readBundleDescriptions(project));
+	const descriptionFile = await project.lix.queryOne<{ content: Uint8Array }>(
+		"SELECT content FROM lix_file WHERE path = '/descriptions.json'"
+	);
+	rememberDescriptionFile(
+		project.lix,
+		nodePath.resolve(args.path, "descriptions.json"),
+		descriptionFile?.content
+	);
 
 	const shouldUpdateMeta = await shouldUpdateProjectMeta({
 		fs: args.fs.promises,

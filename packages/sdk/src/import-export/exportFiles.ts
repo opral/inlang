@@ -29,6 +29,7 @@ export async function exportFiles(opts: {
 
 	const files = await plugin.exportFiles({
 		settings: structuredClone(opts.settings),
+		sdkCapabilities: ["bundle-description"],
 		bundles,
 		messages,
 		variants,

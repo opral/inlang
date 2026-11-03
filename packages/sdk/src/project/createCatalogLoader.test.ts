@@ -133,6 +133,7 @@ test("file discovery sees migrated settings while import receives raw settings a
 	expect(discover.mock.calls[0]![0]).toEqual({ settings: migrated });
 	expect(importFiles.mock.calls[0]![0]).toEqual({
 		settings: raw,
+		sdkCapabilities: ["bundle-description"],
 		files: [
 			{
 				locale: "en",

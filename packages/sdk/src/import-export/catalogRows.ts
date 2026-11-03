@@ -32,7 +32,7 @@ export class CatalogImportError extends Error {
 function fail(message: string): never {
 	throw new CatalogImportError(message);
 }
-const bundleColumns = ["id", "declarations"];
+const bundleColumns = ["id", "declarations", "description"];
 const messageColumns = ["id", "bundleId", "locale", "selectors"];
 const variantColumns = [
 	"id",
@@ -121,6 +121,8 @@ export function createFreshCatalog(
 		columns(row, bundleColumns, "bundle");
 		group.node = {
 			id: text(row.id, "bundle.id"),
+			description:
+				row.description == null ? null : descriptionText(row.description),
 			declarations:
 				row.declarations === undefined
 					? []
@@ -253,7 +255,7 @@ export function createCatalogStore(createId: () => string): {
 				add(variantsByMessage, variant.message_id, variant.id);
 			const ensureBundle = (id: string) => {
 				if (!next.bundles.has(id))
-					next.bundles.set(id, { id, declarations: [] });
+					next.bundles.set(id, { id, declarations: [], description: null });
 			};
 			const firstMessage = (bundle: string, locale: string) => {
 				const ids = references.get(referenceKey(bundle, locale));
@@ -293,6 +295,12 @@ export function createCatalogStore(createId: () => string): {
 				const previous = next.bundles.get(id);
 				next.bundles.set(id, {
 					id,
+					description:
+						row.description === undefined
+							? (previous?.description ?? null)
+							: row.description === null
+								? null
+								: descriptionText(row.description),
 					declarations:
 						row.declarations === undefined
 							? (previous?.declarations ?? [])
@@ -421,6 +429,10 @@ function columns(row: object, allowed: string[], table: string): void {
 			(row as Record<string, unknown>)[column] !== undefined
 		)
 			fail(`Unknown ${table} column ${JSON.stringify(column)}`);
+}
+function descriptionText(value: unknown): string | null {
+	const result = text(value, "bundle.description");
+	return result.trim() ? result : null;
 }
 function text(value: unknown, column: string): string {
 	if (typeof value !== "string") fail(`${column} must be a non-null string`);

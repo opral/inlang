@@ -1,4 +1,5 @@
 import type { Kysely } from "kysely";
+import { applyBundleDescriptions } from "../project/bundleDescriptions.js";
 import {
 	PluginDoesNotImplementFunctionError,
 	PluginMissingError,
@@ -109,7 +110,7 @@ async function insertFreshImportCommit(
 ) {
 	await insertInBatchesByShape({
 		rows: commit.bundles,
-		optionalColumns: ["declarations"],
+		optionalColumns: ["declarations", "description"],
 		insert: async (rows) => {
 			await trx.insertInto("inlang_bundle").values(rows).execute();
 		},
@@ -176,6 +177,12 @@ export async function importFiles(args: {
 	readonly allowPartialImport?: boolean;
 	/** Testing hook for the partial import commit budget. */
 	readonly rowsPerCommit?: number;
+	/** Internal portable companion import; shares the resource transaction. */
+	readonly descriptionImport?: {
+		next: ReadonlyMap<string, string>;
+		previous: ReadonlyMap<string, string>;
+		content: Uint8Array;
+	};
 }) {
 	const plugin = args.plugins.find((p) => p.key === args.pluginKey);
 
@@ -190,10 +197,21 @@ export async function importFiles(args: {
 
 	const pluginResult = await plugin.importFiles({
 		files: args.files,
+		sdkCapabilities: ["bundle-description"],
 		settings: structuredClone(args.settings),
 	});
 	const imported = {
-		bundles: pluginResult.bundles,
+		bundles: pluginResult.bundles.map((bundle) => {
+			if (bundle.description === undefined) return bundle;
+			if (bundle.description !== null && typeof bundle.description !== "string")
+				throw new Error(
+					`Invalid description for bundle ${JSON.stringify(bundle.id)}`
+				);
+			return {
+				...bundle,
+				description: bundle.description?.trim() ? bundle.description : null,
+			};
+		}),
 		messages: pluginResult.messages.map(messageFromPlugin),
 		variants: pluginResult.variants.map(variantFromPlugin),
 	};
@@ -338,12 +356,19 @@ export async function importFiles(args: {
 				imported.bundles,
 				messagesWithIds,
 				variantsWithMessageIds,
-				args.allowPartialImport
+				args.allowPartialImport && !args.descriptionImport
 					? (args.rowsPerCommit ?? IMPORT_ROWS_PER_COMMIT)
 					: Number.POSITIVE_INFINITY
 			);
 			await insertFreshImportCommit(trx, first!);
 			remainingFreshCommits = rest;
+			if (args.descriptionImport)
+				await applyBundleDescriptions(
+					{ db: trx },
+					args.descriptionImport.next,
+					args.descriptionImport.previous,
+					{ transaction: false, content: args.descriptionImport.content }
+				);
 			return;
 		}
 
@@ -623,6 +648,13 @@ export async function importFiles(args: {
 			if (messagesWithPluginVariantIds.has(messageId)) continue;
 			await orderVariantsLikeImport(trx, ids);
 		}
+		if (args.descriptionImport)
+			await applyBundleDescriptions(
+				{ db: trx },
+				args.descriptionImport.next,
+				args.descriptionImport.previous,
+				{ transaction: false, content: args.descriptionImport.content }
+			);
 	});
 	for (const commit of remainingFreshCommits) {
 		await args.db

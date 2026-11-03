@@ -22,6 +22,7 @@ export function createDeepLTranslateProvider(
   const apiUrl = getDeepLApiUrl(apiKey);
 
   return {
+    supportsContext: true,
     async translateText(args: TranslateTextArgs) {
       const response = await fetch(apiUrl, {
         method: "POST",
@@ -34,6 +35,7 @@ export function createDeepLTranslateProvider(
           source_lang: toDeepLSourceLocale(args.sourceLocale),
           target_lang: toDeepLTargetLocale(args.targetLocale),
           tag_handling: "html",
+          ...(args.context ? { context: args.context } : {}),
         }),
       });
 

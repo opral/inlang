@@ -19,3 +19,9 @@ Supported: exact message keys, quoted-string escaping, Unicode, and positional v
   }
 }
 ```
+
+## Translation descriptions
+
+On SDK hosts supporting bundle descriptions, a block comment directly above a source-locale entry maps to `bundle.description` when it belongs to that entry alone. Blank lines separate document headings; a comment above adjacent entries is treated as a group heading. Target-locale comments remain file metadata.
+
+The shared editor writes descriptions as native `/* ... */` comments in the source file, keeping document comments and target notes when the existing files are available. Removing the attached source comment clears the description. Description text containing `*/` cannot be represented as a block comment and is rejected.

@@ -17,6 +17,7 @@ inlang keeps the Git repo as the source of truth: translation files and \`settin
 ## What to edit
 
 - \`settings.json\`: \`baseLocale\`, \`locales\`, plugin \`modules\` and plugin settings such as \`pathPattern\` ([reference](https://inlang.com/docs/settings)). Commit it.
+- \`descriptions.json\` (if present): shared translation guidance keyed by bundle ID for formats without native descriptions. Commit it. Native descriptions live in the source translation file.
 - \`paraglide.config.*\` (if present): Paraglide JS compiler options such as \`strategy\`. Commit it.
 - Translation files (for example \`messages/en.json\`) live **outside** this folder, at the \`pathPattern\` in \`settings.json\`. Add and change messages there.
 - Don't edit \`README.md\`, \`.gitignore\`, \`.meta.json\`, \`cache/\` or \`.lix/\`. They are generated and Git-ignored.
@@ -47,6 +48,8 @@ See \`npx @inlang/cli check --help\` for all checks and \`--format json\`. Add \
 - The file format and the library are independent. Changing the format is a plugin change in \`settings.json\` and keeps the library. Changing the library (for example to i18next) keeps inlang: point a plugin at that library's files, and checks, machine translation, Fink and Parrot keep working. Unused-message detection needs a plugin that understands the library's calls; \`m-function-matcher\` covers Paraglide's \`m.*\`.
 
 ## Building tools
+
+Use \`bundle.description\` as context when translating. Preserve it when changing translation text; set it to \`null\` to clear it.
 
 Read and write the project with [\`@inlang/sdk\`](https://www.npmjs.com/package/@inlang/sdk) instead of parsing translation files yourself. See the [docs](https://inlang.com/docs) and [writing a tool](https://inlang.com/docs/write-tool).
 `;

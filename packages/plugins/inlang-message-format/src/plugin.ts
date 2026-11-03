@@ -12,6 +12,7 @@ export const plugin: InlangPlugin<{
 	[PLUGIN_KEY]?: PluginSettings;
 }> = {
 	key: PLUGIN_KEY,
+	supportsBundleDescriptions: true,
 	// legacy v2 stuff for backwards compatibility
 	// given that most people don't have a major version
 	// pinning in their settings

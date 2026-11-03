@@ -44,6 +44,7 @@ export const selectBundleNested = (db: Kysely<InlangDatabaseSchema>) => {
 				.select([
 					"inlang_bundle.id as bundle_id",
 					"inlang_bundle.declarations as bundle_declarations",
+					"inlang_bundle.description as bundle_description",
 					"inlang_message.id as message_id",
 					"inlang_message.locale as message_locale",
 					"inlang_message.selectors as message_selectors",
@@ -68,6 +69,7 @@ export const selectBundleNested = (db: Kysely<InlangDatabaseSchema>) => {
 					bundle = {
 						id: row.bundle_id,
 						declarations: row.bundle_declarations,
+						description: row.bundle_description ?? null,
 						messages: [],
 					};
 					bundles.set(row.bundle_id, bundle);
