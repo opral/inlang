@@ -1,5 +1,16 @@
 # @inlang/plugin-android
 
+## 0.3.0
+
+### Minor Changes
+
+- 6c909cd: Map source translator guidance to shared bundle descriptions on capable SDK hosts. Support description edits and clearing without changing translations, keep native document and target-locale metadata, and preserve descriptions during fresh exports.
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 0.2.15
 
 ### Patch Changes
@@ -59,7 +70,6 @@
 - 4ecf2bd: Exporting with the existing file no longer rewrites the whole file when a removed block between empty lines is followed by a removed last block of the file. Both removals took the empty line between them, the edits overlapped, and the plugin fell back to the full export. They are now joined.
 - 7c287ba: Saving a project no longer rewrites whole `strings.xml` files. The export keeps the text of every `<string>` and plural item that didn't change, the XML declaration, comments, whitespace, order, and elements the plugin doesn't import (e.g. `<string-array>`, `<color>`), so that git only shows the edited translations. Changed elements are written in place, new ones are inserted after the element that precedes them in the plugin's order, and removed ones are removed together with a comment that belongs only to them (headings of groups stay).
 - 6205436: Importing real-world `strings.xml` files no longer fails on `translatable="false"`, `tools:` attributes (e.g. `tools:ignore="MissingTranslation"`) or `formatted="false"`.
-
   - Non-translatable strings and plurals (app name, URLs, API keys) are not imported as messages, so they are never written to the files of other locales, also not when another locale has a message with their name. `translatable` and `formatted` are read like Android reads booleans (`false`, `FALSE`, `False`).
   - `formatted="false"` strings are read as text, so a raw `%` (e.g. `Save 50% on %s`) works, and text that would read as a placeholder is written with `formatted="false"`.
   - `formatted="false"` on `<plurals>` is honored the same way. In a plural with placeholders, every item is a format string as Android formats it: `%%` reads as `%`, and a `%` in text is written `%%`, so text such as `lots of %d` in an item no longer turns into a placeholder.

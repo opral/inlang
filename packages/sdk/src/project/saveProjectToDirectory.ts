@@ -1,3 +1,8 @@
+import { syncBundleDescriptions } from "./bundleDescriptions.js";
+import {
+	assertDescriptionFileUnchanged,
+	rememberDescriptionFile,
+} from "./descriptionFileBaseline.js";
 import type nodeFs from "node:fs";
 import type fs from "node:fs/promises";
 import type { ExistingFile, ExportFile, InlangProject } from "./api.js";
@@ -249,6 +254,10 @@ export async function saveProjectToDirectory(args: {
 		await assertTranslationDataCanBeExported(args.project);
 	}
 	const fsModule = getPromisesFs(args.fs);
+	const descriptionPath = path.resolve(args.path, "descriptions.json");
+	await assertDescriptionFileUnchanged(args.project.lix, descriptionPath, (p) =>
+		fsModule.readFile(p)
+	);
 
 	const files = (
 		await args.project.lix.query("SELECT path, content FROM lix_file")
@@ -258,7 +267,7 @@ export async function saveProjectToDirectory(args: {
 	}));
 
 	const gitignoreContent = new TextEncoder().encode(
-		"# IF GIT SHOWED THAT THIS FILE CHANGED\n#\n# 1. RUN THE FOLLOWING COMMAND\n#\n# ---\n# git rm --cached '**/*.inlang/.gitignore'\n# ---\n#\n# 2. COMMIT THE CHANGE\n#\n# ---\n# git commit -m \"fix: remove tracked .gitignore from inlang project\"\n# ---\n#\n# Inlang handles the gitignore itself starting with version ^2.5.\n#\n# everything is ignored except settings.json and Paraglide configuration\n*\n!settings.json\n!paraglide.config.js\n!paraglide.config.mjs\n!paraglide.config.ts\n!paraglide.config.cjs"
+		"# IF GIT SHOWED THAT THIS FILE CHANGED\n#\n# 1. RUN THE FOLLOWING COMMAND\n#\n# ---\n# git rm --cached '**/*.inlang/.gitignore'\n# ---\n#\n# 2. COMMIT THE CHANGE\n#\n# ---\n# git commit -m \"fix: remove tracked .gitignore from inlang project\"\n# ---\n#\n# Inlang handles the gitignore itself starting with version ^2.5.\n#\n# everything is ignored except settings.json and Paraglide configuration\n*\n!settings.json\n!descriptions.json\n!paraglide.config.js\n!paraglide.config.mjs\n!paraglide.config.ts\n!paraglide.config.cjs"
 	);
 
 	const existingMeta = await readProjectMeta({
@@ -289,9 +298,13 @@ export async function saveProjectToDirectory(args: {
 		if (file.path === "/project_id") {
 			continue;
 		}
+		// The companion is generated from the current bundle rows after exporters.
+		if (file.path === "/descriptions.json" && !args.skipExporting) continue;
 		const p = path.join(args.path, file.path);
 		await fsModule.mkdir(path.dirname(p), { recursive: true });
 		await fsModule.writeFile(p, new Uint8Array(file.content));
+		if (file.path === "/descriptions.json")
+			rememberDescriptionFile(args.project.lix, descriptionPath, file.content);
 	}
 
 	if (shouldWriteGitignore) {
@@ -344,6 +357,7 @@ export async function saveProjectToDirectory(args: {
 				variants,
 				settings,
 				files: existingFiles,
+				sdkCapabilities: ["bundle-description"],
 			});
 			for (const file of files) {
 				const pathPattern = settings[plugin.key]?.pathPattern;
@@ -404,5 +418,20 @@ export async function saveProjectToDirectory(args: {
 				settings,
 			});
 		}
+	}
+	// Transfer fallback ownership only after native resources were written.
+	const companion = await syncBundleDescriptions(args.project);
+	if (companion) {
+		await assertDescriptionFileUnchanged(
+			args.project.lix,
+			descriptionPath,
+			(p) => fsModule.readFile(p)
+		);
+		await fsModule.writeFile(descriptionPath, companion.content);
+		rememberDescriptionFile(
+			args.project.lix,
+			descriptionPath,
+			companion.content
+		);
 	}
 }

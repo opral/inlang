@@ -1091,6 +1091,9 @@ export function rowsFromImport(imported: {
 		if (bundle.id === undefined) continue;
 		bundles.set(bundle.id, {
 			id: bundle.id,
+			...(bundle.description !== undefined
+				? { description: bundle.description }
+				: {}),
 			// an upsert keeps what isn't provided
 			declarations:
 				bundle.declarations ?? bundles.get(bundle.id)?.declarations ?? [],

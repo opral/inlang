@@ -1,3 +1,7 @@
+import {
+	parseBundleDescriptions,
+	mergeBundleDescriptions,
+} from "./bundleDescriptions.js";
 import { isDeepStrictEqual } from "node:util";
 import { Buffer } from "node:buffer";
 import type nodeFs from "node:fs";
@@ -63,6 +67,7 @@ type CacheState = {
 	context: string;
 	signature: unknown[];
 	sources?: ImportFile[];
+	descriptionSource?: string;
 	fingerprints: Map<string, string>;
 };
 type Loaded = Snapshot &
@@ -145,6 +150,7 @@ export function createCatalogLoader(
 			context: next.context,
 			signature: next.signature,
 			sources: next.sources,
+			descriptionSource: next.descriptionSource,
 			fingerprints: nextFingerprints,
 		};
 		return update;
@@ -169,6 +175,7 @@ function bundleFingerprint(bundle: BundleNested): string {
 	return JSON.stringify([
 		bundle.id,
 		bundle.declarations,
+		bundle.description ?? null,
 		bundle.messages.map((message) => [
 			message.locale,
 			message.selectors,
@@ -230,6 +237,20 @@ async function readCatalog(
 		...remote.plugins,
 	];
 	const diagnostics = [...local.errors, ...remote.errors];
+	let descriptionContent: Uint8Array | undefined;
+	try {
+		descriptionContent = await args.fs.promises.readFile(
+			nodePath.join(args.path, "descriptions.json")
+		);
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+	}
+	const descriptions = descriptionContent
+		? parseBundleDescriptions(descriptionContent)
+		: new Map<string, string>();
+	const descriptionSource = descriptionContent
+		? new TextDecoder().decode(descriptionContent)
+		: undefined;
 	const context = JSON.stringify(rawSettings);
 	// Imported source is stable across fresh Bun Blob URLs; supplied plugins
 	// have no source text, so retain their object/function identity checks.
@@ -243,7 +264,7 @@ async function readCatalog(
 		plugin.saveMessages,
 	]);
 	signature.push(...local.pluginSources, ...remote.pluginSources);
-	const identity = { context, signature };
+	const identity = { context, signature, descriptionSource };
 	const { importExportPlugins, loadSavePlugins } = categorizePlugins(plugins);
 	if (loadSavePlugins.length > 1) {
 		throw new Error(
@@ -331,7 +352,8 @@ async function readCatalog(
 			previous?.sources &&
 			context === previous.context &&
 			sameSignature(signature, previous.signature) &&
-			sameSources(files, previous.sources)
+			sameSources(files, previous.sources) &&
+			descriptionSource === previous.descriptionSource
 		) {
 			return {
 				settings,
@@ -360,12 +382,19 @@ async function readCatalog(
 		reusableSources = sources;
 		const imported = await selected.importFiles({
 			files,
+			sdkCapabilities: ["bundle-description"],
 			settings: structuredClone(rawSettings),
 		});
 		if (importExportPlugins.length === 1 && loadSavePlugins.length === 0) {
 			const bundles = createFreshCatalog(imported);
 			if (bundles)
-				return { settings, bundles, diagnostics, ...identity, sources };
+				return {
+					settings,
+					bundles: mergeBundleDescriptions(bundles, descriptions),
+					diagnostics,
+					...identity,
+					sources,
+				};
 		}
 		(store ?? (await getStore())).import(imported);
 	}
@@ -433,7 +462,7 @@ async function readCatalog(
 	}
 	return {
 		settings,
-		bundles: store?.takeBundles() ?? [],
+		bundles: mergeBundleDescriptions(store?.takeBundles() ?? [], descriptions),
 		diagnostics,
 		...identity,
 		sources: reusableSources,

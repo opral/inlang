@@ -16,6 +16,7 @@ const SimpleMessage = Type.String();
 export type ComplexMessageObject = Static<typeof ComplexMessageObject>;
 // Complex message with variants
 const ComplexMessageObject = Type.Object({
+	description: Type.Optional(Type.String()),
 	match: Type.Record(Type.String(), Type.String()),
 	declarations: Type.Optional(Type.Array(Type.String())),
 	selectors: Type.Optional(Type.Array(Type.String())),

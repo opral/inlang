@@ -23,6 +23,8 @@ export type InlangPlugin<
 	 * The key of the plugin.
 	 */
 	key: string;
+	/** Native bundle descriptions; older hosts must opt in via sdkCapabilities. */
+	supportsBundleDescriptions?: boolean;
 	settingsSchema?: TObject;
 	/** Analyze a complete source snapshot. Report unresolved usages as incomplete. */
 	analyzeUsage?: AnalyzeUsage;
@@ -56,6 +58,7 @@ export type InlangPlugin<
 	>;
 	importFiles?: (args: {
 		files: ImportFile[];
+		sdkCapabilities?: readonly string[];
 		settings: ProjectSettings & ExternalSettings; // we expose the settings in case the importFunction needs to access the plugin config
 	}) => MaybePromise<{
 		bundles: BundleImport[];
@@ -90,6 +93,7 @@ export type InlangPlugin<
 		variants: Variant[];
 		settings: ProjectSettings & ExternalSettings;
 		files?: ExistingFile[];
+		sdkCapabilities?: readonly string[];
 	}) => MaybePromise<Array<ExportFile>>;
 	/**
 	 * @deprecated Use the `meta` field instead.

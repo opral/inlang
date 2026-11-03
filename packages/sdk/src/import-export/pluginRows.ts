@@ -54,13 +54,14 @@ export async function selectPluginRows(
 					| Message["selectors"]
 					| Variant["matches"];
 				pattern: Variant["pattern"] | null;
+				description: string | null;
 			}>`(
 			SELECT 'bundle' AS kind, id, NULL AS bundle_id, NULL AS message_id, NULL AS locale,
-				declarations AS data, NULL AS pattern FROM inlang_bundle
+				declarations AS data, NULL AS pattern, description FROM inlang_bundle
 			UNION ALL
-			SELECT 'message', id, bundle_id, NULL, locale, selectors, NULL FROM inlang_message
+			SELECT 'message', id, bundle_id, NULL, locale, selectors, NULL, NULL FROM inlang_message
 			UNION ALL
-			SELECT 'variant', id, NULL, message_id, NULL, matches, pattern FROM inlang_variant
+			SELECT 'variant', id, NULL, message_id, NULL, matches, pattern, NULL FROM inlang_variant
 		)`.as("plugin_rows")
 		)
 		.selectAll()
@@ -74,6 +75,7 @@ export async function selectPluginRows(
 				bundles.push({
 					id: row.id,
 					declarations: row.data as Bundle["declarations"],
+					description: row.description ?? null,
 				});
 				break;
 			case "message":

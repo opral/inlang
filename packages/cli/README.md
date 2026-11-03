@@ -214,6 +214,8 @@ The translate command has the following options:
 - `--locale <source>`: Specifies the base locale.
 - `--targetLocales <targets...>`: Specifies the target locales as comma seperated list (e.g. sk,zh,pt-BR).
 
+When a bundle has a description, OpenAI and DeepL receive it as translation context. Other providers translate the source text without that guidance. Descriptions are preserved in the project and are never included in translated strings.
+
 The translations are performed with the configured provider (`INLANG_MACHINE_TRANSLATE_PROVIDER`). The community-operated translation service at translate.demosjarco.dev (not affiliated with inlang) is used by default; set `INLANG_GOOGLE_TRANSLATE_API_KEY`, `INLANG_DEEPL_API_KEY`, or `INLANG_OPENAI_API_KEY` to use your own provider. You can also set `DEMOSJARCO_TRANSLATE_MODEL` to pin a model for the community-operated service (and `DEMOSJARCO_TRANSLATE_ZDR=true` to request Zero Data Retention from it). If the selected provider is unavailable or throttles requests, the command fails with a non-zero exit code instead of reporting success. OpenAI Responses that are incomplete are not accepted as translations and also cause the command to fail. The translated messages are added to the respective language resources. Finally, the updated resources are written back to the file system.
 
 ## `check`

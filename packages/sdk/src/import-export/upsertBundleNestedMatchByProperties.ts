@@ -17,7 +17,11 @@ export const upsertBundleNestedMatchByProperties = async (
 	}
 	// Pick the columns explicitly so that nested arrays and `lixcol_*`
 	// properties of the input never reach the insert.
-	const bundleToInsert = { id: bundle.id, declarations: bundle.declarations };
+	const bundleToInsert = {
+		id: bundle.id,
+		declarations: bundle.declarations,
+		description: bundle.description,
+	};
 
 	await db.transaction().execute(async (trx) => {
 		const insertedBundle = await trx

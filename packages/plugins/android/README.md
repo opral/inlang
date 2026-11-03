@@ -35,3 +35,11 @@ Indonesian and Yiddish (`values-iw/`); if both `values-he/` and `values-iw/`
 exist, `values-he/` is read and written. The language is written lowercase. A
 locale with files in two spellings is rejected, because inlang writes all
 messages of a locale to one file.
+
+## Translation descriptions
+
+On SDK hosts supporting bundle descriptions, a comment directly above a source-locale `<string>` or `<plurals>` maps to `bundle.description` when it belongs to that entry alone. Blank lines separate document headings; a comment above adjacent entries is treated as a group heading. Target-locale comments remain file metadata.
+
+The shared editor writes descriptions as native XML comments in the source file, preserving document metadata when the existing files are available. Removing the attached source comment clears the description. Descriptions containing `--` cannot be represented as XML comments and are rejected.
+
+Change the base locale through a loaded project’s settings and save the project before reopening it. If editing `baseLocale` directly in `settings.json`, move shared guidance into the new source entries or `project.inlang/descriptions.json` in the same change. A fresh directory load cannot identify the former source locale and never promotes target-only notes automatically.

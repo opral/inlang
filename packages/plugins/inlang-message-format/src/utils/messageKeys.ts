@@ -121,7 +121,7 @@ export function flattenMessageKeys(
 		inObject: boolean
 	) => {
 		const [first, ...later] = items as [Record<string, unknown>, ...unknown[]];
-		const { declarations, selectors, match, ...rest } = first;
+		const { declarations, selectors, match, description, ...rest } = first;
 		// a later entry that is no complex message, as the schema allows it
 		const isComplexEntry = (item: unknown) => isComplexMessage([item]);
 		const split =
@@ -144,9 +144,12 @@ export function flattenMessageKeys(
 			key,
 			[
 				Object.fromEntries(
-					Object.entries({ declarations, selectors, match }).filter(
-						([, part]) => part !== undefined
-					)
+					Object.entries({
+						declarations,
+						selectors,
+						match,
+						description,
+					}).filter(([, part]) => part !== undefined)
 				),
 			],
 			inLegacy,

@@ -11,7 +11,11 @@ import type {
 import type { plugin } from "../plugin.js";
 import type { ComplexMessage, SimpleMessage } from "../fileSchema.js";
 import { sortMessageKeys } from "../utils/sortKeys.js";
-import { messageKeyPath, nestMessageKeys } from "../utils/messageKeys.js";
+import {
+	messageKeyPath,
+	nestMessageKeys,
+	flattenMessageKeys,
+} from "../utils/messageKeys.js";
 import { orderSelectors } from "../utils/orderSelectors.js";
 import { orderVariants } from "../utils/orderVariants.js";
 import { keepUnchangedJsonEntries } from "@inlang/sdk/json-formatting";
@@ -29,8 +33,14 @@ export const exportFiles: NonNullable<(typeof plugin)["exportFiles"]> = async (
 		exported: await exportWholeFiles(args),
 		files: args.files,
 		settings: args.settings,
-		importFiles,
-		exportFiles: exportWholeFiles,
+		importFiles: (input) =>
+			importFiles({ ...input, sdkCapabilities: args.sdkCapabilities }),
+		exportFiles: (input) =>
+			exportWholeFiles({
+				...input,
+				files: args.files,
+				sdkCapabilities: args.sdkCapabilities,
+			}),
 		splitKey: flatKeyPath(args.messages),
 	});
 
@@ -78,10 +88,48 @@ function flatKeyPath(
  */
 export const exportWholeFiles: NonNullable<
 	(typeof plugin)["exportFiles"]
-> = async ({ bundles, messages, variants, settings }) => {
+> = async ({
+	bundles,
+	messages,
+	variants,
+	settings,
+	sdkCapabilities,
+	files: existingFiles,
+}) => {
 	// the messages of each locale by key, in the order of `messages`
 	const files: Record<string, Map<string, SimpleMessage | ComplexMessage>> = {};
 
+	// Preserve guidance that this host cannot represent: target-locale notes,
+	// and all descriptions on older hosts. Capable hosts own source guidance.
+	const fileDescriptions = new Map<string, string>();
+	for (const file of existingFiles ?? []) {
+		if (
+			sdkCapabilities?.includes("bundle-description") &&
+			file.locale === settings.baseLocale
+		)
+			continue;
+		let previous: Record<string, unknown>;
+		try {
+			previous = JSON.parse(new TextDecoder().decode(file.content));
+		} catch {
+			continue;
+		} // An unreadable previous file uses the full export.
+		for (const [id, value] of flattenMessageKeys(previous)) {
+			if (!Array.isArray(value)) continue;
+			const descriptions = value.flatMap((entry) =>
+				typeof entry.description === "string" ? [entry.description] : []
+			);
+			if (new Set(descriptions).size > 1)
+				throw new Error(
+					`Conflicting file descriptions for "${id}" in ${file.locale}; keep one description before editing`
+				);
+			if (descriptions[0] !== undefined)
+				fileDescriptions.set(
+					JSON.stringify([id, file.locale]),
+					descriptions[0]
+				);
+		}
+	}
 	// one variant per matches, the last one wins
 	const variantsByMatches = new Map<string, Map<string, Variant>>();
 	for (const message of messages) {
@@ -114,15 +162,21 @@ export const exportWholeFiles: NonNullable<
 
 	for (const message of messages) {
 		const bundle = bundlesById.get(message.bundleId);
-		(files[message.locale] ??= new Map()).set(
-			message.bundleId,
-			serializeVariants(
-				bundle!,
-				message,
-				variantsByMessage.get(message.id)!,
-				bundlesWithComplexMessage.has(message.bundleId)
-			)
+		const description =
+			sdkCapabilities?.includes("bundle-description") &&
+			message.locale === settings.baseLocale
+				? bundle?.description
+				: fileDescriptions.get(
+						JSON.stringify([message.bundleId, message.locale])
+					);
+		const serialized = serializeVariants(
+			bundle!,
+			message,
+			variantsByMessage.get(message.id)!,
+			bundlesWithComplexMessage.has(message.bundleId),
+			description
 		);
+		(files[message.locale] ??= new Map()).set(message.bundleId, serialized);
 	}
 
 	const result: ExportFile[] = [];
@@ -171,7 +225,8 @@ function serializeVariants(
 	bundle: Bundle,
 	message: Message,
 	variants: Variant[],
-	bundleHasComplexMessage: boolean
+	bundleHasComplexMessage: boolean,
+	description?: string | null
 ): SimpleMessage | ComplexMessage {
 	// A plain string is written as it was imported, also if another locale of
 	// the bundle has a plural or select: the declarations are in that locale's
@@ -179,6 +234,7 @@ function serializeVariants(
 	// bundle with local declarations is written in the complex form, which is
 	// the only form that keeps them.
 	if (
+		description == null &&
 		isPlainMessage(message, variants) &&
 		(bundleHasComplexMessage ||
 			bundle.declarations.some((d) => d.type !== "input-variable") === false)
@@ -221,6 +277,7 @@ function serializeVariants(
 
 	return [
 		{
+			...(description != null ? { description } : {}),
 			// naively adding all declarations, even if unused in the variants
 			// can be optimized later.
 			declarations: [

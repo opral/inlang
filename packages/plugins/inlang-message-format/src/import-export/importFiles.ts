@@ -24,6 +24,8 @@ import type {
 
 export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 	files,
+	settings,
+	sdkCapabilities,
 }) => {
 	const bundles: Bundle[] = [];
 	const bundlesById = new Map<string, Bundle>();
@@ -57,6 +59,23 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				file.locale,
 				value as SimpleMessage | ComplexMessage
 			);
+			if (
+				sdkCapabilities?.includes("bundle-description") &&
+				file.locale === settings.baseLocale
+			) {
+				const descriptions =
+					typeof value === "string"
+						? []
+						: (value as ComplexMessage).flatMap((entry) => {
+								if (entry.description === undefined) return [];
+								if (typeof entry.description !== "string")
+									throw new Error(`Invalid description for "${key}"`);
+								return [entry.description];
+							});
+				if (new Set(descriptions).size > 1)
+					throw new Error(`Conflicting descriptions for "${key}"`);
+				result.bundle.description = descriptions[0] ?? null;
+			}
 			messages.push(result.message);
 			const start = variants.length;
 			variants.push(...result.variants);
@@ -76,6 +95,14 @@ export const importFiles: NonNullable<(typeof plugin)["importFiles"]> = async ({
 				bundles.push(result.bundle);
 				bundlesById.set(result.bundle.id, result.bundle);
 			} else {
+				if (result.bundle.description !== undefined) {
+					if (
+						existingBundle.description !== undefined &&
+						existingBundle.description !== result.bundle.description
+					)
+						throw new Error(`Conflicting descriptions for "${key}"`);
+					existingBundle.description = result.bundle.description;
+				}
 				// merge declarations without duplicates
 				existingBundle.declarations = mergeDeclarations(
 					existingBundle.declarations,

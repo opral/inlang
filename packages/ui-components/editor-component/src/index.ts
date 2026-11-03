@@ -1,5 +1,6 @@
 //main components
 export { default as InlangBundle } from "./stories/inlang-bundle.js";
+export { default as InlangBundleDescription } from "./stories/bundle-description/inlang-bundle-description.js";
 export { default as InlangMessage } from "./stories/message/inlang-message.js";
 export { default as InlangVariant } from "./stories/variant/inlang-variant.js";
 export { default as InlangPatternEditor } from "./stories/pattern-editor/inlang-pattern-editor.js";

@@ -13,6 +13,7 @@ export const InlangBundleSchema = {
 			nullable: false,
 			default_value: [],
 		},
+		{ name: "description", type: "text", nullable: true },
 	],
 	primary_key: ["id"],
 } as const;

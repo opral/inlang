@@ -7,7 +7,7 @@ import type {
 /**
  * Update a bundle, its messages and their variants by id.
  *
- * Only the inlang columns are written: `declarations` on the bundle,
+ * Only the inlang columns are written: `declarations` and `description` on the bundle,
  * `bundle_id`, `locale` and `selectors` on messages, and `message_id`,
  * `matches` and `pattern` on variants. Other properties, such as the nested
  * `messages`/`variants` arrays or the `lixcol_*` columns of a `selectAll()`
@@ -22,6 +22,7 @@ export const updateBundleNested = async (
 ): Promise<void> => {
 	const bundleColumns = definedColumns({
 		declarations: bundle.declarations,
+		description: bundle.description,
 	});
 	if (bundleColumns) {
 		await db

@@ -15,6 +15,12 @@ import {
   type EntryText,
 } from "./mergeEntries.js";
 
+import {
+  attachedDescription,
+  readDescription,
+  writeDescriptions,
+} from "./descriptions.js";
+
 export const PLUGIN_KEY = "plugin.inlang.apple-strings";
 type Config = { [PLUGIN_KEY]: PluginSettings };
 type ImportArgs = Parameters<
@@ -27,18 +33,57 @@ type ExportFile = { locale: string; name: string; content: Uint8Array };
 
 export const plugin: InlangPlugin<Config> = {
   key: PLUGIN_KEY,
+  supportsBundleDescriptions: true,
   settingsSchema: PluginSettings,
   toBeImportedFiles: ({ settings }) =>
     settings.locales.map((locale) => ({
       locale,
       path: settings[PLUGIN_KEY].pathPattern.replace("{locale}", locale),
     })),
-  importFiles: ({ files }: ImportArgs) => importAppleStrings(files),
+  importFiles: ({ files, settings, sdkCapabilities }: ImportArgs) =>
+    importAppleStrings(
+      files,
+      sdkCapabilities?.includes("bundle-description")
+        ? settings.baseLocale
+        : undefined,
+    ),
   exportFiles: (args: ExportArgs) =>
-    keepUnchangedEntries(exportAppleStrings(args), args),
+    keepUnchangedEntries(exportAppleStrings(args), args).map((file) => {
+      if (
+        !args.sdkCapabilities?.includes("bundle-description") ||
+        file.locale !== args.settings.baseLocale
+      )
+        return file;
+      const { text, encoding } = decodeKeepingEncoding(file.content);
+      const scanned = scanStringsFile(text);
+      const descriptions = new Map(
+        args.bundles
+          .filter((bundle) => bundle.description !== undefined)
+          .map((bundle) => [bundle.id, bundle.description ?? null]),
+      );
+      return {
+        ...file,
+        content: encodeWithEncoding(
+          writeDescriptions(
+            text,
+            scanned.entries,
+            scanned.comments.filter((comment) =>
+              text.startsWith("/*", comment.start),
+            ),
+            descriptions,
+            "/*",
+            "*/",
+          ),
+          encoding,
+        ),
+      };
+    }),
 };
 
-function importAppleStrings(files: ImportArgs["files"]): {
+function importAppleStrings(
+  files: ImportArgs["files"],
+  baseLocale?: string,
+): {
   bundles: Bundle[];
   messages: MessageImport[];
   variants: VariantImport[];
@@ -47,14 +92,31 @@ function importAppleStrings(files: ImportArgs["files"]): {
   const messages: MessageImport[] = [];
   const variants: VariantImport[] = [];
   for (const file of files) {
-    for (const { key, value } of parseStringsFile(decode(file.content))) {
+    const text = decode(file.content);
+    const scanned = scanStringsFile(text);
+    for (const entry of scanned.entries) {
+      const { key, value } = entry;
       const parsed = parsePattern(value);
-      const current = bundles.get(key) ?? { id: key, declarations: [] };
+      const current: Bundle = bundles.get(key) ?? { id: key, declarations: [] };
       for (const name of parsed.variables)
         if (
           !current.declarations.some((declaration) => declaration.name === name)
         )
           current.declarations.push({ type: "input-variable", name });
+      if (file.locale === baseLocale)
+        current.description = readDescription(
+          text,
+          attachedDescription(
+            text,
+            entry,
+            scanned.entries,
+            scanned.comments.filter((comment) =>
+              text.startsWith("/*", comment.start),
+            ),
+          ),
+          "/*",
+          "*/",
+        );
       bundles.set(key, current);
       messages.push({ bundleId: key, locale: file.locale, selectors: [] });
       variants.push({
@@ -482,21 +544,35 @@ function escapeString(value: string) {
     .replace(/\t/g, "\\t");
 }
 function unescapeString(value: string) {
-  const unknownEscape = value.match(/\\(?![\\"nrtuU]|$)/);
-  if (unknownEscape)
-    throw new Error(`Unsupported Apple .strings escape "${unknownEscape[0]}"`);
-  return value
-    .replace(/\\U([0-9a-fA-F]{4})/g, (_, hex: string) =>
-      String.fromCharCode(Number.parseInt(hex, 16)),
-    )
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex: string) =>
-      String.fromCharCode(Number.parseInt(hex, 16)),
-    )
-    .replace(
-      /\\([\\"nrt])/g,
-      (_, char: string) =>
-        ({ "\\": "\\", '"': '"', n: "\n", r: "\r", t: "\t" })[char]!,
-    );
+  let result = "";
+  for (let index = 0; index < value.length; index++) {
+    const char = value[index]!;
+    if (char !== "\\") {
+      result += char;
+      continue;
+    }
+    const escaped = value[++index];
+    const simple: Record<string, string> = {
+      "\\": "\\",
+      '"': '"',
+      n: "\n",
+      r: "\r",
+      t: "\t",
+    };
+    if (escaped !== undefined && Object.hasOwn(simple, escaped)) {
+      result += simple[escaped];
+    } else if (
+      (escaped === "u" || escaped === "U") &&
+      /^[0-9a-fA-F]{4}$/.test(value.slice(index + 1, index + 5))
+    ) {
+      result += String.fromCharCode(
+        Number.parseInt(value.slice(index + 1, index + 5), 16),
+      );
+      index += 4;
+    } else
+      throw new Error(`Unsupported Apple .strings escape "\\${escaped ?? ""}"`);
+  }
+  return result;
 }
 function encode(value: string) {
   return new TextEncoder().encode(value);

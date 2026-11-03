@@ -48,6 +48,8 @@ export type InlangProject = {
 };
 
 export type ImportFile = {
+	/** Portable export metadata, accepted when reimporting ExportFile objects directly. */
+	metadata?: Record<string, any>;
 	/** The locale of the resource file */
 	locale: string;
 	/** The binary content of the resource */

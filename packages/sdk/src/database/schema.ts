@@ -41,6 +41,7 @@ type LixColumns = {
 type InlangBundleTable = {
 	id: Generated<string>;
 	declarations: Generated<Array<Declaration>>;
+	description?: Generated<string | null>;
 };
 
 type InlangMessageTable = {
@@ -77,7 +78,9 @@ export type CatchAllMatch = {
 	key: VariableReference["name"];
 };
 
-export type BundleRow = Selectable<InlangBundleTable>;
+export type BundleRow = Omit<Selectable<InlangBundleTable>, "description"> & {
+	description?: string | null;
+};
 export type NewBundleRow = Insertable<InlangBundleTable>;
 export type BundleRowUpdate = Updateable<InlangBundleTable>;
 
@@ -120,6 +123,7 @@ export type BundleNestedUpdate = BundleRowUpdate & {
 type BundleShape = {
 	id: Generated<string>;
 	declarations: Generated<Array<Declaration>>;
+	description?: Generated<string | null>;
 };
 
 type MessageShape = {
@@ -136,7 +140,9 @@ type VariantShape = {
 	pattern: Generated<Pattern>;
 };
 
-export type Bundle = Selectable<BundleShape>;
+export type Bundle = Omit<Selectable<BundleShape>, "description"> & {
+	description?: string | null;
+};
 export type NewBundle = Insertable<BundleShape>;
 export type BundleUpdate = Updateable<BundleShape>;
 

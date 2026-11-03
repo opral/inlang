@@ -15,7 +15,7 @@ test("plugins exchange camelCase rows while the database uses canonical columns"
 	const mockPlugin: InlangPlugin = {
 		key: "mock",
 		importFiles: async () => ({
-			bundles: [{ id: "greeting", declarations: [] }],
+			bundles: [{ id: "greeting", declarations: [], description: null }],
 			messages: [
 				{
 					id: "greeting_en",
@@ -68,7 +68,7 @@ test("plugins exchange camelCase rows while the database uses canonical columns"
 	});
 
 	expect(exported).toEqual({
-		bundles: [{ id: "greeting", declarations: [] }],
+		bundles: [{ id: "greeting", declarations: [], description: null }],
 		messages: [
 			{ id: "greeting_en", bundleId: "greeting", locale: "en", selectors: [] },
 		],

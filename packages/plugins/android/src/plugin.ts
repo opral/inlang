@@ -17,6 +17,12 @@ import {
 } from "./mergeEntries.js";
 import { isFalse, scanResources, type ScannedEntry } from "./scanResources.js";
 
+import {
+  attachedDescription,
+  readDescription,
+  writeDescriptions,
+} from "./descriptions.js";
+
 export const PLUGIN_KEY = "plugin.inlang.android";
 type Config = { [PLUGIN_KEY]: PluginSettings };
 type ImportArgs = Parameters<
@@ -35,6 +41,7 @@ const quantities = new Set(["zero", "one", "two", "few", "many", "other"]);
 
 export const plugin: InlangPlugin<Config> = {
   key: PLUGIN_KEY,
+  supportsBundleDescriptions: true,
   settingsSchema: PluginSettings,
   // Every spelling of the qualifier of a locale, the preferred one first
   // (e.g. `values-pt-rBR` and `values-b+pt+BR`). Missing files are skipped.
@@ -49,7 +56,7 @@ export const plugin: InlangPlugin<Config> = {
         };
       }),
     ),
-  importFiles: ({ files }: ImportArgs) => {
+  importFiles: ({ files, settings, sdkCapabilities }: ImportArgs) => {
     // AAPT2 reads `values-iw` and `values-he` as two configurations; of
     // both, the current code wins, as before
     const read = files.filter(
@@ -62,7 +69,12 @@ export const plugin: InlangPlugin<Config> = {
         ),
     );
     assertOneFilePerLocale(read);
-    return importAndroidFiles(read);
+    return importAndroidFiles(
+      read,
+      sdkCapabilities?.includes("bundle-description")
+        ? settings.baseLocale
+        : undefined,
+    );
   },
   exportFiles: (args: ExportArgs) => {
     const data = withoutExtraTranslations(args);
@@ -73,6 +85,41 @@ export const plugin: InlangPlugin<Config> = {
     ].map((file) => {
       // the spelling of the existing file, e.g. `values-b+pt+BR`
       const existing = existingFile(args.files, file.locale);
+      if (
+        args.sdkCapabilities?.includes("bundle-description") &&
+        file.locale === args.settings.baseLocale
+      ) {
+        const text = new TextDecoder("utf-8", { ignoreBOM: true }).decode(
+          file.content,
+        );
+        const scanned = scanResources(text);
+        const sourceIds = new Set(
+          args.messages
+            .filter((message) => message.locale === args.settings.baseLocale)
+            .map((message) => message.bundleId),
+        );
+        const descriptions = new Map(
+          args.bundles
+            .filter(
+              (bundle) =>
+                bundle.description !== undefined && sourceIds.has(bundle.id),
+            )
+            .map((bundle) => [bundle.id, bundle.description ?? null]),
+        );
+        file = {
+          ...file,
+          content: encode(
+            writeDescriptions(
+              text,
+              scanned.entries,
+              scanned.comments,
+              descriptions,
+              "<!--",
+              "-->",
+            ),
+          ),
+        };
+      }
       return existing ? { ...file, name: existing.path } : file;
     });
     // Hosts that pass the existing files (inlang SDK 4) write each file to
@@ -207,7 +254,10 @@ function xmlParser() {
   });
 }
 
-function importAndroidFiles(files: ImportArgs["files"]): {
+function importAndroidFiles(
+  files: ImportArgs["files"],
+  baseLocale?: string,
+): {
   bundles: Bundle[];
   messages: MessageImport[];
   variants: VariantImport[];
@@ -231,6 +281,21 @@ function importAndroidFiles(files: ImportArgs["files"]): {
       resources = {};
     if (!resources || typeof resources !== "object")
       throw new Error("Android resources XML must contain a <resources> root");
+    const scanned =
+      file.locale === baseLocale ? scanResources(source) : undefined;
+    const addDescription = (id: string) => {
+      if (!scanned) return;
+      const entry = scanned.entries.find(
+        (candidate) => candidate.key === id && candidate.translatable,
+      );
+      if (entry)
+        bundles.get(id)!.description = readDescription(
+          source,
+          attachedDescription(source, entry, scanned.entries, scanned.comments),
+          "<!--",
+          "-->",
+        );
+    };
     for (const item of array(resources.string)) {
       if (!item || typeof item !== "object" || !("@_name" in item))
         throw new Error("Every Android <string> must have a name attribute");
@@ -247,6 +312,7 @@ function importAndroidFiles(files: ImportArgs["files"]): {
         id,
         mergeBundle(bundles.get(id), id, parsed.variables, false),
       );
+      addDescription(id);
       messages.push({ bundleId: id, locale: file.locale, selectors: [] });
       variants.push({
         messageBundleId: id,
@@ -299,6 +365,7 @@ function importAndroidFiles(files: ImportArgs["files"]): {
           true,
         ),
       );
+      addDescription(id);
       messages.push({
         bundleId: id,
         locale: file.locale,
@@ -965,7 +1032,7 @@ function mergeBundle(
         annotation: { type: "function-reference", name: "plural", options: [] },
       },
     });
-  return { id, declarations };
+  return { ...current, id, declarations };
 }
 
 const PRINTF = /^%(?:(\d+)\$([-+# 0,(]*\d*(?:\.\d+)?[sdf])|([sdf]))/;

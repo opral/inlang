@@ -22,10 +22,15 @@ A bundle groups translations by key. One bundle = one translatable unit across a
 type Bundle = {
   id: string; // e.g., "greeting", "error_404"
   declarations: Declaration[];
+  description?: string | null; // Shared guidance for translators and agents
 };
 ```
 
 The `id` is your translation key — what you reference in code. The id is assumed to be stable; changing it would break all references. Declarations define variables available to all messages in the bundle.
+
+A bundle can have a plain-text `description` explaining its meaning, usage, placeholders and translation constraints. The same description applies across locales, including missing translations. Omit it on update to retain existing guidance; set it to `null` to clear it.
+
+Native format plugins store descriptions in source entries. Formats such as i18next and plain JSON use the SDK-managed `project.inlang/descriptions.json` companion file, which must be committed with the translation resources. Descriptions are metadata and are not included in runtime translation strings.
 
 See [Message Shapes](/docs/message-shapes) for concrete JSON examples of declarations, selectors, matches, and pattern parts.
 

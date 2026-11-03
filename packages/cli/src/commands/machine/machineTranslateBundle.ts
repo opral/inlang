@@ -118,6 +118,7 @@ export async function machineTranslateBundle(
           text: sourcePattern,
           sourceLocale: args.sourceLocale,
           targetLocale,
+          ...(copy.description ? { context: copy.description } : {}),
         });
 
         if (!translation.ok && translation.unavailable) {

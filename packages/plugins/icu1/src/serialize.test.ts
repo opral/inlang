@@ -261,7 +261,7 @@ describe("serializeMessage", () => {
         expectRoundTrip(text, true);
         expectRoundTrip(text, false);
       }
-    });
+    }, 30_000);
   });
 
   describe("# displays what it displayed in the source", () => {

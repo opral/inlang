@@ -29,6 +29,24 @@ async function registeredSchemas(project: Project) {
 	);
 }
 
+/** The only physical schema change in this release is an additive nullable column. */
+function withBundleDescription(schemas: any[]) {
+	return schemas.map((schema) =>
+		schema.schema_key === "inlang_bundle"
+			? {
+					...schema,
+					value: {
+						...schema.value,
+						columns: [
+							...schema.value.columns,
+							{ name: "description", type: "text", nullable: true },
+						],
+					},
+				}
+			: schema
+	);
+}
+
 async function persistedSnapshot(lix: any) {
 	return new Uint8Array(await new Response(lix.exportSnapshot()).arrayBuffer());
 }
@@ -39,8 +57,8 @@ async function openOnLix(version: Version, lix: unknown): Promise<Project> {
 }
 
 describe("physical storage", () => {
-	test("both SDKs register the same Lix schemas: the renamed tables and columns are only the query layer", async () => {
-		const schemas: Record<Version, unknown> = {} as any;
+	test("Lix schemas differ only by the additive nullable bundle description column", async () => {
+		const schemas: Record<Version, any[]> = {} as any;
 		for (const version of ["published", "current"] as const) {
 			const project = await loadFromBlob(
 				version,
@@ -49,7 +67,7 @@ describe("physical storage", () => {
 			schemas[version] = await registeredSchemas(project);
 			await project.close();
 		}
-		expect(schemas.current).toEqual(schemas.published);
+		expect(schemas.current).toEqual(withBundleDescription(schemas.published));
 		expect(
 			(schemas.current as Array<{ schema_key: string }>).map(
 				(row) => row.schema_key
@@ -95,7 +113,23 @@ describe("physical storage", () => {
 				);
 				const b = await openOnLix("current", restored);
 				expect(sortRows(await selectRows(b))).toEqual(sortRows(editorRows));
-				expect(await registeredSchemas(b)).toEqual(schemasBefore);
+				expect(await registeredSchemas(b)).toEqual(
+					first === "published"
+						? withBundleDescription(schemasBefore)
+						: schemasBefore
+				);
+				expect(
+					await b.db
+						.selectFrom("inlang_bundle")
+						.select(["id", "description"])
+						.orderBy("id")
+						.execute()
+				).toEqual(
+					sortRows(editorRows).bundles.map(({ id }) => ({
+						id,
+						description: null,
+					}))
+				);
 				expect(
 					await readLix(
 						restored,

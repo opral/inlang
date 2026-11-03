@@ -222,7 +222,7 @@ const settingsJson =
 
 /**
  * Files in git: `.inlang/.gitignore` ignores everything in the project
- * directory except `settings.json` (README.md, .meta.json, the plugin cache).
+ * directory except settings and descriptions (README.md, .meta.json, the plugin cache).
  */
 function trackedChanges(changes: string[]) {
 	return changes.filter((change) => {
@@ -230,6 +230,7 @@ function trackedChanges(changes: string[]) {
 		return (
 			!file.startsWith("project.inlang/") ||
 			file === "project.inlang/settings.json" ||
+			file === "project.inlang/descriptions.json" ||
 			file === "project.inlang/.gitignore"
 		);
 	});
@@ -272,10 +273,33 @@ describe.each([
 	"a project directory saved by the $creator SDK",
 	({ creator, reader }) => {
 		test.each(["published", "current"] as const)(
-			`opening and saving it in the ${reader} SDK without edits keeps every file in git byte-identical (%s plugins)`,
+			`opening and saving it in the ${reader} SDK preserves tracked bytes except the exact description ignore-rule migration (%s plugins)`,
 			async (served) => {
 				const { root, projectPath } = await createDirectory(creator);
 				const before = snapshotDirectory(root);
+				const expected = new Map(before);
+				if (creator === "published" && reader === "current") {
+					const ignorePath = "project.inlang/.gitignore";
+					const previousIgnore = Buffer.from(
+						before.get(ignorePath)!,
+						"base64"
+					).toString("utf8");
+					expect(previousIgnore).not.toContain("!descriptions.json");
+					expect(
+						previousIgnore
+							.split("\n")
+							.filter((line) => line === "!settings.json")
+					).toHaveLength(1);
+					expected.set(
+						ignorePath,
+						Buffer.from(
+							previousIgnore.replace(
+								"!settings.json\n",
+								"!settings.json\n!descriptions.json\n"
+							)
+						).toString("base64")
+					);
+				}
 				expect([...before.keys()].sort()).toEqual(
 					expect.arrayContaining([
 						"messages/de.json",
@@ -301,9 +325,9 @@ describe.each([
 					"plugin.inlang.mFunctionMatcher",
 					"plugin.inlang.messageFormat",
 				]);
-				// loading writes nothing tracked, and adds or migrates no file
+				// Loading permits only the exact additive ignore-rule migration.
 				const afterLoad = snapshotDirectory(root);
-				expect(trackedChanges(changedFiles(before, afterLoad))).toEqual([]);
+				expect(trackedChanges(changedFiles(expected, afterLoad))).toEqual([]);
 				expect(
 					changedFiles(before, afterLoad).filter(
 						(c) => !c.startsWith("changed")
@@ -321,7 +345,6 @@ describe.each([
 				// catch-all, which the current plugin writes last (see
 				// translation-files.test.ts). With the files that the current SDK
 				// passes, the current plugin keeps unchanged messages as they are.
-				const expected = before;
 				expect(trackedChanges(changedFiles(expected, afterSave))).toEqual([]);
 				expect(
 					changedFiles(before, afterSave).filter(

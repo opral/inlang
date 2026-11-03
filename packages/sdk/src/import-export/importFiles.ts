@@ -1,4 +1,5 @@
 import type { Kysely } from "kysely";
+import { applyBundleDescriptions } from "../project/bundleDescriptions.js";
 import {
 	PluginDoesNotImplementFunctionError,
 	PluginMissingError,
@@ -109,7 +110,7 @@ async function insertFreshImportCommit(
 ) {
 	await insertInBatchesByShape({
 		rows: commit.bundles,
-		optionalColumns: ["declarations"],
+		optionalColumns: ["declarations", "description"],
 		insert: async (rows) => {
 			await trx.insertInto("inlang_bundle").values(rows).execute();
 		},
@@ -176,6 +177,14 @@ export async function importFiles(args: {
 	readonly allowPartialImport?: boolean;
 	/** Testing hook for the partial import commit budget. */
 	readonly rowsPerCommit?: number;
+	/** Existing fallback ownership, without reapplying possibly stale companion text. */
+	readonly companionOwnedBundleIds?: ReadonlySet<string>;
+	/** Internal portable companion import; shares the resource transaction. */
+	readonly descriptionImport?: {
+		next: ReadonlyMap<string, string>;
+		previous: ReadonlyMap<string, string>;
+		content: Uint8Array;
+	};
 }) {
 	const plugin = args.plugins.find((p) => p.key === args.pluginKey);
 
@@ -190,10 +199,35 @@ export async function importFiles(args: {
 
 	const pluginResult = await plugin.importFiles({
 		files: args.files,
+		sdkCapabilities: ["bundle-description"],
 		settings: structuredClone(args.settings),
 	});
 	const imported = {
-		bundles: pluginResult.bundles,
+		bundles: pluginResult.bundles.map((bundle) => {
+			if (bundle.description === undefined) return bundle;
+			if (bundle.description !== null && typeof bundle.description !== "string")
+				throw new Error(
+					`Invalid description for bundle ${JSON.stringify(bundle.id)}`
+				);
+			const description = bundle.description?.trim()
+				? bundle.description
+				: null;
+			// A source added after guidance was authored can have no native comment.
+			// Retain the current row (including a newer authored clear), not stale file text.
+			if (
+				description === null &&
+				bundle.id !== undefined &&
+				args.companionOwnedBundleIds?.has(bundle.id)
+			) {
+				const preserved = { ...bundle };
+				delete preserved.description;
+				return preserved;
+			}
+			return {
+				...bundle,
+				description,
+			};
+		}),
 		messages: pluginResult.messages.map(messageFromPlugin),
 		variants: pluginResult.variants.map(variantFromPlugin),
 	};
@@ -201,6 +235,24 @@ export async function importFiles(args: {
 	// Groups of a large fresh import that commit after the first one.
 	let remainingFreshCommits: FreshImportCommit[] = [];
 	await args.db.transaction().execute(async (trx) => {
+		for (const bundle of imported.bundles) {
+			if (
+				bundle.description === undefined ||
+				bundle.id === undefined ||
+				!args.companionOwnedBundleIds?.has(bundle.id)
+			)
+				continue;
+			const existing = await trx
+				.selectFrom("inlang_bundle")
+				.select("description")
+				.where("id", "=", bundle.id)
+				.executeTakeFirst();
+			if (existing && existing.description !== bundle.description) {
+				throw new Error(
+					`Conflicting native and companion descriptions for bundle ${JSON.stringify(bundle.id)} (descriptions.json)`
+				);
+			}
+		}
 		const hasExistingBundles = await trx
 			.selectFrom("inlang_bundle")
 			.select("id")
@@ -338,12 +390,19 @@ export async function importFiles(args: {
 				imported.bundles,
 				messagesWithIds,
 				variantsWithMessageIds,
-				args.allowPartialImport
+				args.allowPartialImport && !args.descriptionImport
 					? (args.rowsPerCommit ?? IMPORT_ROWS_PER_COMMIT)
 					: Number.POSITIVE_INFINITY
 			);
 			await insertFreshImportCommit(trx, first!);
 			remainingFreshCommits = rest;
+			if (args.descriptionImport)
+				await applyBundleDescriptions(
+					{ db: trx },
+					args.descriptionImport.next,
+					args.descriptionImport.previous,
+					{ transaction: false, content: args.descriptionImport.content }
+				);
 			return;
 		}
 
@@ -623,6 +682,13 @@ export async function importFiles(args: {
 			if (messagesWithPluginVariantIds.has(messageId)) continue;
 			await orderVariantsLikeImport(trx, ids);
 		}
+		if (args.descriptionImport)
+			await applyBundleDescriptions(
+				{ db: trx },
+				args.descriptionImport.next,
+				args.descriptionImport.previous,
+				{ transaction: false, content: args.descriptionImport.content }
+			);
 	});
 	for (const commit of remainingFreshCommits) {
 		await args.db

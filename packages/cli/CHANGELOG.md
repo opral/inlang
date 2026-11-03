@@ -1,5 +1,16 @@
 # @inlang/cli
 
+## 3.6.0
+
+### Minor Changes
+
+- 6c909cd: Add shared bundle descriptions for translator and agent guidance. Preserve descriptions through SDK queries, migrations, imports, snapshots and project saves, with a Git-tracked companion file for formats without native metadata. Use descriptions as context for OpenAI and DeepL CLI translations.
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 3.5.1
 
 ### Patch Changes
@@ -75,7 +86,7 @@
 
   - All checks run by default: missing and empty translations, empty forms, missing or unknown variables, missing markup, missing plural/select forms and selectors, and unused messages. Per-check flags such as `--missing-translations` or `--unused-messages` run only those checks.
   - `--locales de,fr` reports only findings for these locales and validates them against the project's settings (`--languageTags` is accepted as an alias).
-  - Unused messages are found with the project's usage-analysis plugin (`@inlang/plugin-m-function-matcher` ≥ 2.3.0 for Paraglide) in the source under the project's parent directory, or `--source <paths...>`. Git-ignored files (outside git: dot directories and a top-level `dist`, `build` and `coverage`), `node_modules`, Paraglide's compiled output and known build tool configs are skipped. When usages can't all be resolved, e.g. a dynamic `` m[`${fieldName}_label`]() ``, `check` lists the file, line and code instead of reporting unused messages. With an older matcher, it asks to update the module URL in `settings.json`.
+  - Unused messages are found with the project's usage-analysis plugin (`@inlang/plugin-m-function-matcher` ≥ 2.3.0 for Paraglide) in the source under the project's parent directory, or `--source <paths...>`. Git-ignored files (outside git: dot directories and a top-level `dist`, `build` and `coverage`), `node_modules`, Paraglide's compiled output and known build tool configs are skipped. When usages can't all be resolved, e.g. a dynamic ``m[`${fieldName}_label`]()``, `check` lists the file, line and code instead of reporting unused messages. With an older matcher, it asks to update the module URL in `settings.json`.
   - `--format json` prints the full report (with a `version`).
   - Exits with 1 when there are findings or project errors, and with 0 otherwise or with `--no-fail`.
 
@@ -89,7 +100,6 @@
 - 43f9216: The CLI no longer collects telemetry or error reports. Unexpected errors in a command now exit with code 1 instead of 0.
 - 3d2a49c: `inlang machine translate` puts the variants it translates into an existing message at their place in the source message. It appended them, so with `en` = `one`, `*` and `de` = `*`, `de` became `*`, `one`, and runtimes that select the first matching variant (Paraglide JS) never selected `one`. The target message's variants are now ordered like the source: translated variants go to their source position, existing variants keep their text, and a variant the source doesn't have (e.g. a plural category of the target language) stays after the one it followed. Because variants are ordered by id, the variants from the first one that moves on get new ids. Messages that weren't translated, and their entries in the translation files, don't change.
 - 772c0c8: Make `machine translate` resilient on large projects when using the community-operated service at translate.demosjarco.dev.
-
   - Requests to the service are limited to 6 in flight, matching the Cloudflare Workers per-invocation connection limit, instead of firing every bundle at once. Google and DeepL are unaffected.
   - Each request to the service now times out after 20 seconds instead of 15, leaving room for slower models and gateway fallbacks.
   - Throttled (429), server-error (5xx), timed-out and network-failed requests are retried up to 2 times (3 attempts total), waiting 5 seconds before the first retry and doubling the wait for each retry after it.
@@ -197,7 +207,6 @@
   When set to `true`, the CLI passes a `zdr=true` query parameter to the free service so the request is processed with Zero Data Retention. This is scoped to the free service only and has no effect on the Google or DeepL providers. When unset, no ZDR parameter is sent and the service's default behavior applies.
 
 - 7d74143: Address review feedback on the free translation fallback for `machine translate`.
-
   - Renamed the fallback's identifiers so they no longer read as inlang-owned: select it with `INLANG_MACHINE_TRANSLATE_PROVIDER=demosjarco` (was `inlang`), and pin a model or opt in to Zero Data Retention with `DEMOSJARCO_TRANSLATE_MODEL` / `DEMOSJARCO_TRANSLATE_ZDR` (was `INLANG_FREE_TRANSLATE_MODEL` / `INLANG_FREE_TRANSLATE_ZDR`). Docs and runtime messages now consistently refer to it as the community-operated service at translate.demosjarco.dev.
   - A complete outage of the fallback service now fails `machine translate` with a non-zero exit code instead of logging success. Partial, per-bundle translation failures keep the existing warn-and-continue behavior.
   - The fallback now also treats request timeouts, HTTP 429 throttling, and malformed responses as a service outage (previously only network errors and 5xx responses were detected), each pointing you at configuring Google or DeepL instead.
@@ -442,7 +451,6 @@ Fix @inlang/rpc is a bundled dependency that is not published on npm
 - 4b710df: Upgrade to the inlang SDK v2.
 
   BREAKING:
-
   - The `inlang lint` command has been removed. Please upvote https://github.com/opral/lix/issues/239 to re-introduce linting in a future release.
 
   ```diff
@@ -890,7 +898,6 @@ Fix @inlang/rpc is a bundled dependency that is not published on npm
 ### Minor Changes
 
 - 1502c0deb: refactor: removed the project migrate command
-
   - migration command is not used anymore
   - removed the command to reduce complexity
 

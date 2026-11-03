@@ -1,5 +1,12 @@
 # @inlang/plugin-icu1
 
+## 1.3.8
+
+### Patch Changes
+
+- Updated dependencies [6c909cd]
+  - @inlang/sdk@4.2.0
+
 ## 1.3.7
 
 ### Patch Changes
@@ -42,7 +49,6 @@
 ### Patch Changes
 
 - ee8b10d: Export valid ICU that displays what the source displays, and the same again after an import, for plurals nested in selects and selects nested in plurals.
-
   - A select or plural in a case of a plural lacked `other` when the plural's case had variants for some keys only. For example, `{h, select, a {{n, plural, other {{g, select, other {x}}}}} other {{g, select, b {{n, plural, one {one} other {# items}}} other {{n, plural, =5 {five} other {many}}}}}}` exported `one {{g, select, b {one}}}`, which ICU rejects. Each case of a plural now also gets the variants of less specific keys: of `other`, and for an exact value of its plural category. The export of the example has `one {{g, select, b {one} other {many}}}`.
   - A literal "#" in a select nested in a plural was written as `'#'`, which ICU and next-intl don't read as a quote. The select now moves out of the plural instead, for all cases of the message.
   - A plural with an offset and only `other`, e.g. `{n, plural, other {}}{m, plural, offset:1 other {b#}}`, and a plural repeated on an argument in some cases only now export the same again after an import.
@@ -82,7 +88,6 @@
 
 - cde2ca3: Saving a project only changes the entries of the message files that were edited. Unchanged entries keep their text, including the spacing and quoting of ICU messages, and the files keep their key order, indentation and line endings. Exporting large files is also much faster.
 - e8321f7: Fix `#` next to selects in plurals, and plurals and selects that repeat an argument.
-
   - ICU and `intl-messageformat` read `#` in a select nested in a plural as a literal "#". The export wrote a `#` there whenever it moved a select into a plural, e.g. for `{count, plural, one {# item} other {# items}} {gender, select, female {for her} other {}}`, which then displayed "# item for her". A `#` now stays directly in its plural, or exports as the number it displays (`{count, number}`, or `{count, plural, offset:1 other {#}}` with an offset), which also imports back as that `#`. A literal "#" in such a select moves out of the plural with its select where possible, since `'#'` there is no quote for ICU.
   - Plurals on the same argument, type and offset shared one selector, which merged their cases: `{count, plural, one {# file} other {# files}} {count, plural, one {was} other {were}}` displayed "0 files was". A plural nested in or following such a plural now gets its own selector, and sibling plurals export as siblings again. Selects on the same argument merge into one select with the cases each value selects.
   - A selector now follows the selectors it is nested in, also when it occurs first elsewhere in the message.
@@ -90,12 +95,10 @@
   - Adjacent texts are escaped together, so `#'#` followed by `#` no longer exports as `'#''#''#'`.
 
 - fd59d5a: Fix two export issues around `#` and escaping.
-
   - A `#` without an offset that the export moved into a nested plural with an `offset` on the same argument, as in `{n, plural, other {# and {n, plural, offset:1 one {one} other {many}}}}`, exported as a bare `#` there and displayed `n - 1`. It now exports as `{n, number}`.
   - Special characters that are adjacent or separated only by apostrophes are quoted as one segment (`'##'`, `'{}'`, `'#''#'` for `#'#`, `'{''}'` for `{'}`) instead of one by one. ICU reads `'#'` + `''` + `'#'` as one quoted segment in which `''` is one apostrophe, so quoting them one by one read back with an extra apostrophe, which grew on every export. Function styles are escaped the same way.
 
 - ae3d5f0: Export `#` with the offset it displays wherever the export moves it.
-
   - A `#` without an `offset` option is offset 0 whenever the message has a plural without an offset on its argument, not only when such a plural encloses it. A select under a plural with an offset can move an offset-0 `#` out of its own plural: in `{count, plural, offset:1 other {{gender, select, male {{count, plural, other {# x}}} other {{count, plural, other {# y}}}}}}`, count 2 displayed "1 x". It now displays "2 x".
   - A `#` imported before 1.2.0 has no `offset` option even in a plural with an offset. When all plurals of the message on its argument have an offset, it takes the offset of the plural it sits in, or, outside of one (moved out by a select, in a plural on another argument, or after an editor removed its plural), the offset of the plural on its argument, instead of exporting as `{count, number}`. Plurals of other locales of the bundle no longer affect this.
 
@@ -148,7 +151,6 @@
 ### Patch Changes
 
 - 6defee0: Handle markup elements explicitly in the ICU1 serializer after SDK pattern type updates.
-
   - Updated serializer type handling for widened pattern unions.
   - Added an explicit user-facing error when markup placeholders are encountered, since ICU MessageFormat 1 does not support markup placeholders.
 
