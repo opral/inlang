@@ -297,6 +297,7 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 			if (
 				(parent && calls.has(parent.type) && key === "arguments") ||
 				(parent?.type === "VariableDeclarator" && key === "init") ||
+				(parent?.type === "AssignmentExpression" && key === "right") ||
 				parent?.type === "ExportSpecifier" ||
 				((parent?.type === "ArrayExpression" ||
 					(parent?.type === "ObjectProperty" && key === "value")) &&
@@ -633,6 +634,13 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 					if (kindOf(update) !== "data") initial = unknown;
 				}
 			}
+		// State aggregates survive renders; callers may mutate their contents between calls.
+		// Keep the non-callable proof, but do not trust their initial property/element values.
+		if (
+			(initial.kind === "object" || initial.kind === "tuple") &&
+			kindOf(initial) === "data"
+		)
+			initial = data;
 		return { kind: "tuple", elements: [initial, unknown] };
 	}
 	return {

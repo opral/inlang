@@ -146,6 +146,7 @@ test("snapshot file ordering does not change hook data classification", async ()
 test.each([
 	`const holder = { source }; holder.source[0] = external;`,
 	`const holder = [source]; holder[0][0] = external;`,
+	`let holder; holder = source; holder[0] = external;`,
 ])(
 	"aggregates captured by another object can be mutated: %s",
 	async (mutation) => {
@@ -181,6 +182,21 @@ test.each([
 	"TypeScript shadow bindings cannot inherit React data evidence: %s",
 	async (source) => {
 		const result = await run(source);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
+test.each([
+	`useState({ translate: "data" })`,
+	`useReducer(() => ({ translate: "data" }), { translate: "data" })`,
+])(
+	"persistent React aggregates cannot retain property proofs: %s",
+	async (initial) => {
+		const result = await run(
+			`import { useState, useReducer } from "react"; function useData() { const [source] = ${initial}; return [source]; } const [{translate}] = useData(); translate("live");`
+		);
 		expect(
 			result.status === "incomplete" || result.usedBundleIds.includes("live")
 		).toBe(true);
