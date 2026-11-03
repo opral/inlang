@@ -264,6 +264,15 @@ test.each([
 		}
 		const [translate] = useHook(); translate("live");`,
 	],
+	[
+		"tuple elements mutated through for-of aliases",
+		`function useHook() {
+			const result = [{ fn: "initial" }];
+			for (const item of result) item.fn = getFixedT("en");
+			return result;
+		}
+		const [{ fn: translate }] = useHook(); translate("live");`,
+	],
 ])("%s cannot offer deletion of a live translation", async (_name, source) => {
 	const { project, files } = await load({
 		pathPattern: "./locales/{locale}.json",

@@ -341,6 +341,76 @@ test("a React setter method cannot inherit direct-call update evidence", async (
 	).toBe(true);
 });
 
+test.each([
+	[`const tuple = ["data"]; export default tuple;`, "tuple"],
+	[`export default ["data"];`, "tuple"],
+	[`const tuple = ["data"]; export default (tuple as unknown);`, "tuple"],
+	[`export default { tuple: ["data"] };`, "tuple.tuple"],
+])(
+	"default-exported aggregates cannot retain element proofs: %s",
+	async (source, selection) => {
+		const result = await run(
+			`import tuple from "./tuple"; import { mutate } from "./mutator"; mutate(); const [translate] = ${selection}; translate("live");`,
+			[
+				{ path: "src/tuple.ts", content: source },
+				{
+					path: "src/mutator.ts",
+					content: `import tuple from "./tuple"; import { getFixedT } from "i18next"; export function mutate() { ${selection}[0] = getFixedT("en"); }`,
+				},
+			]
+		);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
+test("a default-exported local aggregate is unsafe in its declaring file too", async () => {
+	const result = await run(
+		`const tuple = ["data"]; export default tuple; const [translate] = tuple; translate("live");`
+	);
+	expect(result.status).toBe("incomplete");
+});
+
+test.each([
+	`for (const item of result) { item.nested.fn = getFixedT("en"); }`,
+	`for (const item of result as any) { item.nested.fn = getFixedT("en"); }`,
+	`for (const { nested } of result) { nested.fn = getFixedT("en"); }`,
+	`const holder = new (class { value = result })(); holder.value[0].nested.fn = getFixedT("en");`,
+	`const holder = new (class { #value = result; mutate() { this.#value[0].nested.fn = getFixedT("en"); } })(); holder.mutate();`,
+	`const Holder = class { static value = result }; Holder.value[0].nested.fn = getFixedT("en");`,
+])(
+	"loop and class-field aliases invalidate nested proofs: %s",
+	async (mutation) => {
+		const result = await run(
+			`import { getFixedT } from "i18next"; function useHook() { const result = [{ nested: { fn: "data" } }]; ${mutation} return result; } const [{ nested: { fn: translate } }] = useHook(); translate("live");`
+		);
+		expect(
+			result.status === "incomplete" || result.usedBundleIds.includes("live")
+		).toBe(true);
+	}
+);
+
+test("JSX spread attributes can expose nested tuple elements", async () => {
+	const result = await run(
+		`function useHook() { const result = { tuple: ["data"] }; const element = <Mutator {...result} />; return [result.tuple, element]; } const [[translate]] = useHook(); translate("live");`
+	);
+	expect(result.status).toBe("incomplete");
+});
+
+test("default-exported hook functions still resolve from source", async () => {
+	const result = await run(
+		`import useData from "./hook"; const [data] = useData(); consume(data);`,
+		[
+			{
+				path: "src/hook.ts",
+				content: `export default function useData() { return ["data"]; }`,
+			},
+		]
+	);
+	expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+});
+
 test("source-visible receiver-free namespace methods preserve data proof", async () => {
 	const result = await run(
 		`const hooks = { useData() { return ["data"]; } }; const [data] = hooks.useData(); consume(data);`

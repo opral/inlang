@@ -332,7 +332,19 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 					escapeKey === "expressions" &&
 					parents.get(escapeParent)?.type === "TaggedTemplateExpression") ||
 				escapeParent?.type === "JSXExpressionContainer" ||
+				escapeParent?.type === "JSXSpreadAttribute" ||
+				escapeParent?.type === "JSXSpreadChild" ||
 				escapeParent?.type === "ThrowStatement" ||
+				escapeParent?.type === "ExportDefaultDeclaration" ||
+				(escapeParent?.type === "ForOfStatement" && escapeKey === "right") ||
+				(escapeParent &&
+					[
+						"ClassProperty",
+						"ClassPrivateProperty",
+						"ClassAccessorProperty",
+						"PropertyDefinition",
+					].includes(escapeParent.type) &&
+					escapeKey === "value") ||
 				(escapeParent?.type === "VariableDeclarator" && escapeKey === "init") ||
 				(escapeParent?.type === "AssignmentExpression" &&
 					escapeKey === "right") ||
@@ -449,14 +461,20 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 	): Value {
 		if (depth > 12 || --budget.left < 0) return unknown;
 		for (const statement of imported.program.body as Node[]) {
-			if (name === "default" && statement.type === "ExportDefaultDeclaration")
-				return evaluate(
+			if (name === "default" && statement.type === "ExportDefaultDeclaration") {
+				const value = evaluate(
 					statement.declaration,
 					imported,
 					depth + 1,
 					seen,
 					budget
 				);
+				// Default literals have no binding on which to record their shared lifetime.
+				// Importers can mutate aggregate contents even through a different import alias.
+				return value.kind === "tuple" || value.kind === "object"
+					? unknown
+					: value;
+			}
 			if (statement.type !== "ExportNamedDeclaration" || statement.source)
 				continue;
 			const declaration = statement.declaration as Node | undefined;
