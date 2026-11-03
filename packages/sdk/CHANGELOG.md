@@ -1,5 +1,11 @@
 # @inlang/sdk
 
+## 4.1.2
+
+### Patch Changes
+
+- 053a10b: Share concurrent project settings reads to avoid overflowing the Lix worker queue when rendering large projects. Each caller receives independent settings, and subsequent reads still pick up settings writes and direct SQL updates.
+
 ## 4.1.1
 
 ### Patch Changes

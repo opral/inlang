@@ -1,5 +1,12 @@
 # @inlang/cli
 
+## 3.5.1
+
+### Patch Changes
+
+- Updated dependencies [053a10b]
+  - @inlang/sdk@4.1.2
+
 ## 3.5.0
 
 ### Minor Changes

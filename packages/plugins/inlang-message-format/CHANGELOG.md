@@ -1,5 +1,12 @@
 # @inlang/plugin-message-format
 
+## 4.5.8
+
+### Patch Changes
+
+- Updated dependencies [053a10b]
+  - @inlang/sdk@4.1.2
+
 ## 4.5.7
 
 ### Patch Changes
