@@ -1,5 +1,6 @@
 import type { AnalyzeUsage, UsageIssue } from "@inlang/sdk";
 import { PLUGIN_KEY } from "../pluginKey.js";
+import { createTupleProvenance } from "./tupleProvenance.js";
 import {
 	isNode,
 	keyName,
@@ -259,92 +260,6 @@ const objectName = (node: unknown): string | undefined =>
 				? propertyName(node)
 				: undefined;
 
-/** Recognize React state tuples by their imports, including aliases. */
-function reactStateCalls(program: Node): (call: Node) => boolean {
-	const hooks = new Set<string>();
-	const objects = new Set<string>();
-	type BindingScope = {
-		parent?: BindingScope;
-		names: Set<string>;
-		functionScope: boolean;
-	};
-	const scopes = new Map<Node, BindingScope>();
-	const stateHooks = new Set(["useState", "useReducer"]);
-	const blocks = new Set([
-		"BlockStatement",
-		"CatchClause",
-		"ForStatement",
-		"ForInStatement",
-		"ForOfStatement",
-		"SwitchStatement",
-		"ClassDeclaration",
-		"ClassExpression",
-		"StaticBlock",
-	]);
-	walk(program, (node, parent) => {
-		const outer = parent ? scopes.get(parent) : undefined;
-		const isFunction = Array.isArray(node.params);
-		const scope: BindingScope =
-			!outer || isFunction || blocks.has(node.type)
-				? {
-						parent: outer,
-						names: new Set(),
-						functionScope: !outer || isFunction || node.type === "StaticBlock",
-					}
-				: outer;
-		scopes.set(node, scope);
-		if (
-			node.type === "ImportDeclaration" &&
-			stringValue(node.source) === "react"
-		) {
-			for (const specifier of node.specifiers as Node[]) {
-				const local = (specifier.local as Node).name as string;
-				if (specifier.type === "ImportSpecifier") {
-					const imported = specifier.imported as Node;
-					if (stateHooks.has((imported.name ?? imported.value) as string))
-						hooks.add(local);
-				} else objects.add(local);
-			}
-		}
-		// Collect declarations before classifying calls, including bindings declared later.
-		let declaredIn = scope;
-		if (node.type === "VariableDeclarator" && parent?.kind === "var") {
-			while (!declaredIn.functionScope && declaredIn.parent)
-				declaredIn = declaredIn.parent;
-		} else if (
-			node.type !== "FunctionExpression" &&
-			node.type !== "ClassExpression" &&
-			node.type !== "VariableDeclarator"
-		) {
-			// Declarations bind in the surrounding scope; named expressions bind only inside.
-			declaredIn = outer ?? scope;
-		}
-		for (const name of patternNames(node.id)) declaredIn.names.add(name);
-		if (Array.isArray(node.params))
-			for (const param of node.params)
-				for (const name of patternNames(param)) scope.names.add(name);
-		if (node.type === "CatchClause")
-			for (const name of patternNames(node.param)) scope.names.add(name);
-	});
-	const imported = (names: Set<string>, node: Node | undefined, call: Node) => {
-		if (node?.type !== "Identifier" || !names.has(node.name as string))
-			return false;
-		for (let scope = scopes.get(call); scope; scope = scope.parent)
-			if (scope.names.has(node.name as string)) return false;
-		return true;
-	};
-	return (call) => {
-		const callee = unwrap(call.callee);
-		return (
-			imported(hooks, callee, call) ||
-			(callee !== undefined &&
-				MEMBERS.has(callee.type) &&
-				stateHooks.has(propertyName(callee) ?? "") &&
-				imported(objects, unwrap(callee.object), call))
-		);
-	};
-}
-
 /** Conservative analysis of i18next usages in JavaScript and TypeScript. */
 export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 	if (
@@ -369,6 +284,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 		return tails.some((tail) => lower === tail || lower.endsWith(`/${tail}`));
 	};
 	const resolver = createResolver(files);
+	const tupleResolver = createTupleProvenance(files);
 	const used = new Set<string>();
 	const issues: UsageIssue[] = [];
 
@@ -384,7 +300,12 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 				);
 			continue;
 		}
-		if (!MARKER.test(file.content) && !MAYBE.test(file.content)) continue;
+		if (
+			!MARKER.test(file.content) &&
+			!MAYBE.test(file.content) &&
+			!/\b(?:const|let|var)\s*\[/.test(file.content)
+		)
+			continue;
 		let program: Node;
 		try {
 			program = parseScript(path, file.content);
@@ -397,7 +318,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 			normalizePath(path),
 			program
 		).lookup;
-		const isReactStateCall = reactStateCalls(program);
+		const tuples = tupleResolver.forFile(path, program);
 
 		// ---- pass 1: what is a translator in this file ----
 		let aware = false;
@@ -575,11 +496,10 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 						bind(id.name as string, "all");
 					} else if (
 						id.type === "ArrayPattern" &&
-						init?.type === "CallExpression" &&
-						!isReactStateCall(init)
+						tuples.first(init, (id.elements as Node[])[0]!) !== "data"
 					) {
 						// A custom hook can return `[translate, ...]` under any name.
-						// Keep every namespace, and let pass 2 flag dynamic keys or escapes.
+						// Prove data from source evidence; preserve keys and report ambiguity otherwise.
 						for (const name of patternNames((id.elements as unknown[])[0])) {
 							other.add(name);
 							bind(name, "all");
@@ -730,7 +650,8 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 				const callee = unwrap(node.callee);
 				if (
 					callee?.type === "Identifier" &&
-					translatorNames.has(callee.name as string)
+					translatorNames.has(callee.name as string) &&
+					tuples.reference(callee) !== "data"
 				) {
 					addKeys(node, scopeOf(callee.name as string), callee.name as string);
 				} else if (callee && MEMBERS.has(callee.type)) {
@@ -844,8 +765,20 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 
 			// a translator that is passed on, so a key is read where we can't see it
 			if (translatesLikely) {
-				if (node.type === "Identifier" && tracked.has(node.name as string)) {
-					if (referenceKind(parent, key) === "reference")
+				if (
+					node.type === "Identifier" &&
+					tracked.has(node.name as string) &&
+					tuples.reference(node) !== "data"
+				) {
+					if (
+						tuples.reference(node) === "unknown" &&
+						referenceKind(parent, key) !== "binding"
+					)
+						issue(
+							`The tuple value ${node.name as string} may be a translator${referenceKind(parent, key) === "reference" ? " and is passed on" : ""}; its source cannot be resolved.`,
+							node
+						);
+					else if (referenceKind(parent, key) === "reference")
 						issue(
 							`The translator ${node.name as string} is passed on, so its keys can't be resolved.`,
 							node

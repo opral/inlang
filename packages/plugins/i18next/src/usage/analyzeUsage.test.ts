@@ -69,13 +69,13 @@ test("React state values are not inferred as translators", async () => {
 	expect(result.reasons.join("\n")).not.toContain("textContent");
 });
 
-test("a custom hook can return a translator in an array, when it's called t", async () => {
+test("an opaque tuple named t preserves keys and reports ambiguity", async () => {
 	const result = await analyze(`
 		const [t] = useCustomTranslation();
 		t("custom.key");
 	`);
 	expect(result).toMatchObject({
-		status: "complete",
+		status: "incomplete",
 		used: expect.arrayContaining(["custom.key"]),
 	});
 });
@@ -90,7 +90,7 @@ test("custom tuple translator aliases preserve keys across namespaces", async ()
 		namespaced
 	);
 	expect(result).toMatchObject({
-		status: "complete",
+		status: "incomplete",
 		used: ["admin:live", "common:live"],
 	});
 });
@@ -116,9 +116,9 @@ test.each([
 	`import { useState as useLocalState } from "react";
 	 const [value] = useLocalState("initial");`,
 	`import * as ReactHooks from "react";
-	 const [value] = ReactHooks.useReducer(reducer, "initial");`,
+	 const [value] = ReactHooks.useReducer(() => "next", "initial");`,
 	`import { useReducer } from "react";
-	 const [value] = useReducer(reducer, "initial");`,
+	 const [value] = useReducer(() => "next", "initial");`,
 ])(
 	"React state hook imports are not inferred as translators: %s",
 	async (state) => {
@@ -146,7 +146,7 @@ test.each([
 	"only unshadowed React imports exempt a tuple from translator tracking: %s",
 	async (source) => {
 		const result = await analyze(`import "i18next"; ${source}`);
-		expect(result).toMatchObject({ status: "complete", used: ["live"] });
+		expect(result).toMatchObject({ status: "incomplete", used: ["live"] });
 	}
 );
 
@@ -196,14 +196,14 @@ test("namespace import shadowing is resolved separately for each call", async ()
 			return translate("custom.key");
 		}
 		function App() {
-			const [value] = Hooks.useReducer(reducer, "initial");
+			const [value] = Hooks.useReducer(() => "next", "initial");
 			consume(value);
 			const { t } = useTranslation();
 			return t("page.title");
 		}
 	`);
 	expect(result).toMatchObject({
-		status: "complete",
+		status: "incomplete",
 		used: ["custom.key", "page.title"],
 	});
 });
@@ -225,7 +225,7 @@ test("a hoisted var hook binding shadows its function but not a sibling", async 
 		}
 	`);
 	expect(result).toMatchObject({
-		status: "complete",
+		status: "incomplete",
 		used: ["custom.key", "page.title"],
 	});
 });
