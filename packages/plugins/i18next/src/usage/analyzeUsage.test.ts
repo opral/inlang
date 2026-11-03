@@ -80,6 +80,85 @@ test("a custom hook can return a translator in an array, when it's called t", as
 	});
 });
 
+test("custom tuple translator aliases preserve keys across namespaces", async () => {
+	const result = await analyze(
+		`
+		import { useTranslation } from "react-i18next";
+		const [translate] = useCustomTranslation();
+		translate("live");
+	`,
+		namespaced
+	);
+	expect(result).toMatchObject({
+		status: "complete",
+		used: ["admin:live", "common:live"],
+	});
+});
+
+test.each([
+	["a dynamic key", `translate(key);`, /Dynamic keys/],
+	["an argument", `render(translate);`, /passed on/],
+	["a prop", `const child = <Child translate={translate} />;`, /passed on/],
+])(
+	"a custom tuple translator used as %s makes analysis incomplete",
+	async (_name, usage, reason) => {
+		const result = await analyze(`
+		import { useTranslation } from "react-i18next";
+		const [translate] = useCustomTranslation();
+		${usage}
+	`);
+		expect(result.status).toBe("incomplete");
+		expect(result.reasons.join("\n")).toMatch(reason);
+	}
+);
+
+test.each([
+	`import { useState as useLocalState } from "react";
+	 const [value] = useLocalState("initial");`,
+	`import * as ReactHooks from "react";
+	 const [value] = ReactHooks.useReducer(reducer, "initial");`,
+	`import { useReducer } from "react";
+	 const [value] = useReducer(reducer, "initial");`,
+])(
+	"React state hook imports are not inferred as translators: %s",
+	async (state) => {
+		const result = await analyze(`
+		import { useTranslation } from "react-i18next";
+		${state}
+		passOn(value);
+		const { t } = useTranslation();
+		t("page.title");
+	`);
+		expect(result).toMatchObject({ status: "complete", used: ["page.title"] });
+	}
+);
+
+test.each([
+	`import { useState } from "other-package";
+	 const [translate] = useState(); translate("live");`,
+	`import { useState } from "react";
+	 function read(useState) { const [translate] = useState(); translate("live"); }`,
+	`import React from "react";
+	 function read(React) { const [translate] = React.useState(); translate("live"); }`,
+	`const hooks = { useState: customHook };
+	 const [translate] = hooks.useState(); translate("live");`,
+])(
+	"only unshadowed React imports exempt a tuple from translator tracking: %s",
+	async (source) => {
+		const result = await analyze(`import "i18next"; ${source}`);
+		expect(result).toMatchObject({ status: "complete", used: ["live"] });
+	}
+);
+
+test("known tuple translator factories preserve aliases and namespaces", async () => {
+	const result = await analyze(
+		`import { useTranslation } from "react-i18next";
+		 const [translate] = useTranslation("admin"); translate("live");`,
+		namespaced
+	);
+	expect(result).toMatchObject({ status: "complete", used: ["admin:live"] });
+});
+
 test("plural and context keys use the bundle of their root key", async () => {
 	const result = await analyze(`
 		import i18next from "i18next";

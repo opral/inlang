@@ -154,8 +154,8 @@ function catalogTails(settings: Record<string, unknown>): string[] {
 			? [value]
 			: value && typeof value === "object"
 				? Object.values(value).filter(
-					(path): path is string => typeof path === "string"
-				)
+						(path): path is string => typeof path === "string"
+					)
 				: [];
 	const patterns = [
 		...paths(pluginSettings?.pathPattern),
@@ -259,6 +259,50 @@ const objectName = (node: unknown): string | undefined =>
 				? propertyName(node)
 				: undefined;
 
+/** Recognize React state tuples by their imports, including aliases. */
+function reactStateCalls(program: Node): (call: Node) => boolean {
+	const hooks = new Set<string>();
+	const objects = new Set<string>();
+	const shadowed = new Set<string>();
+	const stateHooks = new Set(["useState", "useReducer"]);
+	walk(program, (node) => {
+		if (
+			node.type === "ImportDeclaration" &&
+			stringValue(node.source) === "react"
+		) {
+			for (const specifier of node.specifiers as Node[]) {
+				const local = (specifier.local as Node).name as string;
+				if (specifier.type === "ImportSpecifier") {
+					const imported = specifier.imported as Node;
+					if (stateHooks.has((imported.name ?? imported.value) as string))
+						hooks.add(local);
+				} else objects.add(local);
+			}
+		}
+		// Any other binding of an imported name makes the exemption unsafe.
+		for (const name of patternNames(node.id)) shadowed.add(name);
+		if (Array.isArray(node.params))
+			for (const param of node.params)
+				for (const name of patternNames(param)) shadowed.add(name);
+		if (node.type === "CatchClause")
+			for (const name of patternNames(node.param)) shadowed.add(name);
+	});
+	const imported = (names: Set<string>, node: Node | undefined) =>
+		node?.type === "Identifier" &&
+		names.has(node.name as string) &&
+		!shadowed.has(node.name as string);
+	return (call) => {
+		const callee = unwrap(call.callee);
+		return (
+			imported(hooks, callee) ||
+			(callee !== undefined &&
+				MEMBERS.has(callee.type) &&
+				stateHooks.has(propertyName(callee) ?? "") &&
+				imported(objects, unwrap(callee.object)))
+		);
+	};
+}
+
 /** Conservative analysis of i18next usages in JavaScript and TypeScript. */
 export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 	if (
@@ -311,6 +355,7 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 			normalizePath(path),
 			program
 		).lookup;
+		const isReactStateCall = reactStateCalls(program);
 
 		// ---- pass 1: what is a translator in this file ----
 		let aware = false;
@@ -488,16 +533,14 @@ export const analyzeUsage: AnalyzeUsage = ({ files, settings }) => {
 						bind(id.name as string, "all");
 					} else if (
 						id.type === "ArrayPattern" &&
-						init?.type === "CallExpression"
+						init?.type === "CallExpression" &&
+						!isReactStateCall(init)
 					) {
-						// Only infer a translator from a custom hook's tuple that
-						// returns `[t, ...]` when its first item is `t`.
-						// ---- incomplete: the hook could return a translator under any name, so we can't know the namespace. ----
+						// A custom hook can return `[translate, ...]` under any name.
+						// Keep every namespace, and let pass 2 flag dynamic keys or escapes.
 						for (const name of patternNames((id.elements as unknown[])[0])) {
-							if (name === "t") {
-								other.add(name);
-								bind(name, "all");
-							}
+							other.add(name);
+							bind(name, "all");
 						}
 					}
 					break;
