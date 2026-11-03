@@ -58,6 +58,26 @@ test("known custom translator wrappers retain aliases and over-count namespaces"
 });
 
 test.each([
+	`import { useTheme } from "./i18next/hooks";`,
+	`import { useTheme as themeHook } from "./i18next/hooks"; const useTheme = themeHook;`,
+	`import * as hooks from "./i18next/hooks"; const useTheme = hooks.useTheme;`,
+])(
+	"relative i18next paths resolve as source rather than package APIs: %s",
+	async (source) => {
+		const result = await run(
+			`${source} const [theme] = useTheme(); consume(theme);`,
+			[
+				{
+					path: "src/i18next/hooks.ts",
+					content: `export function useTheme() { return ["dark"]; }`,
+				},
+			]
+		);
+		expect(result).toMatchObject({ status: "complete", usedBundleIds: [] });
+	}
+);
+
+test.each([
 	`const [translate] = useOpaque();`,
 	`const [translate] = useOpaque?.();`,
 	`const result = useOpaque(); const [translate] = result;`,

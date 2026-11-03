@@ -442,9 +442,12 @@ export function createTupleProvenance(files: readonly SourceFile[]) {
 		const seen = new Set(visited).add(binding);
 		if (binding.imported) {
 			const { source, name } = binding.imported;
-			if (/i18next/.test(source) && name === "t") return translator;
-			if (source === "react" || /i18next/.test(source))
-				return { kind: "api", source, name };
+			// Relative paths name snapshot files, even inside an i18next directory.
+			if (!source.startsWith(".")) {
+				if (/i18next/.test(source) && name === "t") return translator;
+				if (source === "react" || /i18next/.test(source))
+					return { kind: "api", source, name };
+			}
 			const target = resolve(binding.module.path, source);
 			const imported = target ? moduleOf(target) : undefined;
 			if (!imported) return unknown;
