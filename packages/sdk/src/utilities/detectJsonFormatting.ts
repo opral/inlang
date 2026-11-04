@@ -109,6 +109,8 @@ const normalizeIndent = (indent: string | any[] | undefined) => {
 };
 
 export {
+	findDuplicateJsonProperties,
+	type DuplicateJsonProperty,
 	keepUnchangedJsonEntries,
 	stringifyJsonKeepingEntries,
 } from "./keepUnchangedJsonEntries.js";
