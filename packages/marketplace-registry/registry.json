@@ -28,6 +28,7 @@
 		"gkerinvo": "https://raw.githubusercontent.com/opral/inlang/refs/heads/inlang-v1/inlang/source-code/message-lint-rules/snakeCaseId/marketplace-manifest.json",
 		"ewkole66": "https://raw.githubusercontent.com/opral/inlang/refs/heads/inlang-v1/inlang/source-code/message-lint-rules/camelCaseId/marketplace-manifest.json",
 		"0e520888": "https://raw.githubusercontent.com/PlusA2M/i18n-editor/refs/heads/main/marketplace-manifest.json",
-		"elwtsn01": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/marketplace-registry/external/elementary-watson.json"
+		"elwtsn01": "https://raw.githubusercontent.com/opral/inlang/refs/heads/main/packages/marketplace-registry/external/elementary-watson.json",
+		"arbplgin": "https://raw.githubusercontent.com/sunderee/inlang-plugin-arb/refs/heads/master/marketplace-manifest.json"
 	}
 }
