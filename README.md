@@ -16,6 +16,7 @@
 
 <p align="center">
   <sub>Used by teams at</sub><br/><br/>
+  <a href="https://www.starbucks.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/starbucks.svg?raw=true" alt="Starbucks" height="24"></a>&nbsp;&nbsp;
   <a href="https://www.kraftheinz.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/kraft-heinz.png?raw=true" alt="Kraft Heinz" height="18"></a>&nbsp;&nbsp;
   <a href="https://www.bose.com/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/bose.svg?raw=true" alt="Bose" height="18"></a>&nbsp;&nbsp;
   <a href="https://www.disney.co.jp/"><img src="https://github.com/opral/inlang/blob/main/assets/used-by/disney.svg?raw=true" alt="Disney" height="18"></a>&nbsp;&nbsp;

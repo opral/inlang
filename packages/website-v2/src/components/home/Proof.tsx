@@ -1,6 +1,7 @@
 import npmDownloads from "../../npm-downloads.json";
 
 const logos = [
+  { src: "/images/used-by/starbucks.svg", alt: "Starbucks", height: 28 },
   { src: "/images/used-by/kraft-heinz.png", alt: "Kraft Heinz", height: 20 },
   { src: "/images/used-by/bose.svg", alt: "Bose", height: 16 },
   { src: "/images/used-by/disney.svg", alt: "Disney", height: 24 },
