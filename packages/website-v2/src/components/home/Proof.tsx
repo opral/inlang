@@ -1,7 +1,12 @@
 import npmDownloads from "../../npm-downloads.json";
 
 const logos = [
-  { src: "/images/used-by/starbucks.svg", alt: "Starbucks", height: 28 },
+  {
+    src: "/images/used-by/starbucks.svg",
+    alt: "Starbucks",
+    height: 28,
+    maxWidth: 180,
+  },
   { src: "/images/used-by/kraft-heinz.png", alt: "Kraft Heinz", height: 20 },
   { src: "/images/used-by/bose.svg", alt: "Bose", height: 16 },
   { src: "/images/used-by/disney.svg", alt: "Disney", height: 24 },
@@ -30,8 +35,8 @@ export function Proof() {
               <img
                 src={logo.src}
                 alt={logo.alt}
-                style={{ height: logo.height }}
-                className="max-w-[120px] object-contain"
+                style={{ height: logo.height, maxWidth: logo.maxWidth ?? 120 }}
+                className="object-contain"
               />
             </li>
           ))}
